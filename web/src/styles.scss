@@ -1,1 +1,23 @@
 /* You can add global styles to this file, and also import other style files */
+
+/*
+ * The shared nav bar does not shrink: its tab strip keeps the width of every tab, so on a phone the whole page scrolls sideways.
+ * Below 900px the strip drops to its own full-width row (it scrolls inside itself if still too wide) and the profile keeps only its avatar.
+ */
+@media (max-width: 899.98px) {
+  .ems-ui .ems-nav-bar {
+    flex-wrap: wrap;
+    padding-inline: var(--ems-padding-md);
+  }
+  .ems-ui .ems-nav-bar > .ems-app-nav {
+    order: 3;
+    flex: 1 1 100%;
+    min-width: 0;
+  }
+  .ems-ui .ems-nav-bar__trailing {
+    padding-inline: 0;
+  }
+  .ems-ui .ems-profile__name {
+    display: none;
+  }
+}

@@ -13,3 +13,7 @@ dist/
 
 # Built SPA, copied in by web: npm run build:api
 src/Prism.Api/wwwroot/
+
+# Playwright output (screenshots and layout reports)
+web/e2e-report/
+web/test-results/

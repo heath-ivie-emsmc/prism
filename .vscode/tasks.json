@@ -1,0 +1,30 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "build-api",
+      "type": "process",
+      "command": "dotnet",
+      "args": ["build", "${workspaceFolder}/src/Prism.Api/Prism.Api.csproj"],
+      "group": "build",
+      "problemMatcher": "$msCompile"
+    },
+    {
+      "label": "web: ng serve",
+      "type": "shell",
+      "command": "npm start",
+      "options": { "cwd": "${workspaceFolder}/web" },
+      "isBackground": true,
+      "problemMatcher": {
+        "owner": "angular",
+        "pattern": { "regexp": "^(?:Error|ERROR)\\b.*$" },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "Application bundle generation|Building\\.\\.\\.",
+          "endsPattern": "Local:\\s+http://localhost:4200|Watch mode enabled|Application bundle generation (complete|failed)"
+        }
+      },
+      "presentation": { "panel": "dedicated", "reveal": "silent" }
+    }
+  ]
+}

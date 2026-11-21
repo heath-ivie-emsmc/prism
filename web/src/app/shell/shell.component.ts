@@ -1,7 +1,9 @@
 import { ChangeDetectionStrategy, Component, computed, inject } from '@angular/core';
+import { MatMenuModule } from '@angular/material/menu';
 import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import {
   EmsButtonDirective,
+  EmsIconComponent,
   EmsLogoComponent,
   EmsNavBarComponent,
   EmsNavLogoDirective,
@@ -20,6 +22,12 @@ const NEXT_MODE: Readonly<Record<string, ColorModePreference>> = {
   'e2-dark': 'system',
 };
 
+const MODE_ICON: Readonly<Record<string, string>> = {
+  system: 'brightness_auto',
+  'e2-light': 'light_mode',
+  'e2-dark': 'dark_mode',
+};
+
 const MODE_LABEL: Readonly<Record<string, string>> = {
   system: 'System',
   'e2-light': 'Light',
@@ -29,33 +37,79 @@ const MODE_LABEL: Readonly<Record<string, string>> = {
 /** Signed-in frame: top navigation, profile and theme, around the routed page. */
 @Component({
   selector: 'app-shell',
-  imports: [EmsButtonDirective, EmsLogoComponent, EmsNavBarComponent, EmsNavLogoDirective, EmsNavTabDirective, EmsNavTrailingDirective, EmsProfileComponent, RouterLink, RouterLinkActive, RouterOutlet],
+  imports: [EmsButtonDirective, EmsIconComponent, EmsLogoComponent, MatMenuModule, EmsNavBarComponent, EmsNavLogoDirective, EmsNavTabDirective, EmsNavTrailingDirective, EmsProfileComponent, RouterLink, RouterLinkActive, RouterOutlet],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
+    <a class="skip-link" href="#main" (click)="skipToMain($event)">Skip to main content</a>
+    <header>
     <ems-nav-bar label="Primary">
-      <span emsNavLogo><ems-logo variant="emsmc" /></span>
+      <a emsNavLogo routerLink="/dashboard" aria-label="Prism home"><ems-logo variant="emsmc" /></a>
+      <a emsNavTab module routerLink="/dashboard">
+        <ems-icon name="show_chart" size="sm" />
+        Prism
+      </a>
       <a emsNavTab routerLink="/dashboard" routerLinkActive #dashboardLink="routerLinkActive" [active]="dashboardLink.isActive">
+        <ems-icon name="dashboard" size="sm" />
         Dashboard
       </a>
       <!-- Placeholders for the next slices. Disabled, so nothing pretends to work yet. -->
-      <button emsNavTab type="button" disabled title="Coming soon">Reports</button>
-      <button emsNavTab type="button" disabled title="Coming soon">Saved views</button>
+      <button emsNavTab type="button" disabled title="Coming soon">
+        <ems-icon name="Document" size="sm" />
+        Reports
+      </button>
+      <button emsNavTab type="button" disabled title="Coming soon">
+        <ems-icon name="filter_none" size="sm" />
+        Saved views
+      </button>
       <span emsNavTrailing class="shell__trailing">
-        <button emsButton type="button" variant="flat" color="neutral" (click)="cycleTheme()">
-          Theme: {{ themeLabel() }}
+        <button emsButton="flat" fab color="neutral" type="button" [attr.aria-label]="'Theme: ' + themeLabel()" [title]="'Theme: ' + themeLabel()" (click)="cycleTheme()">
+          <ems-icon [name]="themeIcon()" />
+        </button>
+        <button emsButton="flat" fab color="neutral" type="button" disabled aria-label="Notifications" title="Coming soon">
+          <ems-icon name="Bell" />
         </button>
         <!-- eslint-disable-next-line @angular-eslint/template/elements-content -- ems-profile renders its own content and accessible name from [name] -->
-        <button ems-profile type="button" [name]="displayName()"></button>
-        <button emsButton type="button" variant="flat" color="neutral" (click)="signOut()">Sign out</button>
+        <button ems-profile type="button" [name]="displayName()" [matMenuTriggerFor]="account"></button>
+        <mat-menu #account="matMenu">
+          <button mat-menu-item type="button" (click)="signOut()">Sign out</button>
+        </mat-menu>
       </span>
     </ems-nav-bar>
+    </header>
     <router-outlet />
   `,
   styles: `
+    /* Off screen until it has keyboard focus, then the first thing on the page (WCAG 2.4.1). */
+    .skip-link {
+      position: absolute;
+      left: 0.5rem;
+      top: -4rem;
+      z-index: 1000;
+      padding: 0.75rem 1rem;
+      border-radius: var(--ems-corner-sm, 0.5rem);
+      background: var(--ems-surface-neutral-elevated);
+      color: var(--ems-text-default);
+      font-weight: var(--ems-font-weight-bold);
+    }
+    .skip-link:focus {
+      top: 0.5rem;
+      outline: 2px solid var(--ems-border-focus-default);
+      outline-offset: 2px;
+    }
     .shell__trailing {
       display: inline-flex;
       align-items: center;
-      gap: 0.75rem;
+      gap: 0.5rem;
+    }
+    /* The library profile has no dropdown affordance, so draw the chevron after it (decorative, the menu role comes from the trigger). */
+    .shell__trailing [ems-profile]::after {
+      content: 'keyboard_arrow_down';
+      font-family: 'Material Symbols Rounded';
+      font-size: 20px;
+      line-height: 1;
+      padding: 0 var(--ems-padding-xs, 0.25rem);
+      color: var(--ems-text-subtle, currentColor);
+      font-feature-settings: 'liga';
     }
   `,
 })
@@ -66,9 +120,21 @@ export class ShellComponent {
   protected readonly displayName = computed(() => this.auth.me()?.displayName ?? '');
   protected readonly themeLabel = computed(() => MODE_LABEL[this.theme.colorMode()] ?? 'System');
 
+  protected readonly themeIcon = computed(() => MODE_ICON[this.theme.colorMode()] ?? 'brightness_auto');
+
   protected cycleTheme(): void {
     const next = NEXT_MODE[this.theme.colorMode()] ?? 'system';
     this.theme.setColorMode(next);
+  }
+
+  /** A hash link would reload the app because of the base href, so move focus to the page's main region directly. */
+  protected skipToMain(event: Event): void {
+    event.preventDefault();
+    const main = document.querySelector<HTMLElement>('main');
+    if (main) {
+      main.tabIndex = -1;
+      main.focus();
+    }
   }
 
   protected signOut(): void {

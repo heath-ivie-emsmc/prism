@@ -68,7 +68,7 @@ These rules are adapted from the M6 (Nemsis) project, where each one came from a
 ### Definition of done
 1. List which of sections 1 to 8 the change touches in the PR description.
 2. Add the required tests for each one. The positive case alone is not enough: include the denied, cross-Provider or adversarial case.
-3. Run the full build and tests, and the web unit tests if the web app changed.
+3. Run the full build and tests, and the web unit tests if the web app changed. If a page or component changed, also run `npm run e2e` in `web/` (layout, accessibility, keyboard at every size) and look at the screenshots.
 
 ## Development rules
 
@@ -100,8 +100,10 @@ These rules are adapted from the M6 (Nemsis) project, where each one came from a
 - **Templates:** do not call component methods inside `@for` or table row bindings. Precompute row view models in `computed()` or in pure display mapper functions.
 - **Labels:** user-facing terms that a Provider can rename come from the Label service, never hard-coded strings.
 - **Auth in the browser:** no tokens in `localStorage` or `sessionStorage`. The HTTP interceptor sends credentials and the CSRF header, and handles 401 once. Sanitize every return URL.
-- **Accessibility:** WCAG 2.1 AA minimum. Run axe in component tests. Charts need a text or table alternative.
-- Tests use Vitest with an 80% coverage gate, plus Playwright for end-to-end smoke tests.
+- **Accessibility, from day one:** the target is WCAG 2.2 AA (ADA and Section 508). Run axe in component tests. Charts need a text or table alternative. A page or component is not done until it passes the Playwright accessibility and keyboard tests below, not only axe in jsdom (jsdom has no layout, so contrast, target size, focus visibility and overlap are only checked in a real browser).
+- **Responsive, from day one:** every page works from a 320px phone to a 1920px desktop, in portrait and landscape, light and dark, at 200% text size and 400% zoom (reflow), with WCAG text-spacing overrides, in forced-colors mode, and with reduced motion. No sideways page scroll, no text over other text, no text cut off or outside its card.
+- **Everything is tested through Playwright, automatically.** `web/e2e/` holds the browser tests. `npm run e2e` in `web/` starts the app itself if it is not already running (it reuses a running one) and needs no account: `/api/v1/me` is mocked unless `PRISM_E2E_STORAGE_STATE` supplies a real session. No test may depend on a manual step. Layout analysis (`e2e/layout-analysis.ts`), axe at WCAG 2.2 AA, keyboard (Tab order, visible focus, no trap, menus, skip link) and text-alternative checks run on every page at every size in `e2e/layout.spec.ts`, `accessibility.spec.ts` and `keyboard.spec.ts`. A new page or state adds itself to those specs in the same change. Read the screenshots in `web/e2e-report/` too: the checks cannot see canvas text or plain ugliness. Do not disable an axe rule to pass; a rule exclusion needs a comment naming who owns the fix.
+- Tests use Vitest with an 80% coverage gate, plus Playwright for end-to-end and accessibility tests.
 
 ## Git and CI
 

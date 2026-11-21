@@ -1,0 +1,135 @@
+import { expect, test } from './fixtures';
+import { axeViolations, chooseNetCashView, layoutErrors, openDashboard } from './support';
+
+/** WCAG 2.2 AA beyond the static page: other states, other pages, user settings. Every test also gates on axe. */
+test.describe('accessibility', () => {
+  test('the page has a title, a language, one h1 and the landmarks screen readers jump between', async ({ page }) => {
+    await openDashboard(page);
+
+    await expect(page).toHaveTitle(/Prism/);
+    expect(await page.locator('html').getAttribute('lang')).toBe('en');
+    await expect(page.locator('h1')).toHaveCount(1);
+    await expect(page.locator('main')).toHaveCount(1);
+    await expect(page.locator('nav[aria-label]')).not.toHaveCount(0);
+    // Every region of content sits inside a landmark.
+    const outside = await page.evaluate(() =>
+      [...document.querySelectorAll('h1, h2, button, a[href], input, [role="radio"]')]
+        .filter((el) => !el.closest('main, nav, header, footer, .skip-link, [role="main"], [role="navigation"], .cdk-overlay-container'))
+        .map((el) => el.tagName.toLowerCase() + ':' + (el.textContent ?? '').trim().slice(0, 20)),
+    );
+    expect(outside).toEqual([]);
+  });
+
+  test('headings do not skip levels', async ({ page }) => {
+    await openDashboard(page);
+
+    const levels = await page.evaluate(() => [...document.querySelectorAll('h1, h2, h3, h4, h5, h6')].map((h) => Number(h.tagName[1])));
+    const skips = levels.filter((level, i) => i > 0 && level - levels[i - 1]! > 1);
+    expect(skips, `heading levels: ${levels.join(',')}`).toEqual([]);
+  });
+
+  test('the login page passes axe', async ({ page }) => {
+    await page.unroute('**/api/v1/me');
+    await page.route('**/api/v1/me', (route) => route.fulfill({ status: 401, json: { title: 'Unauthorized' } }));
+    await page.goto('/login');
+    await page.locator('main, [role="main"]').first().waitFor();
+
+    expect(await axeViolations(page)).toEqual([]);
+    expect((await layoutErrors(page)).errors).toEqual([]);
+  });
+
+  test('the account menu passes axe when open', async ({ page }) => {
+    await openDashboard(page);
+    await page.locator('button.ems-profile').click();
+    await page.locator('[role="menu"]').waitFor();
+
+    expect(await axeViolations(page)).toEqual([]);
+  });
+
+  for (const view of ['bar', 'table'] as const) {
+    test(`the ${view} view passes axe and has no layout errors`, async ({ page }) => {
+      await openDashboard(page);
+      await chooseNetCashView(page, view);
+
+      expect(await axeViolations(page)).toEqual([]);
+      expect((await layoutErrors(page)).errors).toEqual([]);
+    });
+  }
+
+  test('the net cash table lists the same months as the chart, with the projection marked', async ({ page }) => {
+    await openDashboard(page);
+    await chooseNetCashView(page, 'table');
+
+    const rows = await page.locator('app-net-cash-panel tbody tr').allTextContents();
+    expect(rows).toHaveLength(9);
+    expect(rows[0]).toContain('May 2026');
+    expect(rows.filter((r) => r.includes('Projected'))).toHaveLength(3);
+    expect(rows[5]).toContain('$1,100,240.00');
+  });
+
+  test('turning the projection off removes projected months from the chart description and the table', async ({ page }) => {
+    await openDashboard(page);
+    await page.getByRole('switch', { name: /projection/i }).uncheck();
+
+    await expect(page.locator('app-net-cash-panel [role="img"]')).not.toHaveAttribute('aria-label', /Projected/);
+    await chooseNetCashView(page, 'table');
+    await expect(page.locator('app-net-cash-panel tbody tr')).toHaveCount(6);
+  });
+
+  test('every chart has a text alternative: a description and a table view', async ({ page }) => {
+    await openDashboard(page);
+
+    for (const view of ['line', 'bar'] as const) {
+      await chooseNetCashView(page, view);
+      expect(await page.locator('app-net-cash-panel [role="img"]').getAttribute('aria-label')).toMatch(/Latest month Oct .*Projected Nov/);
+    }
+    // The same numbers are one control away, as a real table.
+    await chooseNetCashView(page, 'table');
+    await expect(page.locator('app-net-cash-panel table')).toHaveCount(1);
+  });
+
+  test('forced colors (Windows high contrast) still shows every control and passes axe', async ({ page }) => {
+    await page.emulateMedia({ forcedColors: 'active' });
+    await openDashboard(page);
+
+    // axe cannot read forced-colors system colors, so its contrast rule would only report false results here.
+    expect(await axeViolations(page, undefined, ['color-contrast'])).toEqual([]);
+    expect((await layoutErrors(page)).errors).toEqual([]);
+  });
+
+  test('text spacing overrides (WCAG 1.4.12) do not cut off or overlap text', async ({ page }) => {
+    await openDashboard(page);
+    await page.addStyleTag({
+      content: `* { line-height: 1.5 !important; letter-spacing: 0.12em !important; word-spacing: 0.16em !important; }
+                p { margin-bottom: 2em !important; }`,
+    });
+    await page.waitForTimeout(200);
+
+    expect((await layoutErrors(page)).errors).toEqual([]);
+  });
+
+  test('200% text size does not cut off or overlap text', async ({ page }) => {
+    await openDashboard(page);
+    await page.addStyleTag({ content: 'html { font-size: 200% !important; }' });
+    await page.waitForTimeout(200);
+
+    expect((await layoutErrors(page)).errors).toEqual([]);
+  });
+
+  test('the page works zoomed to 400% (reflows at 320px with no sideways scroll)', async ({ page }) => {
+    // 400% zoom of a 1280px window is a 320 CSS pixel viewport.
+    await page.setViewportSize({ width: 320, height: 256 });
+    await openDashboard(page);
+
+    expect((await layoutErrors(page)).errors).toEqual([]);
+    expect(await axeViolations(page)).toEqual([]);
+  });
+
+  test('no animation runs when the user asks for reduced motion', async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await openDashboard(page);
+
+    const running = await page.evaluate(() => document.getAnimations().filter((a) => a.playState === 'running' && a.effect?.getTiming().iterations === Infinity).length);
+    expect(running).toBe(0);
+  });
+});

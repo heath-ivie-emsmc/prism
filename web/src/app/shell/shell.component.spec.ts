@@ -43,8 +43,22 @@ describe('ShellComponent', () => {
     expect(root.querySelector('app-dashboard h1')?.textContent).toContain('Acme Air Care');
   });
 
+  it('starts with a skip link that moves focus to the main region', () => {
+    const link = root.querySelector<HTMLAnchorElement>('a.skip-link')!;
+    expect(root.querySelector('header .ems-nav-bar, header ems-nav-bar')).not.toBeNull();
+    expect(link.textContent).toContain('Skip to main content');
+    expect(root.querySelector('a, button')).toBe(link);
+
+    document.body.append(root);
+    link.click();
+
+    expect(document.activeElement?.tagName).toBe('MAIN');
+    root.remove();
+  });
+
   it('signs out through the API', () => {
-    const signOut = [...root.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent?.includes('Sign out'))!;
+    root.querySelector<HTMLButtonElement>('button[ems-profile]')!.click();
+    const signOut = [...document.querySelectorAll<HTMLButtonElement>('button[mat-menu-item]')].find((b) => b.textContent?.includes('Sign out'))!;
     signOut.click();
 
     expect(navigate).toHaveBeenCalledWith('/api/auth/sso/logout');
@@ -53,7 +67,7 @@ describe('ShellComponent', () => {
   it('cycles the theme through system, light and dark', () => {
     const theme = TestBed.inject(EmsThemeService);
     theme.setColorMode('system');
-    const toggle = [...root.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent?.includes('Theme'))!;
+    const toggle = root.querySelector<HTMLButtonElement>('button[aria-label^="Theme"]')!;
 
     toggle.click();
     expect(theme.colorMode()).toBe('e2-light');

@@ -130,3 +130,18 @@ dotnet run --project tools/Prism.Utility.AdminPortalSetup -- --key-file ~/prism-
 
 Use `--environment stage` or `prod` with `--application-id` for deployed environments. The tool never prints the key or its token.
 Change the catalog in `Permissions.cs`, then run the tool again: role versions are the time of the run, so each publish is newer.
+
+## SAML (deferred)
+
+Prism signs in through the Account Portal's signed login-token flow. SAML is not used and is not planned for the first release. What we know, so it
+does not have to be rediscovered:
+
+- The Account Portal is a SAML **identity provider** for outside applications, through the `Emsmc\Sdk\Saml` classes in
+  [Admin-Portal-Integration-Module](https://github.com/EMS-Management-Consultants/Admin-Portal-Integration-Module) (`php/src/Sdk/Saml/`). It signs a
+  response and posts it to an application's assertion consumer URL, either when the portal starts the sign-in or when the application does. It also
+  serves IdP metadata. Each application is a database record (`external_application.provider_settings`) with an IdP entity id, SP entity id, ACS URL
+  and NameID field; the signing certificate and key come from AWS Secrets Manager.
+- The assertion carries only NameID, email (the username), first name and last name. It carries **no roles and no company or facility assignments**,
+  so even with SAML Prism would still call `user/rbac-data` and `user/assigned-companies` for those.
+- It does not help with letting a customer's own identity provider (Entra, Okta, a state system) sign users in. That makes Prism the service provider,
+  which the portal does not do. If a customer asks, it plugs in behind the auth provider seam described in AGENTS.md and needs its own ADR.

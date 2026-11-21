@@ -19,7 +19,7 @@ describe('DashboardComponent header', () => {
     return { fixture, root: fixture.nativeElement as HTMLElement };
   }
 
-  const radios = (root: HTMLElement) => [...root.querySelectorAll<HTMLButtonElement>('[role="radio"]')];
+  const radios = (root: HTMLElement) => [...root.querySelectorAll<HTMLButtonElement>('app-service-line-toggle [role="radio"]')];
 
   it('shows the Provider name, Data Through and when the data was updated', async () => {
     const { root } = await create();
@@ -46,40 +46,51 @@ describe('DashboardComponent header', () => {
     expect(root.querySelector('h1')?.textContent).toBe('Mercy Air');
   });
 
-  const cards = (root: HTMLElement) =>
-    [...root.querySelectorAll('app-metric-card')].map((card) => card.textContent?.replace(/\s+/g, ' ').trim() ?? '');
-
-  it('shows the three metric cards for air, with the wing split, nautical miles and a projection', async () => {
+  it('lays out the net cash panel, four metric tiles and the projection panel', async () => {
     const { root } = await create();
 
-    const [cash, transports, miles] = cards(root);
-    expect(cash).toContain('Net cash collected');
-    expect(cash).toContain('$1,284,500');
-    expect(cash).toContain('Projected for the period: $1,402,000');
-    expect(transports).toContain('142');
-    expect(transports).toContain('Rotor wing96');
-    expect(transports).toContain('Fixed wing46');
-    expect(miles).toContain('18,420');
-    expect(miles).toContain('Nautical (air only)');
+    expect(root.querySelector('app-net-cash-panel h2')?.textContent).toContain('Air net cash collected');
+    const tiles = [...root.querySelectorAll('app-kpi-card')].map((tile) => tile.textContent?.replace(/\s+/g, ' ').trim() ?? '');
+    expect(tiles).toHaveLength(4);
+    expect(tiles[0]).toContain('Transports');
+    expect(tiles[1]).toContain('Loaded miles');
+    expect(tiles[2]).toContain('Clean claim rate');
+    expect(tiles[3]).toContain('Open negotiation');
+    expect(root.querySelector('app-projection-panel h2')?.textContent).toContain('projection');
   });
 
-  it('drops the air-only breakdowns for ground and splits air from ground for both', async () => {
+  it('switches the net cash panel between a chart and a table with the chart type control', async () => {
     const { fixture, root } = await create();
+    const radio = (name: string) => root.querySelector<HTMLButtonElement>(`app-net-cash-panel [role="radio"][aria-label="${name}"]`)!;
+    expect(root.querySelector('app-net-cash-panel app-chart')).not.toBeNull();
+    expect(root.querySelector('app-net-cash-panel table')).toBeNull();
 
-    radios(root)[1].click();
+    radio('Table').click();
     fixture.detectChanges();
-    await fixture.whenStable();
-    fixture.detectChanges();
-    const ground = cards(root);
-    expect(ground[1]).not.toContain('Rotor wing');
-    expect(ground[2]).not.toContain('Nautical');
 
-    radios(root)[2].click();
+    expect(root.querySelector('app-net-cash-panel app-chart')).toBeNull();
+    const rows = [...root.querySelectorAll('app-net-cash-panel tbody tr')].map((r) => r.textContent?.replace(/\s+/g, ' ').trim());
+    expect(rows).toHaveLength(9);
+    expect(rows[5]).toContain('Oct 2026');
+    expect(rows[5]).toContain('$1,100,240.00');
+    expect(rows[5]).toContain('12.0%');
+    expect(rows[6]).toContain('Projected');
+    expect(rows[6]).toContain('$1.15M to $1.28M');
+
+    radio('Bar chart').click();
     fixture.detectChanges();
-    await fixture.whenStable();
+    expect(root.querySelector('app-net-cash-panel table')).toBeNull();
+  });
+
+  it('hides the expected 3-month figure when the projection switch is off', async () => {
+    const { fixture, root } = await create();
+    const toggle = root.querySelector<HTMLInputElement>('app-net-cash-panel input[role="switch"]')!;
+    expect(root.querySelector('app-net-cash-panel')?.textContent).toContain('Expected, next 3 months');
+
+    toggle.click();
     fixture.detectChanges();
-    expect(cards(root)[1]).toContain('Air142');
-    expect(cards(root)[1]).toContain('Ground318');
+
+    expect(root.querySelector('app-net-cash-panel')?.textContent).not.toContain('Expected, next 3 months');
   });
 
   it('starts on Air only with the air label for the Reporting Division filter', async () => {

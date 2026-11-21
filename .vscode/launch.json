@@ -1,0 +1,32 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "API",
+      "type": "coreclr",
+      "request": "launch",
+      "preLaunchTask": "build-api",
+      "program": "${workspaceFolder}/src/Prism.Api/bin/Debug/net11.0/Prism.Api.dll",
+      "cwd": "${workspaceFolder}/src/Prism.Api",
+      "env": { "ASPNETCORE_ENVIRONMENT": "Development" },
+      "console": "internalConsole",
+      "stopAtEntry": false
+    },
+    {
+      "name": "Web (Chrome)",
+      "type": "chrome",
+      "request": "launch",
+      "preLaunchTask": "web: ng serve",
+      "url": "http://localhost:4200",
+      "webRoot": "${workspaceFolder}/web"
+    }
+  ],
+  "compounds": [
+    {
+      "name": "Run all (API + Web)",
+      "configurations": ["API", "Web (Chrome)"],
+      "stopAll": true,
+      "presentation": { "order": 1 }
+    }
+  ]
+}
