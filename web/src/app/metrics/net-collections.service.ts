@@ -105,6 +105,26 @@ export interface NetCashBreakdownDto {
   readonly rows: readonly BreakdownRowDto[];
 }
 
+/** A payer group with its transport counts for the chosen month and the one before. */
+export interface PayerMixShareDto {
+  readonly key: string;
+  readonly name: string;
+  readonly current: number;
+  readonly prior: number;
+}
+
+/** Response of GET /api/v1/providers/{providerId}/metrics/net-collections/payer-mix. */
+export interface PayerMixDto {
+  readonly metric: MetricDto;
+  readonly providerId: string;
+  readonly period: string | null;
+  readonly priorPeriod: string | null;
+  readonly serviceLine: 'all' | 'air' | 'ground';
+  readonly group: string | null;
+  readonly groupName: string | null;
+  readonly shares: readonly PayerMixShareDto[];
+}
+
 /** Reads net cash for a Provider. The Provider is in the path, and the API checks it against the user's assignments on every call. */
 @Injectable({ providedIn: 'root' })
 export class NetCollectionsService {
@@ -127,6 +147,11 @@ export class NetCollectionsService {
   breakdown(providerId: string, period: string, serviceLine: 'air' | 'ground'): Observable<NetCashBreakdownDto> {
     const params = new HttpParams().set('period', period).set('serviceLine', serviceLine);
     return this.http.get<NetCashBreakdownDto>(`${this.base(providerId)}/breakdown`, { params });
+  }
+
+  payerMix(providerId: string, period: string, serviceLine: 'air' | 'ground', group: string): Observable<PayerMixDto> {
+    const params = new HttpParams().set('period', period).set('serviceLine', serviceLine).set('group', group);
+    return this.http.get<PayerMixDto>(`${this.base(providerId)}/payer-mix`, { params });
   }
 
   private base(providerId: string): string {

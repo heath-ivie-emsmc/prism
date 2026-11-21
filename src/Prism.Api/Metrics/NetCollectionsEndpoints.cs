@@ -1,12 +1,13 @@
 using System.Globalization;
 using System.Security.Claims;
+using System.Text.RegularExpressions;
 using Prism.Application.Auth;
 using Prism.Application.Metrics;
 
 namespace Prism.Api.Metrics;
 
 /// <summary>Net cash collected for a Provider: the periods that have data, and a run of months ending at one of them.</summary>
-internal static class NetCollectionsEndpoints
+internal static partial class NetCollectionsEndpoints
 {
     private static readonly string[] Months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
@@ -56,6 +57,22 @@ internal static class NetCollectionsEndpoints
                 + "Legacy Old AR bases are counted under their current base. Aggregates only: no patient or claim detail. "
                 + "Returns 404 when the Provider is not one the caller may read in full.")
             .Produces<NetCashBreakdownResponse>()
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
+
+        group.MapGet("/payer-mix", PayerMixRoute)
+            .WithName("GetPayerMix")
+            .WithSummary("Transports by primary payer group")
+            .WithDescription(
+                "Transports by the primary payer's group for `period` (`yyyyMM`, default the newest period with net cash data) and the month before it, by date of service. "
+                + "`serviceLine` is `all`, `air` (default) or `ground`. `group` narrows it to one aircraft type or level of service, using the `key` the breakdown route returns (for example `fixed-wing`). "
+                + "Groups are Commercial (insurance and third-party liability), Medicare (with Medicare Advantage), Medicaid (with Medicaid managed care), Other government, VA (VA, CHAMPVA and TRICARE payers by name), Facility and Patient responsibility. "
+                + "`not-recorded` appears only when some transports have no payer. Counts only: no patient, claim or payer names. "
+                + "Returns 404 when the Provider is not one the caller may read in full.")
+            .Produces<PayerMixResponse>()
             .ProducesProblem(StatusCodes.Status400BadRequest)
             .ProducesProblem(StatusCodes.Status401Unauthorized)
             .ProducesProblem(StatusCodes.Status403Forbidden)
@@ -219,6 +236,64 @@ internal static class NetCollectionsEndpoints
         return Results.Ok(ToResponse(providerId, breakdown));
     }
 
+    public static async Task<IResult> PayerMixRoute(
+        [AsParameters] PayerMixRequest request,
+        ClaimsPrincipal user,
+        ProviderAccess access,
+        INetCollectionsMetric periods,
+        IPayerMixMetric metric,
+        CancellationToken cancellationToken)
+    {
+        (string providerId, string? period, string? serviceLine, string? groupKey) = (request.ProviderId, request.Period, request.ServiceLine, request.Group);
+        if (await access.ResolveAsync(user, providerId, cancellationToken) is not { } id)
+        {
+            return Results.NotFound();
+        }
+
+        ServiceLineFilter filter = ServiceLineFilter.Air;
+        if (serviceLine is not null && !TryParseServiceLine(serviceLine, out filter))
+        {
+            return Invalid("serviceLine", "serviceLine must be all, air or ground.");
+        }
+
+        if (groupKey is not null && !GroupKeyPattern().IsMatch(groupKey))
+        {
+            return Invalid("group", "group must be a key from the breakdown route, such as fixed-wing.");
+        }
+
+        ApPeriod chosen;
+        if (period is null)
+        {
+            IReadOnlyList<ApPeriod> available = await periods.GetPeriodsAsync(id, cancellationToken);
+            if (available.Count == 0)
+            {
+                return Results.Ok(new PayerMixResponse(MetricOf(IPayerMixMetric.Definition), providerId, null, null, ServiceLineName(filter), groupKey, null, []));
+            }
+
+            chosen = available.OrderDescending(Comparer<ApPeriod>.Create(ComparePeriods)).First();
+        }
+        else if (!ApPeriod.TryParse(period, out chosen))
+        {
+            return Invalid("period", "period must be a month written yyyyMM, for example 202610.");
+        }
+
+        PayerMix mix = await metric.GetPayerMixAsync(id, chosen, filter, groupKey, cancellationToken);
+        return Results.Ok(new PayerMixResponse(
+            MetricOf(mix.Metric),
+            providerId,
+            mix.Period.ToString(),
+            mix.PriorPeriod.ToString(),
+            ServiceLineName(mix.ServiceLine),
+            mix.GroupKey,
+            mix.GroupName,
+            mix.Shares.Select(s => new PayerMixShareResponse(s.Key, s.Name, s.Current, s.Prior)).ToArray()));
+    }
+
+    private static MetricResponse MetricOf(MetricDefinition d) => new(d.Key, d.Name, d.Description, d.Unit);
+
+    [GeneratedRegex("^[a-z0-9-]{1,40}$", RegexOptions.NonBacktracking | RegexOptions.CultureInvariant)]
+    private static partial Regex GroupKeyPattern();
+
     private static NetCashBreakdownResponse ToResponse(string providerId, NetCashBreakdown breakdown) =>
         new(
             new MetricResponse(breakdown.Metric.Key, breakdown.Metric.Name, breakdown.Metric.Description, breakdown.Metric.Unit),
@@ -370,3 +445,27 @@ public sealed record BreakdownRowResponse(string GroupKey, string GroupName, str
 /// <c>PrimaryMix</c> and <c>SecondaryMix</c> are scene and interfacility transports for air, emergency and non-emergency for ground.
 /// </summary>
 public sealed record BreakdownFiguresResponse(decimal Cash, int Transports, decimal LoadedMiles, int PrimaryMix, int SecondaryMix);
+
+/// <summary>Route and query values of the payer mix route.</summary>
+internal readonly record struct PayerMixRequest(
+    string ProviderId,
+    string? Period,
+    string? ServiceLine,
+    string? Group);
+
+/// <summary>
+/// Transports by primary payer group for <c>Period</c> and the month before it (<c>PriorPeriod</c>), by date of service. <c>Group</c> and <c>GroupName</c>
+/// are set when the figures are for one aircraft type or level of service.
+/// </summary>
+public sealed record PayerMixResponse(
+    MetricResponse Metric,
+    string ProviderId,
+    string? Period,
+    string? PriorPeriod,
+    string ServiceLine,
+    string? Group,
+    string? GroupName,
+    IReadOnlyList<PayerMixShareResponse> Shares);
+
+/// <summary>A payer group: <c>Key</c> is stable, <c>Name</c> is for display, <c>Current</c> and <c>Prior</c> are transport counts.</summary>
+public sealed record PayerMixShareResponse(string Key, string Name, int Current, int Prior);

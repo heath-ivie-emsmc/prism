@@ -367,6 +367,109 @@
         }
       }
     },
+    "/api/v1/providers/{providerId}/metrics/net-collections/payer-mix": {
+      "get": {
+        "tags": [
+          "Metrics"
+        ],
+        "summary": "Transports by primary payer group",
+        "description": "Transports by the primary payer\u0027s group for \u0060period\u0060 (\u0060yyyyMM\u0060, default the newest period with net cash data) and the month before it, by date of service. \u0060serviceLine\u0060 is \u0060all\u0060, \u0060air\u0060 (default) or \u0060ground\u0060. \u0060group\u0060 narrows it to one aircraft type or level of service, using the \u0060key\u0060 the breakdown route returns (for example \u0060fixed-wing\u0060). Groups are Commercial (insurance and third-party liability), Medicare (with Medicare Advantage), Medicaid (with Medicaid managed care), Other government, VA (VA, CHAMPVA and TRICARE payers by name), Facility and Patient responsibility. \u0060not-recorded\u0060 appears only when some transports have no payer. Counts only: no patient, claim or payer names. Returns 404 when the Provider is not one the caller may read in full.",
+        "operationId": "GetPayerMix",
+        "parameters": [
+          {
+            "name": "providerId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Period",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "ServiceLine",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Group",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PayerMixResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service Unavailable",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/providers/{providerId}/metrics/net-collections/periods": {
       "get": {
         "tags": [
@@ -885,6 +988,95 @@
           }
         },
         "description": "Net cash collected for a Provider, by accounting period."
+      },
+      "PayerMixResponse": {
+        "required": [
+          "metric",
+          "providerId",
+          "period",
+          "priorPeriod",
+          "serviceLine",
+          "group",
+          "groupName",
+          "shares"
+        ],
+        "type": "object",
+        "properties": {
+          "metric": {
+            "$ref": "#/components/schemas/MetricResponse"
+          },
+          "providerId": {
+            "type": "string"
+          },
+          "period": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "priorPeriod": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "serviceLine": {
+            "type": "string"
+          },
+          "group": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "groupName": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "shares": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PayerMixShareResponse"
+            }
+          }
+        },
+        "description": "Transports by primary payer group for \u0060Period\u0060 and the month before it (\u0060PriorPeriod\u0060), by date of service. \u0060Group\u0060 and \u0060GroupName\u0060\nare set when the figures are for one aircraft type or level of service."
+      },
+      "PayerMixShareResponse": {
+        "required": [
+          "key",
+          "name",
+          "current",
+          "prior"
+        ],
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "current": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "prior": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          }
+        },
+        "description": "A payer group: \u0060Key\u0060 is stable, \u0060Name\u0060 is for display, \u0060Current\u0060 and \u0060Prior\u0060 are transport counts."
       },
       "PeriodResponse": {
         "required": [

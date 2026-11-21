@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, computed, inject, input, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, input, output, signal } from '@angular/core';
 import { rxResource } from '@angular/core/rxjs-interop';
 import { of } from 'rxjs';
 import { EmsButtonDirective, EmsChipComponent, EmsIconComponent, EmsMessageComponent, EmsPickerOption, EmsSelectComponent } from '@ems-management-consultants/ui';
@@ -7,6 +7,7 @@ import { RouterLink } from '@angular/router';
 import { ChartComponent, ChartOptionBuilder } from '../charts/chart.component';
 import { NetCashMonth, boundedMonths, changeFromPrior, formatExact, formatLabel, summarizeNetCash } from '../charts/net-cash';
 import { NetCashProjectionDto, NetCollectionsDto, NetCollectionsService } from '../metrics/net-collections.service';
+import { LoadProblemComponent } from '../shared/load-problem.component';
 import { apPeriodLabel } from './dashboard-format';
 import { SwitchComponent } from './switch.component';
 import { buildNetCashOption } from '../charts/net-cash-chart.options';
@@ -46,7 +47,7 @@ interface TableRow {
 /** The large net cash panel: filters, the headline for the latest month, and the line, bar or table view of the months. */
 @Component({
   selector: 'app-net-cash-panel',
-  imports: [ChartComponent, EmsButtonDirective, EmsChipComponent, EmsIconComponent, EmsMessageComponent, EmsSelectComponent, ReactiveFormsModule, RouterLink, SegmentedControlComponent, SwitchComponent],
+  imports: [ChartComponent, EmsButtonDirective, LoadProblemComponent, EmsChipComponent, EmsIconComponent, EmsMessageComponent, EmsSelectComponent, ReactiveFormsModule, RouterLink, SegmentedControlComponent, SwitchComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <section class="panel" aria-labelledby="net-cash-title" [attr.aria-busy]="series.isLoading()">
@@ -63,14 +64,11 @@ interface TableRow {
       </div>
 
       @if (projectionMissing()) {
-        <ems-message state="warn">{{ projection.error() ? 'The projection is not available right now.' : 'There is no forecast for the months after this period.' }}</ems-message>
+        <ems-message state="warn">{{ projection.error() ? 'We can\'t load the projection right now. Try again in a moment.' : 'There is no forecast for the months after this period.' }}</ems-message>
       }
 
-      @if (series.error()) {
-        <div class="panel__state" role="alert">
-          <ems-message state="error">Net cash is not available right now. Try again in a moment.</ems-message>
-          <button emsButton="flat" type="button" (click)="series.reload()">Try again</button>
-        </div>
+      @if (loadError() !== undefined) {
+        <app-load-problem [error]="loadError()" subject="net cash" (retry)="retry()" />
       } @else if (series.isLoading() && !series.hasValue()) {
         <p class="panel__state" role="status">Loading net cash…</p>
       } @else if (months().length === 0) {
@@ -308,6 +306,12 @@ export class NetCashPanelComponent {
   /** Which Service Line the projection covers, from the dashboard toggle. */
   readonly serviceLine = input<'air' | 'ground' | 'both'>('both');
 
+  /** The error from loading the list of periods, when it failed: without it there is no month to ask for, so the panel has nothing to show. */
+  readonly periodsError = input<unknown>(undefined);
+
+  /** The person asked to try again after the periods failed to load. */
+  readonly retryPeriods = output<void>();
+
   protected readonly chartKinds = CHART_KINDS;
   protected readonly ranges = RANGES;
   protected readonly callTypes = CALL_TYPES;
@@ -324,8 +328,19 @@ export class NetCashPanelComponent {
     stream: ({ params }) => (params ? this.netCollections.series(params.providerId, params.endPeriod, params.months) : of(null)),
   });
 
+  /** Why nothing can be shown, if something failed: the periods first, since the figures cannot be asked for without one. */
+  protected readonly loadError = computed<unknown>(() => this.periodsError() ?? this.series.error());
+
+  protected retry(): void {
+    if (this.periodsError() !== undefined) {
+      this.retryPeriods.emit();
+    } else {
+      this.series.reload();
+    }
+  }
+
   protected readonly months = computed<readonly NetCashMonth[]>(() =>
-    boundedMonths((this.series.value()?.points ?? []).map((p) => ({ label: p.label, year: p.year, value: p.value, kind: 'actual' as const }))),
+    boundedMonths(((this.series.hasValue() ? this.series.value() : undefined)?.points ?? []).map((p) => ({ label: p.label, year: p.year, value: p.value, kind: 'actual' as const }))),
   );
 
   /** The month and Service Line the breakdown page opens on: the same ones this panel shows. `both` opens on air. */
@@ -374,7 +389,7 @@ export class NetCashPanelComponent {
 
   /** The latest month's figure, how it moved from the month before, and both amounts written out. */
   protected readonly headline = computed(() => {
-    const points = this.series.value()?.points ?? [];
+    const points = (this.series.hasValue() ? this.series.value() : undefined)?.points ?? [];
     const latest = points.at(-1);
     if (!latest) return null;
     const prior = points.at(-2);

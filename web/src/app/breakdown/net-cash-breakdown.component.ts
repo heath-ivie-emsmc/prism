@@ -1,10 +1,11 @@
 import { ChangeDetectionStrategy, Component, computed, effect, inject, untracked } from '@angular/core';
 import { rxResource, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, ReactiveFormsModule } from '@angular/forms';
-import { ActivatedRoute, Router } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { map, of } from 'rxjs';
 import { EmsBreadcrumb, EmsBreadcrumbsComponent, EmsChipComponent, EmsIconComponent, EmsMessageComponent, EmsPickerOption, EmsSelectComponent } from '@ems-management-consultants/ui';
 import { AuthService } from '../auth/auth.service';
+import { LoadProblemComponent } from '../shared/load-problem.component';
 import { formatExact } from '../charts/net-cash';
 import { NetCashBreakdownDto, NetCollectionsPeriodsDto, NetCollectionsService } from '../metrics/net-collections.service';
 import { apPeriodEnd, apPeriodLabel, formatDate } from '../dashboard/dashboard-format';
@@ -58,7 +59,7 @@ const percent = (value: number | null): string => (value === null ? '' : `${Math
  */
 @Component({
   selector: 'app-net-cash-breakdown',
-  imports: [EmsBreadcrumbsComponent, EmsChipComponent, EmsIconComponent, EmsMessageComponent, EmsSelectComponent, ReactiveFormsModule],
+  imports: [LoadProblemComponent, EmsBreadcrumbsComponent, EmsChipComponent, EmsIconComponent, EmsMessageComponent, EmsSelectComponent, ReactiveFormsModule, RouterLink],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <main class="page">
@@ -77,12 +78,12 @@ const percent = (value: number | null): string => (value === null ? '' : `${Math
 
       <section class="app-panel" aria-labelledby="groups-title">
         <h2 id="groups-title">{{ data().terms.title }}</h2>
-        @if (failed()) {
-          <ems-message state="error">The breakdown is not available right now. Try again in a moment.</ems-message>
+        @if (loadError() !== undefined) {
+          <app-load-problem [error]="loadError()" subject="the breakdown" (retry)="retry()" />
         } @else if (empty()) {
           <ems-message state="neutral">There is no net cash for {{ periodLabel() }}.</ems-message>
         }
-        @if (data().stillPosting && !failed() && !empty()) {
+        @if (data().stillPosting && loadError() === undefined && !empty()) {
           <ems-message state="warn">
             {{ periodLabel() }} is still open, so cash is still posting. These figures are not final, and the change from {{ priorName() }} will shrink as it fills in.
           </ems-message>
@@ -124,10 +125,10 @@ const percent = (value: number | null): string => (value === null ? '' : `${Math
                   <dd>{{ group.miles }}</dd>
                 </div>
               </dl>
-              <button type="button" class="group__link" disabled [title]="comingSoon">
+              <a class="group__link" [routerLink]="['/dashboard/net-cash', group.key]" [queryParams]="{ period: month(), line: line() }">
                 See {{ group.name.toLowerCase() }} detail
                 <ems-icon name="arrow_forward" size="sm" />
-              </button>
+              </a>
             </article>
           }
         </div>
@@ -334,10 +335,7 @@ const percent = (value: number | null): string => (value === null ? '' : `${Math
       color: var(--ems-text-primary);
       font: inherit;
       font-weight: var(--ems-font-weight-bold);
-    }
-    .group__link:disabled {
-      cursor: not-allowed;
-      opacity: 0.6;
+      text-decoration: none;
     }
     .table-wrap {
       overflow-x: auto;
@@ -386,7 +384,6 @@ export class NetCashBreakdownComponent {
   private readonly router = inject(Router);
 
   protected readonly notAvailable = NOT_AVAILABLE;
-  protected readonly comingSoon = 'Coming soon';
   protected readonly allLocations: EmsPickerOption<string>[] = [{ value: 'all', label: 'All locations' }];
 
   protected readonly period = new FormControl<string>('', { nonNullable: true });
@@ -408,15 +405,15 @@ export class NetCashBreakdownComponent {
     stream: ({ params }) => (params ? this.netCollections.periods(params) : of(null)),
   });
   protected readonly periods = computed<EmsPickerOption<string>[]>(() =>
-    (this.periodsResource.value()?.periods ?? []).map((p) => ({ value: p.period, label: apPeriodLabel(p.period) })),
+    ((this.periodsResource.hasValue() ? this.periodsResource.value() : undefined)?.periods ?? []).map((p) => ({ value: p.period, label: apPeriodLabel(p.period) })),
   );
   protected readonly dataThrough = computed(() => {
-    const end = apPeriodEnd(this.periodsResource.value()?.periods[0]?.period ?? '');
+    const end = apPeriodEnd((this.periodsResource.hasValue() ? this.periodsResource.value() : undefined)?.periods[0]?.period ?? '');
     return end ? formatDate(end) : '';
   });
 
   /** The month being explained: the one in the address, else the newest with data. */
-  protected readonly month = computed(() => this.selectedPeriod() || (this.periodsResource.value()?.periods[0]?.period ?? ''));
+  protected readonly month = computed(() => this.selectedPeriod() || ((this.periodsResource.hasValue() ? this.periodsResource.value() : undefined)?.periods[0]?.period ?? ''));
   protected readonly periodLabel = computed(() => apPeriodLabel(this.month()));
   protected readonly currentName = computed(() => monthName(this.month()));
   protected readonly priorName = computed(() => priorMonthName(this.month()));
@@ -434,6 +431,16 @@ export class NetCashBreakdownComponent {
     return value ? toBreakdown(value, this.line()) : emptyBreakdown(this.line());
   });
   protected readonly failed = computed(() => this.breakdown.error() !== undefined);
+  /** The periods first: without a month there is nothing to ask the breakdown for. */
+  protected readonly loadError = computed<unknown>(() => this.periodsResource.error() ?? this.breakdown.error());
+
+  protected retry(): void {
+    if (this.periodsResource.error() !== undefined) {
+      this.periodsResource.reload();
+    } else {
+      this.breakdown.reload();
+    }
+  }
   protected readonly empty = computed(() => this.breakdown.hasValue() && !this.failed() && this.data().groups.length === 0 && this.breakdown.value() !== null);
   protected readonly locationLabel = computed(() => this.data().terms.locationHeading);
   protected readonly summary = computed(() => summarizeBreakdown(this.data().groups));

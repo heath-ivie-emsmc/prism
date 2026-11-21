@@ -9,6 +9,14 @@ export function priorMonthName(period: string): string {
   return month ? SHORT_MONTHS[(Number(month) + 10) % 12]! : '';
 }
 
+/** The accounting period before this one (yyyyMM), or empty for a bad period. */
+export function priorPeriod(period: string): string {
+  const match = /^(\d{4})(0[1-9]|1[0-2])$/.exec(period);
+  if (!match) return '';
+  const index = Number(match[1]) * 12 + Number(match[2]) - 2;
+  return `${Math.floor(index / 12)}${String((index % 12) + 1).padStart(2, '0')}`;
+}
+
 /** The short name of the month itself. */
 export function monthName(period: string): string {
   const month = /^\d{4}(0[1-9]|1[0-2])$/.exec(period)?.[1];

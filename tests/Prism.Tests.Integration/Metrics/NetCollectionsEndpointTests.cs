@@ -18,6 +18,7 @@ public sealed class NetCollectionsEndpointTests : IDisposable
     private readonly FakeNetCollections metric = new();
     private readonly FakeProjection projection = new();
     private readonly FakeBreakdown breakdown = new();
+    private readonly FakePayerMix payerMix = new();
     private readonly AuthTestFactory factory;
 
     public NetCollectionsEndpointTests()
@@ -32,6 +33,8 @@ public sealed class NetCollectionsEndpointTests : IDisposable
             services.AddSingleton<IProviderDivisionDirectory>(new FakeDivisions());
             services.RemoveAll<INetCashBreakdownMetric>();
             services.AddSingleton<INetCashBreakdownMetric>(breakdown);
+            services.RemoveAll<IPayerMixMetric>();
+            services.AddSingleton<IPayerMixMetric>(payerMix);
         });
         // Provider 100 in full, 200 limited to one Facility, 300 not numeric.
         factory.Directory.Providers.Clear();
@@ -340,6 +343,86 @@ public sealed class NetCollectionsEndpointTests : IDisposable
         Assert.Equal(100, metric.LastSeriesCall.ProviderId);
     }
 
+    [Fact]
+    public async Task Payer_mix_for_a_group_returns_the_shares_for_the_chosen_month_and_names_the_group()
+    {
+        (HttpStatusCode status, JsonElement body) = await GetAsync($"{Series}/payer-mix?period=202610&serviceLine=air&group=fixed-wing");
+
+        Assert.Equal(HttpStatusCode.OK, status);
+        Assert.Equal("payer_mix", body.GetProperty("metric").GetProperty("key").GetString());
+        Assert.Equal(("202610", "202609", "fixed-wing", "Fixed wing"), (body.GetProperty("period").GetString(), body.GetProperty("priorPeriod").GetString(), body.GetProperty("group").GetString(), body.GetProperty("groupName").GetString()));
+        JsonElement va = body.GetProperty("shares").EnumerateArray().Single(s => s.GetProperty("key").GetString() == "va");
+        Assert.Equal((5, 4), (va.GetProperty("current").GetInt32(), va.GetProperty("prior").GetInt32()));
+        Assert.Equal((100, new ApPeriod(2026, 10), ServiceLineFilter.Air, "fixed-wing"), payerMix.LastCall);
+    }
+
+    [Fact]
+    public async Task Payer_mix_without_parameters_uses_the_newest_period_and_air()
+    {
+        await GetAsync($"{Series}/payer-mix");
+
+        Assert.Equal((100, new ApPeriod(2026, 11), ServiceLineFilter.Air, (string?)null), payerMix.LastCall);
+    }
+
+    [Theory]
+    [InlineData("/api/v1/providers/999/metrics/net-collections/payer-mix")]
+    [InlineData("/api/v1/providers/200/metrics/net-collections/payer-mix")]
+    [InlineData("/api/v1/providers/abc/metrics/net-collections/payer-mix")]
+    public async Task Payer_mix_for_a_provider_the_user_is_not_assigned_to_or_is_limited_inside_is_not_found_and_never_queried(string url)
+    {
+        (HttpStatusCode status, _) = await GetAsync(url);
+
+        Assert.Equal(HttpStatusCode.NotFound, status);
+        Assert.Equal(0, payerMix.Calls);
+    }
+
+    [Fact]
+    public async Task Payer_mix_needs_the_dashboard_permission()
+    {
+        (HttpStatusCode status, _) = await GetAsync($"{Series}/payer-mix", Permissions.App);
+
+        Assert.Equal(HttpStatusCode.Forbidden, status);
+        Assert.Equal(0, payerMix.Calls);
+    }
+
+    [Theory]
+    [InlineData("period=2026-10")]
+    [InlineData("period=202613")]
+    [InlineData("serviceLine=1")]
+    [InlineData("serviceLine=Air,Ground")]
+    [InlineData("group=Fixed%20Wing")]
+    [InlineData("group=fixed-wing%27%3B%20DROP%20TABLE%20x")]
+    [InlineData("group=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")]
+    public async Task Payer_mix_with_bad_parameters_is_a_400_problem_and_nothing_is_queried(string query)
+    {
+        (HttpStatusCode status, JsonElement body) = await GetAsync($"{Series}/payer-mix?{query}");
+
+        Assert.Equal(HttpStatusCode.BadRequest, status);
+        Assert.True(body.TryGetProperty("errors", out _));
+        Assert.Equal(0, payerMix.Calls);
+    }
+
+    [Fact]
+    public async Task Payer_mix_holds_counts_only_no_payer_or_patient_names()
+    {
+        (_, JsonElement body) = await GetAsync($"{Series}/payer-mix?period=202610");
+
+        string text = body.GetRawText();
+        Assert.DoesNotContain("AETNA", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("primPay", text, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Payer_mix_in_a_warehouse_outage_is_a_503_that_says_nothing_about_why()
+    {
+        payerMix.Failure = new WarehouseUnavailableException(new InvalidOperationException("Host=secret.internal Password=hunter2"));
+
+        (HttpStatusCode status, JsonElement body) = await GetAsync($"{Series}/payer-mix?period=202610");
+
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, status);
+        Assert.DoesNotContain("hunter2", body.GetRawText(), StringComparison.Ordinal);
+    }
+
     private sealed class FakeNetCollections : INetCollectionsMetric
     {
         public List<ApPeriod> Periods { get; } = [new(2026, 11), new(2026, 10)];
@@ -428,6 +511,34 @@ public sealed class NetCollectionsEndpointTests : IDisposable
                 period.Month == 10,
                 [new NetCashBreakdownGroup("rotor-wing", "Rotor wing", true, current, prior)],
                 [new NetCashBreakdownRow("rotor-wing", "Rotor wing", true, "Rotor", "N119MF", current, prior)]));
+        }
+    }
+
+    private sealed class FakePayerMix : IPayerMixMetric
+    {
+        public Exception? Failure { get; set; }
+
+        public int Calls { get; private set; }
+
+        public (int ProviderId, ApPeriod Period, ServiceLineFilter ServiceLine, string? Group) LastCall { get; private set; }
+
+        public Task<PayerMix> GetPayerMixAsync(int providerId, ApPeriod period, ServiceLineFilter serviceLine, string? groupKey, CancellationToken cancellationToken)
+        {
+            Calls++;
+            LastCall = (providerId, period, serviceLine, groupKey);
+            if (Failure is not null)
+            {
+                return Task.FromException<PayerMix>(Failure);
+            }
+
+            return Task.FromResult(new PayerMix(
+                IPayerMixMetric.Definition,
+                period,
+                period.AddMonths(-1),
+                serviceLine,
+                groupKey,
+                groupKey is null ? null : "Fixed wing",
+                [new PayerMixShare("commercial", "Commercial", 3, 2), new PayerMixShare("va", "VA", 5, 4)]));
         }
     }
 }

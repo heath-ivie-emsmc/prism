@@ -128,12 +128,32 @@ describe('DashboardComponent header', () => {
     await result.fixture.whenStable();
     result.fixture.detectChanges();
 
-    const text = result.root.querySelector('app-net-cash-panel [role="alert"]')!.textContent!;
-    expect(text).toContain('Net cash is not available right now');
+    const text = result.root.querySelector('app-net-cash-panel app-load-problem')!.textContent!;
+    expect(text).toContain("We can't load net cash right now");
     expect(text).not.toContain('warehouse');
     [...result.root.querySelectorAll<HTMLButtonElement>('app-net-cash-panel button')].find((b) => b.textContent?.includes('Try again'))!.click();
     await settle(result.fixture);
     http.expectOne((r) => r.url === BASE).flush(SERIES);
+  });
+
+  it('says net cash cannot load, not that there is none, when the list of periods fails, and retries the periods', async () => {
+    const result = await create(PROVIDER);
+    const http = TestBed.inject(HttpTestingController);
+    http.expectOne(`${BASE}/periods`).flush(
+      { title: 'The data warehouse is not available. Try again shortly.', traceId: '00-77114806214001843f6761e5254e96e3-cfc570a3d3f659d3-03' },
+      { status: 503, statusText: 'Service Unavailable' },
+    );
+    await result.fixture.whenStable();
+    result.fixture.detectChanges();
+
+    const text = result.root.querySelector('app-net-cash-panel app-load-problem')!.textContent!;
+    expect(text).toContain("We can't load net cash right now");
+    expect(text).toContain('77114806214001843f6761e5254e96e3');
+    expect(text).not.toContain('warehouse');
+    expect(result.root.querySelector('app-net-cash-panel')!.textContent).not.toContain('No net cash data');
+    [...result.root.querySelectorAll<HTMLButtonElement>('app-net-cash-panel button')].find((b) => b.textContent?.includes('Try again'))!.click();
+    await settle(result.fixture);
+    http.expectOne(`${BASE}/periods`).flush(PERIODS);
   });
 
   it('lays out the net cash panel, four metric tiles and the projection panel', async () => {

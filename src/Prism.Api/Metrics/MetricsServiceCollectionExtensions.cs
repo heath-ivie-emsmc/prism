@@ -17,6 +17,7 @@ public static class MetricsServiceCollectionExtensions
         services.AddSingleton<INetCollectionsMetric, NetCollectionsMetric>();
         services.AddSingleton<INetCashProjectionMetric, NetCashProjectionMetric>();
         services.AddSingleton<INetCashBreakdownMetric, NetCashBreakdownMetric>();
+        services.AddSingleton<IPayerMixMetric, PayerMixMetric>();
         services.AddExceptionHandler<WarehouseExceptionHandler>();
         return services;
     }

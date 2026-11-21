@@ -66,6 +66,20 @@ function breakdownFor(line: 'air' | 'ground', period: string) {
   };
 }
 
+/** Payer counts for a group: 100 transports in Sep (prior) and 100 in Oct (current), with Medicaid rising from 18% to 23%, as in the mockup. */
+function payerMixFor(): { key: string; name: string; prior: number; current: number }[] {
+  const rows: [string, string, number, number][] = [
+    ['commercial', 'Commercial', 30, 26],
+    ['medicare', 'Medicare', 40, 38],
+    ['medicaid', 'Medicaid', 18, 23],
+    ['other-gov', 'Other government', 6, 6],
+    ['va', 'VA', 3, 4],
+    ['facility', 'Facility', 2, 1],
+    ['patient', 'Patient responsibility', 1, 2],
+  ];
+  return rows.map(([key, name, prior, current]) => ({ key, name, prior, current }));
+}
+
 /** Answers the net cash routes the way the API does, for the provider the mocked user has. */
 async function mockNetCollections(page: import('@playwright/test').Page): Promise<void> {
   await page.route('**/api/v1/providers/*/metrics/net-collections/periods', (route) =>
@@ -105,6 +119,23 @@ async function mockNetCollections(page: import('@playwright/test').Page): Promis
         // September is still open in the mock, the earlier months are closed.
         periodOpen: period >= '202609',
         ...breakdownFor(line, period),
+      },
+    });
+  });
+  await page.route(/\/api\/v1\/providers\/[^/]+\/metrics\/net-collections\/payer-mix(\?.*)?$/, (route) => {
+    const url = new URL(route.request().url());
+    const period = url.searchParams.get('period') ?? '202610';
+    const group = url.searchParams.get('group');
+    return route.fulfill({
+      json: {
+        metric: { key: 'payer_mix', name: 'Payer mix', description: 'Transports by primary payer group.', unit: 'transports' },
+        providerId: '526',
+        period,
+        priorPeriod: String(Number(period) - 1),
+        serviceLine: url.searchParams.get('serviceLine') === 'ground' ? 'ground' : 'air',
+        group,
+        groupName: group === 'fixed-wing' ? 'Fixed Wing' : group === 'als' ? 'ALS' : group,
+        shares: payerMixFor(),
       },
     });
   });

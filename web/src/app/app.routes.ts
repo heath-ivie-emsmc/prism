@@ -22,6 +22,10 @@ export const routes: Routes = [
         path: 'dashboard/net-cash',
         loadComponent: () => import('./breakdown/net-cash-breakdown.component').then((m) => m.NetCashBreakdownComponent),
       },
+      {
+        path: 'dashboard/net-cash/:group',
+        loadComponent: () => import('./payer-mix/payer-mix.component').then((m) => m.PayerMixComponent),
+      },
     ],
   },
   { path: '**', redirectTo: '' },

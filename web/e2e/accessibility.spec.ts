@@ -92,10 +92,61 @@ test.describe('accessibility', () => {
 
     await page.getByRole('switch', { name: 'Show 3-month projection' }).click();
 
-    await expect(page.getByText('The projection is not available right now.')).toBeVisible();
+    await expect(page.getByText("We can't load the projection right now.")).toBeVisible();
     expect(asked[0]).toBe('?endPeriod=202610&serviceLine=air');
     await expect(page.getByText('Expected, next 3 months')).toBeHidden();
     expect(await axeViolations(page)).toEqual([]);
+  });
+
+  test('when the data cannot load the dashboard says so calmly, with a reference, and recovers on retry', async ({ page }) => {
+    let fail = true;
+    await page.route(/net-collections\/periods/, (route) =>
+      fail
+        ? route.fulfill({ status: 503, json: { title: 'The data warehouse is not available. Try again shortly.', traceId: '00-77114806214001843f6761e5254e96e3-cfc570a3d3f659d3-03' } })
+        : route.fallback(),
+    );
+    await page.goto('/dashboard');
+    const problem = page.locator('app-net-cash-panel app-load-problem');
+    await problem.waitFor();
+
+    await expect(problem).toContainText("We can't load net cash right now");
+    await expect(problem).toContainText('Reference: 77114806214001843f6761e5254e96e3');
+    await expect(page.locator('app-net-cash-panel')).not.toContainText('No net cash data');
+    await expect(page.locator('app-net-cash-panel')).not.toContainText('warehouse');
+    expect(await axeViolations(page)).toEqual([]);
+    expect((await layoutErrors(page)).errors).toEqual([]);
+    await page.screenshot({ path: 'e2e-report/dashboard-load-problem.png' });
+
+    fail = false;
+    await problem.getByRole('button', { name: 'Try again' }).focus();
+    await page.keyboard.press('Enter');
+
+    await expect(problem).toHaveCount(0);
+    await page.locator('app-chart canvas').waitFor();
+  });
+
+  test('the load problem fits at 320px', async ({ page }) => {
+    await page.setViewportSize({ width: 320, height: 700 });
+    await page.route(/net-collections\/periods/, (route) => route.fulfill({ status: 503, json: { title: 'x', traceId: '77114806214001843f6761e5254e96e3' } }));
+    await page.goto('/dashboard');
+    await page.locator('app-load-problem').waitFor();
+    await page.evaluate(() => document.fonts.ready);
+    await page.waitForTimeout(400);
+
+    expect((await layoutErrors(page)).errors).toEqual([]);
+    expect(await axeViolations(page)).toEqual([]);
+  });
+
+  test('the load problem is readable in forced colors', async ({ page }) => {
+    await page.emulateMedia({ forcedColors: 'active' });
+    await page.route(/net-collections\/periods/, (route) => route.fulfill({ status: 503, json: { title: 'x', traceId: '77114806214001843f6761e5254e96e3' } }));
+    await page.goto('/dashboard');
+    await page.locator('app-load-problem').waitFor();
+    await page.evaluate(() => document.fonts.ready);
+    await page.waitForTimeout(400);
+
+    expect((await layoutErrors(page)).errors).toEqual([]);
+    expect(await axeViolations(page, undefined, ['color-contrast'])).toEqual([]);
   });
 
   test('Last 12 months shows twelve months in the table', async ({ page }) => {

@@ -58,7 +58,7 @@ const CRUMBS: EmsBreadcrumb[] = [{ label: 'Dashboard' }];
 
       <!-- Layout only: every figure below is placeholder content until the Metric Catalog serves real values. -->
       <section class="dashboard__overview" aria-label="Key metrics">
-        <app-net-cash-panel class="dashboard__cash" [providerId]="providerId()" [endPeriod]="endPeriod()" [serviceLine]="serviceLine()" />
+        <app-net-cash-panel class="dashboard__cash" [providerId]="providerId()" [endPeriod]="endPeriod()" [serviceLine]="serviceLine()" [periodsError]="periodsError()" (retryPeriods)="retryPeriods()" />
 
         <app-kpi-card title="Transports" value="140" [delta]="{ direction: 'down', text: '6 fewer than Sep' }" footnote="Rotor wing 92 · Fixed wing 48">
           <div class="bars" role="img" aria-label="Transports by month, last six months">
@@ -264,8 +264,14 @@ export class DashboardComponent {
     stream: ({ params }) => (params ? this.netCollections.periods(params) : of(null)),
   });
 
+  protected readonly periodsError = computed<unknown>(() => this.periodsResource.error());
+
+  protected retryPeriods(): void {
+    this.periodsResource.reload();
+  }
+
   /** The newest accounting period that has data. The data is complete through the end of it. */
-  private readonly newestPeriod = computed(() => this.periodsResource.value()?.periods[0]?.period ?? '');
+  private readonly newestPeriod = computed(() => (this.periodsResource.hasValue() ? this.periodsResource.value() : undefined)?.periods[0]?.period ?? '');
   protected readonly dataThrough = computed(() => {
     const end = apPeriodEnd(this.newestPeriod());
     return end ? formatDate(end) : '';
@@ -278,7 +284,7 @@ export class DashboardComponent {
 
   protected readonly labels = computed(() => defaultLabels(this.serviceLine()));
   protected readonly periods = computed<EmsPickerOption<string>[]>(() =>
-    (this.periodsResource.value()?.periods ?? []).map((p) => ({ value: p.period, label: apPeriodLabel(p.period) })),
+    ((this.periodsResource.hasValue() ? this.periodsResource.value() : undefined)?.periods ?? []).map((p) => ({ value: p.period, label: apPeriodLabel(p.period) })),
   );
   protected readonly endPeriod = toSignal(this.period.valueChanges, { initialValue: this.period.value });
   protected readonly divisionOptions = computed<EmsPickerOption<string>[]>(() => [

@@ -51,3 +51,16 @@ for (const view of ['bar', 'table'] as const) {
     });
   }
 }
+
+test.describe('app icons', () => {
+  test('the page links an SVG, an ICO and an Apple touch icon, and each one loads', async ({ page, request }) => {
+    await page.goto('/login');
+    const hrefs = await page.locator('link[rel~="icon"], link[rel="apple-touch-icon"]').evaluateAll((links) => links.map((l) => (l as HTMLLinkElement).href));
+    expect(hrefs.map((h) => new URL(h).pathname).sort()).toEqual(['/apple-touch-icon.png', '/favicon.ico', '/favicon.svg']);
+    for (const href of hrefs) {
+      const response = await request.get(href);
+      expect(response.ok(), href).toBe(true);
+      expect(response.headers()['content-type'], href).toMatch(/image\/|icon/);
+    }
+  });
+});

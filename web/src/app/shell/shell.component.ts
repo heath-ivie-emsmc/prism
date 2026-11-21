@@ -125,7 +125,7 @@ const MODE_LABEL: Readonly<Record<string, string>> = {
       background: #fff;
     }
     .shell__logo-plate--dark {
-      background: #26262b;
+      background: #021329;
     }
     .shell__logo {
       display: block;

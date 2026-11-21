@@ -98,7 +98,7 @@ test.describe('net cash breakdown', () => {
     await page.route(/net-collections\/breakdown/, (route) => route.fulfill({ status: 503, json: { title: 'Service Unavailable' } }));
     await page.goto('/dashboard/net-cash?period=202610&line=air');
 
-    await expect(page.getByText('The breakdown is not available right now.')).toBeVisible();
+    await expect(page.getByText("We can't load the breakdown right now")).toBeVisible();
     expect(await axeViolations(page)).toEqual([]);
   });
 

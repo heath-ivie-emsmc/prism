@@ -86,6 +86,16 @@ It uses the rule behind `kpi_net_collections_ap__prov`, so the groups add up to 
 - The mix is scene and interfacility transports for air, emergency and non-emergency for ground (`response_type`).
 - Not read: any patient column of the trip table. Only aggregates leave the query.
 
+## Payer mix
+
+`GET /api/v1/providers/{providerId}/metrics/net-collections/payer-mix` gives the share of transports by primary payer for one aircraft type or level of service (`group`, a key from the breakdown route), in a month and the month before. It reads `reporting.trip_detail_snapshot`, latest load only, one row per encounter.
+
+- **Month:** the date of service (`dos`), not the posting month. Payer mix counts transports as they happened. The breakdown's transport counts are encounters with cash posted in the month, so the two will differ.
+- **Groups:** Commercial is `Insurance` and `TPL`. Medicare is `Medicare` and `Medicare Advantage`. Medicaid is `Medicaid` and `Medicaid MCO`. `Other Govt. Payers` is Other government. `Facility` and `Patient` are their own groups. A transport with no payer shows as Not recorded, and only when there is one.
+- **VA:** the warehouse has no VA category. A payer whose name contains the word VA, CHAMPVA (any `CHAMP...`) or TRICARE is VA, whatever financial class it has. For Mercy that is mostly `IV-VA COMMUNITY CLAIMS`, filed under Insurance. The match is on whole words, so a name that only contains the letters (AVA HEALTH) is not VA.
+- **Open months:** the newest months have few transports until billing catches up on payers, so their shares move.
+- Only counts leave the query. Payer names are used inside it and never returned.
+
 ## Not yet done
 
 - Caching results by Provider, query and the Data Through watermark.
