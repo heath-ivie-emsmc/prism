@@ -1,14 +1,23 @@
-import { ChangeDetectionStrategy, Component, computed, signal } from '@angular/core';
-import { EmsChipComponent, EmsIconComponent, EmsMessageComponent, EmsPickerOption, EmsSelectComponent } from '@ems-management-consultants/ui';
+import { ChangeDetectionStrategy, Component, computed, inject, input, signal } from '@angular/core';
+import { rxResource } from '@angular/core/rxjs-interop';
+import { of } from 'rxjs';
+import { EmsButtonDirective, EmsChipComponent, EmsIconComponent, EmsMessageComponent, EmsPickerOption, EmsSelectComponent } from '@ems-management-consultants/ui';
 import { FormControl, ReactiveFormsModule } from '@angular/forms';
+import { RouterLink } from '@angular/router';
 import { ChartComponent, ChartOptionBuilder } from '../charts/chart.component';
-import { NetCashMonth, boundedMonths, changeFromPrior, formatExact, summarizeNetCash, formatCompact } from '../charts/net-cash';
+import { NetCashMonth, boundedMonths, changeFromPrior, formatExact, formatLabel, summarizeNetCash } from '../charts/net-cash';
+import { NetCashProjectionDto, NetCollectionsDto, NetCollectionsService } from '../metrics/net-collections.service';
+import { apPeriodLabel } from './dashboard-format';
+import { SwitchComponent } from './switch.component';
 import { buildNetCashOption } from '../charts/net-cash-chart.options';
 import { SegmentOption, SegmentedControlComponent } from './segmented-control.component';
 
 type ChartKind = 'line' | 'bar' | 'table';
 type Range = '6' | '12';
 type CallType = 'all' | 'interfacility' | 'scene';
+
+/** The warehouse view behind this panel has no call type or pickup location, so those filters are shown but off until it does. */
+const FILTER_NOT_AVAILABLE = 'Not available for this data yet';
 
 const CHART_KINDS: readonly SegmentOption<ChartKind>[] = [
   { value: 'line', label: 'Line chart', icon: 'show_chart' },
@@ -26,120 +35,103 @@ const CALL_TYPES: readonly SegmentOption<CallType>[] = [
 ];
 const PICKUP_LOCATIONS: EmsPickerOption<string>[] = [{ value: 'all', label: 'All pickup locations' }];
 
-/** Layout only: placeholder figures until the Metric Catalog serves the net cash series. */
-const PLACEHOLDER_MONTHS: readonly NetCashMonth[] = [
-  { label: 'May', year: 2026, value: 1_180_000, kind: 'actual' },
-  { label: 'Jun', year: 2026, value: 1_220_000, kind: 'actual' },
-  { label: 'Jul', year: 2026, value: 1_200_000, kind: 'actual' },
-  { label: 'Aug', year: 2026, value: 1_240_000, kind: 'actual' },
-  { label: 'Sep', year: 2026, value: 1_250_460, kind: 'actual' },
-  { label: 'Oct', year: 2026, value: 1_100_240, kind: 'actual' },
-  { label: 'Nov', year: 2026, value: 1_214_774, kind: 'projected', low: 1_150_000, high: 1_280_000 },
-  { label: 'Dec', year: 2026, value: 1_204_722, kind: 'projected', low: 1_120_000, high: 1_290_000 },
-  { label: 'Jan', year: 2027, value: 1_197_967, kind: 'projected', low: 1_080_000, high: 1_320_000 },
-];
-
 interface TableRow {
   readonly month: string;
   readonly value: string;
-  readonly range: string;
   readonly change: string;
   readonly direction: 'up' | 'down' | null;
-  readonly projected: boolean;
   readonly latest: boolean;
 }
 
-/** The large Air net cash panel: filters, headline, narrative, trend and projection. */
+/** The large net cash panel: filters, the headline for the latest month, and the line, bar or table view of the months. */
 @Component({
   selector: 'app-net-cash-panel',
-  imports: [ChartComponent, EmsChipComponent, EmsIconComponent, EmsMessageComponent, EmsSelectComponent, ReactiveFormsModule, SegmentedControlComponent],
+  imports: [ChartComponent, EmsButtonDirective, EmsChipComponent, EmsIconComponent, EmsMessageComponent, EmsSelectComponent, ReactiveFormsModule, RouterLink, SegmentedControlComponent, SwitchComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    <section class="panel" aria-labelledby="net-cash-title">
+    <section class="panel" aria-labelledby="net-cash-title" [attr.aria-busy]="series.isLoading()">
       <header class="panel__header">
-        <h2 id="net-cash-title">Air net cash collected</h2>
+        <h2 id="net-cash-title">Net cash collected</h2>
         <app-segmented-control label="Chart type" [options]="chartKinds" [(value)]="chartKind" [iconOnly]="true" />
       </header>
 
       <div class="panel__filters">
         <app-segmented-control label="Date range" [options]="ranges" [(value)]="range" />
-        <app-segmented-control label="Call type" [options]="callTypes" [(value)]="callType" />
-        <ems-select class="panel__pickup" label="Pickup location" [options]="pickupLocations" [formControl]="pickup" [clearable]="false" />
-        <label class="panel__switch">
-          <input type="checkbox" role="switch" [checked]="showProjection()" (change)="showProjection.set(!showProjection())" />
-          Show 3-month projection
-        </label>
+        <app-segmented-control label="Call type" [options]="callTypes" [(value)]="callType" [disabled]="true" [title]="notAvailable" />
+        <ems-select class="panel__pickup" label="Pickup location" [options]="pickupLocations" [formControl]="pickup" [clearable]="false" [title]="notAvailable" />
+        <app-switch class="panel__projection" label="Show 3-month projection" [(checked)]="showProjection" [disabled]="chartKind() === 'table'" />
       </div>
 
-      <div class="panel__headline">
-        <div class="panel__total">
-          <span class="panel__amount">$1.10M</span>
-          <ems-chip state="error" icon="trending_down">-12% vs Sep</ems-chip>
-          <span class="panel__detail">$1,100,240.00 in October · $1,250,460.00 in September</span>
-        </div>
-        @if (showProjection()) {
-          <div class="panel__expected">
-            <span class="panel__expected-label">Expected, next 3 months</span>
-            <span class="panel__expected-amount">$3.62M</span>
-            <span class="panel__expected-range">Likely $3.35M to $3.88M</span>
-          </div>
-        }
-      </div>
-
-      <ems-message state="brand" icon="auto_awesome">
-        Most of the drop is in fixed wing. A one-time catch-up payment inflated September, and more October patients were on Medicaid.
-        2 denied claims need action. November should recover to about $1.21M as Medicare pays October transports.
-        <a href="#what-changed" class="panel__link">See what changed</a>
-      </ems-message>
-
-      @if (chartKind() === 'table') {
-        <div class="panel__table-wrap" role="region" aria-label="Net cash by month" tabindex="0">
-          <table class="panel__table">
-            <caption class="panel__sr">Net cash collected by month</caption>
-            <thead>
-              <tr>
-                <th scope="col">Month</th>
-                <th scope="col" class="panel__num">Net cash</th>
-                <th scope="col" class="panel__num">Change vs prior month</th>
-                <th scope="col">Type</th>
-              </tr>
-            </thead>
-            <tbody>
-              @for (row of rows(); track row.month) {
-                <tr [class.panel__row--projected]="row.projected">
-                  <th scope="row">{{ row.month }}</th>
-                  <td class="panel__num">
-                    <span [class.panel__strong]="row.latest">{{ row.value }}</span>
-                    @if (row.range) {
-                      <span class="panel__range">{{ row.range }}</span>
-                    }
-                  </td>
-                  <td class="panel__num">
-                    @if (row.direction) {
-                      <ems-icon [name]="row.direction === 'up' ? 'arrow_upward' : 'arrow_downward'" size="sm" />
-                    }
-                    {{ row.change }}
-                  </td>
-                  <td>
-                    @if (row.projected) {
-                      <ems-chip state="info">Projected</ems-chip>
-                    } @else {
-                      Actual
-                    }
-                  </td>
-                </tr>
-              }
-            </tbody>
-          </table>
-        </div>
-      } @else {
-        <app-chart [option]="option()" [label]="summary()" />
+      @if (projectionMissing()) {
+        <ems-message state="warn">{{ projection.error() ? 'The projection is not available right now.' : 'There is no forecast for the months after this period.' }}</ems-message>
       }
 
-      <p class="panel__note">
-        Select a projected month to see its detail below, or an actual month to see what drove it. Cash is by payment date.
-        Air claims can take 180 days or more to collect.
-      </p>
+      @if (series.error()) {
+        <div class="panel__state" role="alert">
+          <ems-message state="error">Net cash is not available right now. Try again in a moment.</ems-message>
+          <button emsButton="flat" type="button" (click)="series.reload()">Try again</button>
+        </div>
+      } @else if (series.isLoading() && !series.hasValue()) {
+        <p class="panel__state" role="status">Loading net cash…</p>
+      } @else if (months().length === 0) {
+        <p class="panel__state" role="status">No net cash data for this period.</p>
+      } @else {
+        @if (headline(); as headline) {
+          <div class="panel__headline">
+            <div class="panel__total">
+              <a class="panel__amount panel__amount-link" routerLink="/dashboard/net-cash" [queryParams]="breakdownParams()" [attr.aria-label]="headline.amount + ', see what drove ' + breakdownLabel()">
+                {{ headline.amount }}
+                <ems-icon name="arrow_forward" size="sm" />
+              </a>
+              @if (headline.change) {
+                <ems-chip [state]="headline.up ? 'success' : 'error'" [icon]="headline.up ? 'trending_up' : 'trending_down'">{{ headline.change }}</ems-chip>
+              }
+              <span class="panel__detail">{{ headline.detail }}</span>
+            </div>
+            <!-- Always laid out, only hidden while the switch is off, so turning it on cannot move anything else on the page. -->
+            <div class="panel__expected" [class.panel__expected--off]="!projected()" [attr.aria-hidden]="!projected()" [attr.inert]="projected() ? null : ''">
+              <span class="panel__detail">Expected, next 3 months</span>
+              <span class="panel__expected-amount">{{ expectedTotal() }}</span>
+              <span class="panel__detail">Likely {{ expectedRange() }}</span>
+            </div>
+          </div>
+        }
+
+        @if (chartKind() === 'table') {
+          <div class="panel__table-wrap" role="region" aria-label="Net cash by month" tabindex="0">
+            <table class="panel__table">
+              <caption class="panel__sr">Net cash collected by month</caption>
+              <thead>
+                <tr>
+                  <th scope="col">Month</th>
+                  <th scope="col" class="panel__num">Net cash</th>
+                  <th scope="col" class="panel__num">Change vs prior month</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (row of rows(); track row.month) {
+                  <tr>
+                    <th scope="row">{{ row.month }}</th>
+                    <td class="panel__num">
+                      <span [class.panel__strong]="row.latest">{{ row.value }}</span>
+                    </td>
+                    <td class="panel__num">
+                      @if (row.direction) {
+                        <ems-icon [name]="row.direction === 'up' ? 'arrow_upward' : 'arrow_downward'" size="sm" />
+                      }
+                      {{ row.change }}
+                    </td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        } @else {
+          <app-chart [option]="option()" [label]="summary()" />
+        }
+      }
+
+      <p class="panel__note">Cash is by the accounting period the payment was posted in, from the latest data load.</p>
     </section>
   `,
   styles: `
@@ -151,9 +143,14 @@ interface TableRow {
       flex-direction: column;
       gap: 1rem;
       padding: 1.25rem;
-      border: 1px solid var(--ems-border-neutral-subtle);
-      border-radius: var(--ems-corner-xl, 1rem);
-      background: var(--ems-surface-neutral-subtle);
+      /* The same surface, ring and shadow as the library card the other panels use, so they read as one set. */
+      border-radius: var(--ems-corner-md);
+      background: var(--ems-surface-neutral-default);
+      box-shadow:
+        inset 0 0 0 var(--ems-border-width-default) var(--ems-border-neutral-default),
+        var(--ems-fx-neutral-default-frosted-raised-glowing);
+      -webkit-backdrop-filter: var(--ems-fx-frosted);
+      backdrop-filter: var(--ems-fx-frosted);
     }
     .panel__header {
       display: flex;
@@ -177,12 +174,22 @@ interface TableRow {
     .panel__pickup {
       min-width: 14rem;
     }
-    .panel__switch {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.5rem;
+    .panel__projection {
       margin-left: auto;
-      font-weight: var(--ems-font-weight-bold);
+    }
+    .panel__expected {
+      display: flex;
+      flex-direction: column;
+      padding-left: 1rem;
+      border-left: 2px dotted var(--ems-border-neutral-default);
+    }
+    .panel__expected--off {
+      visibility: hidden;
+    }
+    .panel__expected-amount {
+      font-size: var(--ems-font-size-heading);
+      line-height: var(--ems-line-height-heading);
+      font-weight: var(--ems-font-weight-heavy);
     }
     .panel__headline {
       display: flex;
@@ -197,37 +204,43 @@ interface TableRow {
       align-items: center;
       gap: 0.75rem;
     }
+    .panel__amount-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      min-height: 2.75rem;
+      color: inherit;
+      text-decoration: none;
+    }
+    .panel__amount-link:hover .panel__amount-arrow,
+    .panel__amount-link:hover ems-icon {
+      color: var(--ems-text-primary);
+    }
+    .panel__amount-link:focus-visible {
+      outline: 2px solid var(--ems-border-focus-default, currentColor);
+      outline-offset: 2px;
+      border-radius: var(--ems-corner-sm, 0.5rem);
+    }
     .panel__amount {
       font-size: var(--ems-font-size-title);
       line-height: var(--ems-line-height-title);
       font-weight: var(--ems-font-weight-heavy);
     }
     .panel__detail,
-    .panel__expected-label,
-    .panel__expected-range,
     .panel__note {
       color: var(--ems-text-muted);
       font-size: var(--ems-font-size-small);
       line-height: var(--ems-line-height-small);
     }
-    .panel__expected {
-      display: flex;
-      flex-direction: column;
-      padding-left: 1rem;
-      border-left: 1px dashed var(--ems-border-neutral-default);
-    }
-    .panel__expected-amount {
-      font-size: var(--ems-font-size-title);
-      line-height: var(--ems-line-height-title);
-      font-weight: var(--ems-font-weight-heavy);
-    }
-    .panel__link {
-      display: block;
-      margin-top: 0.25rem;
-      font-weight: var(--ems-font-weight-bold);
-    }
     .panel__note {
       margin: 0;
+    }
+    .panel__state {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      padding: 2rem 0;
+      color: var(--ems-text-muted);
     }
     .panel__table-wrap {
       overflow-x: auto;
@@ -284,41 +297,109 @@ interface TableRow {
   `,
 })
 export class NetCashPanelComponent {
+  private readonly netCollections = inject(NetCollectionsService);
+
+  /** The Provider whose figures to show, from the signed-in user's own Providers. The API checks it again. */
+  readonly providerId = input.required<string | null>();
+
+  /** The newest accounting period to show, as yyyyMM. Empty until the periods have loaded. */
+  readonly endPeriod = input.required<string>();
+
+  /** Which Service Line the projection covers, from the dashboard toggle. */
+  readonly serviceLine = input<'air' | 'ground' | 'both'>('both');
+
   protected readonly chartKinds = CHART_KINDS;
   protected readonly ranges = RANGES;
   protected readonly callTypes = CALL_TYPES;
   protected readonly pickupLocations = PICKUP_LOCATIONS;
+  protected readonly notAvailable = FILTER_NOT_AVAILABLE;
 
   protected readonly chartKind = signal<ChartKind>('line');
   protected readonly range = signal<Range>('6');
   protected readonly callType = signal<CallType>('all');
-  protected readonly showProjection = signal(true);
-  private readonly months = computed(() => {
-    const all = boundedMonths(PLACEHOLDER_MONTHS);
-    return this.showProjection() ? all : all.filter((m) => m.kind === 'actual');
+  protected readonly pickup = new FormControl<string>({ value: 'all', disabled: true }, { nonNullable: true });
+
+  protected readonly series = rxResource<NetCollectionsDto | null, { providerId: string; endPeriod: string; months: number } | null>({
+    params: () => (this.providerId() && this.endPeriod() ? { providerId: this.providerId()!, endPeriod: this.endPeriod(), months: Number(this.range()) } : null),
+    stream: ({ params }) => (params ? this.netCollections.series(params.providerId, params.endPeriod, params.months) : of(null)),
   });
 
-  protected readonly summary = computed(() => summarizeNetCash(this.months()));
+  protected readonly months = computed<readonly NetCashMonth[]>(() =>
+    boundedMonths((this.series.value()?.points ?? []).map((p) => ({ label: p.label, year: p.year, value: p.value, kind: 'actual' as const }))),
+  );
+
+  /** The month and Service Line the breakdown page opens on: the same ones this panel shows. `both` opens on air. */
+  protected readonly breakdownParams = computed(() => ({ period: this.endPeriod(), line: this.serviceLine() === 'ground' ? 'ground' : 'air' }));
+  protected readonly breakdownLabel = computed(() => (this.serviceLine() === 'ground' ? 'level of service' : 'aircraft type'));
+
+  protected readonly showProjection = signal(false);
+
+  private readonly apiServiceLine = computed<'all' | 'air' | 'ground'>(() => {
+    const line = this.serviceLine();
+    return line === 'both' ? 'all' : line;
+  });
+
+  /** Asked for only while the switch is on and a chart (not the table) is showing. */
+  protected readonly projection = rxResource<NetCashProjectionDto | null, { providerId: string; endPeriod: string; serviceLine: 'all' | 'air' | 'ground' } | null>({
+    params: () =>
+      this.showProjection() && this.chartKind() !== 'table' && this.providerId() && this.endPeriod()
+        ? { providerId: this.providerId()!, endPeriod: this.endPeriod(), serviceLine: this.apiServiceLine() }
+        : null,
+    stream: ({ params }) => (params ? this.netCollections.projection(params.providerId, params.endPeriod, params.serviceLine) : of(null)),
+  });
+
+  /** The forecast months and their sums, or null while off, loading, failed, or when the warehouse has no forecast. */
+  protected readonly projected = computed(() => {
+    const value = this.projection.hasValue() ? this.projection.value() : null;
+    if (!value || value.months.length === 0 || this.chartKind() === 'table' || !this.showProjection()) return null;
+    return {
+      total: value.total,
+      low: value.low,
+      high: value.high,
+      months: value.months.map((m): NetCashMonth => ({ label: m.label, year: m.year, value: m.value, kind: 'projected', low: m.low, high: m.high })),
+    };
+  });
+  /** The switch is on but there is nothing to draw. */
+  protected readonly projectionMissing = computed(() => this.showProjection() && this.chartKind() !== 'table' && !this.projection.isLoading() && (this.projection.error() !== undefined || (this.projection.hasValue() && this.projected() === null)));
+  protected readonly expectedTotal = computed(() => formatLabel(this.projected()?.total ?? 3_000_000));
+  protected readonly expectedRange = computed(() => `${formatLabel(this.projected()?.low ?? 0)} to ${formatLabel(this.projected()?.high ?? 0)}`);
+
+  protected readonly chartMonths = computed<readonly NetCashMonth[]>(() => [...this.months(), ...(this.projected()?.months ?? [])]);
+  protected readonly summary = computed(() => summarizeNetCash(this.chartMonths()));
   protected readonly option = computed<ChartOptionBuilder>(() => {
-    const months = this.months();
+    const months = this.chartMonths();
     const kind = this.chartKind() === 'bar' ? 'bar' : 'line';
     return (colors) => buildNetCashOption(months, kind, colors);
   });
+
+  /** The latest month's figure, how it moved from the month before, and both amounts written out. */
+  protected readonly headline = computed(() => {
+    const points = this.series.value()?.points ?? [];
+    const latest = points.at(-1);
+    if (!latest) return null;
+    const prior = points.at(-2);
+    const change = prior && prior.value !== 0 ? Math.round(((latest.value - prior.value) / prior.value) * 100) : null;
+    return {
+      amount: formatLabel(latest.value),
+      up: (change ?? 0) >= 0,
+      change: change === null || !prior ? '' : `${change > 0 ? '+' : ''}${change}% vs ${prior.label}`,
+      detail: prior
+        ? `${formatExact(latest.value)} in ${apPeriodLabel(latest.period).split(' ')[0]} · ${formatExact(prior.value)} in ${apPeriodLabel(prior.period).split(' ')[0]}`
+        : `${formatExact(latest.value)} in ${apPeriodLabel(latest.period).split(' ')[0]}`,
+    };
+  });
+
   protected readonly rows = computed<readonly TableRow[]>(() => {
     const months = this.months();
-    const lastActual = months.reduce((last, m, i) => (m.kind === 'actual' ? i : last), -1);
     return months.map((m, i) => {
       const change = changeFromPrior(months, i);
       return {
         month: `${m.label} ${m.year}`,
         value: formatExact(m.value),
-        range: m.low !== undefined && m.high !== undefined ? `${formatCompact(m.low)} to ${formatCompact(m.high)}` : '',
         change: change === null ? '' : `${Math.abs(change).toFixed(1)}%`,
         direction: change === null ? null : change >= 0 ? 'up' : 'down',
-        projected: m.kind === 'projected',
-        latest: i === lastActual,
+        latest: i === months.length - 1,
       };
     });
   });
-  protected readonly pickup = new FormControl<string>('all', { nonNullable: true });
 }

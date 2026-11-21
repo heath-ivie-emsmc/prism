@@ -46,3 +46,18 @@ export function periodOptions(dataThrough: string, count = 12): readonly PeriodO
   }
   return options;
 }
+
+/** The warehouse's accounting period, 202610, written out as "October 2026". Anything else comes back unchanged. */
+export function apPeriodLabel(period: string): string {
+  const match = /^(\d{4})(\d{2})$/.exec(period);
+  const name = match ? MONTH_NAMES[Number(match[2]) - 1] : undefined;
+  return match && name ? `${name} ${match[1]}` : period;
+}
+
+/** The last day of an accounting period as yyyy-MM-dd: 202610 gives 2026-10-31. Anything else comes back empty. */
+export function apPeriodEnd(period: string): string {
+  const match = /^(\d{4})(\d{2})$/.exec(period);
+  if (!match) return '';
+  const day = new Date(Date.UTC(Number(match[1]), Number(match[2]), 0)).getUTCDate();
+  return `${match[1]}-${match[2]}-${String(day).padStart(2, '0')}`;
+}

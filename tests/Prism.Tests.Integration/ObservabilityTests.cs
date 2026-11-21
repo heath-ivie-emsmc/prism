@@ -8,9 +8,19 @@ using Prism.Tests.Integration.Auth;
 
 namespace Prism.Tests.Integration;
 
+[Collection(Prism.Tests.Integration.LogCaptureGroup.Name)]
 public sealed class ObservabilityTests
 {
     private const string Marker = "SECRET-LOGIN-TOKEN-8842";
+
+    /// <summary>The request log line is written after the response has been sent, so the client can be back before the line exists.</summary>
+    private static async Task EventuallyAsync(Func<bool> condition)
+    {
+        for (int i = 0; i < 50 && !condition(); i++)
+        {
+            await Task.Delay(40, TestContext.Current.CancellationToken);
+        }
+    }
 
     [Fact]
     public async Task Log_events_of_a_request_carry_its_correlation_id()
@@ -22,6 +32,7 @@ public sealed class ObservabilityTests
             HttpMethod.Get, "/up", headers: new Dictionary<string, string> { [CorrelationIdMiddleware.HeaderName] = "trace-in-logs" });
 
         Assert.Equal(System.Net.HttpStatusCode.OK, response.StatusCode);
+        await EventuallyAsync(() => factory.Logs.Entries.Any(entry => entry.Text.Contains("CorrelationId=\"trace-in-logs\"", StringComparison.Ordinal)));
         Assert.Contains(factory.Logs.Entries, entry => entry.Text.Contains("CorrelationId=\"trace-in-logs\"", StringComparison.Ordinal));
     }
 
@@ -34,6 +45,7 @@ public sealed class ObservabilityTests
         using HttpResponseMessage start = await client.GetAsync("/api/auth/sso/start");
         using HttpResponseMessage callback = await client.GetAsync($"/api/auth/sso/callback?loginToken={Marker}&state=whatever");
 
+        await EventuallyAsync(() => factory.Logs.Entries.Any(entry => entry.Text.Contains("/api/auth/sso/callback", StringComparison.Ordinal)));
         Assert.Contains(factory.Logs.Entries, entry => entry.Text.Contains("/api/auth/sso/callback", StringComparison.Ordinal));
         Assert.DoesNotContain(factory.Logs.Entries, entry => entry.Text.Contains(Marker, StringComparison.Ordinal));
     }

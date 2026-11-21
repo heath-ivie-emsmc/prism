@@ -5,6 +5,7 @@ using Prism.Testing.Common;
 
 namespace Prism.Tests.Integration.Auth;
 
+[Collection(Prism.Tests.Integration.LogCaptureGroup.Name)]
 public sealed class SignInTests : IDisposable
 {
     private static readonly string[] ForgedPermissions = ["prism.app", "prism.dashboard.view"];
@@ -31,6 +32,30 @@ public sealed class SignInTests : IDisposable
 
     private Task<HttpResponseMessage> CallbackAsync(string token, string? state) =>
         client.GetAsync($"/api/auth/sso/callback?loginToken={Uri.EscapeDataString(token)}" + (state is null ? "" : $"&state={Uri.EscapeDataString(state)}"));
+
+    [Fact]
+    public async Task With_a_local_login_return_url_start_asks_the_portal_to_send_the_token_there()
+    {
+        using var local = new AuthTestFactory(settings: new Dictionary<string, string?> { ["Auth:LoginReturnUrl"] = "http://localhost:4200/api/auth/sso/callback" });
+        using CookieClient localClient = local.NewClient();
+
+        using HttpResponseMessage response = await localClient.GetAsync("/api/auth/sso/start");
+
+        var location = response.Headers.Location!;
+        Assert.Equal("/login", location.AbsolutePath);
+        var query = System.Web.HttpUtility.ParseQueryString(location.Query);
+        Assert.Equal(PortalTestKeys.ApplicationId, query["appId"]);
+        Assert.Equal("http://localhost:4200/api/auth/sso/callback", query["returnUrl"]);
+        Assert.False(string.IsNullOrEmpty(query["state"]));
+    }
+
+    [Fact]
+    public async Task Without_one_start_sends_no_return_url_to_the_portal()
+    {
+        using HttpResponseMessage response = await client.GetAsync("/api/auth/sso/start");
+
+        Assert.DoesNotContain("returnUrl", response.Headers.Location!.Query, StringComparison.Ordinal);
+    }
 
     [Fact]
     public async Task Start_redirects_to_the_portal_with_the_application_id_and_a_fresh_state()

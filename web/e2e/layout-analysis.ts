@@ -84,12 +84,23 @@ export function analyzeLayout(): LayoutIssue[] {
     }
   }
 
+  // A sticky or fixed bar (the page footer) is opaque and slides over content as the page scrolls, which is its job. Content is still
+  // reachable: the bar sits after it in the flow, so at the end of the page nothing is under it.
+  const floating = (el: Element): boolean => {
+    for (let node: Element | null = el; node && node !== document.body; node = node.parentElement) {
+      const position = getComputedStyle(node).position;
+      if (position === 'sticky' || position === 'fixed') return true;
+    }
+    return false;
+  };
+
   // 3. Two pieces of text drawn on top of each other. Skip text inside the same element, and ancestors (a label wrapping its own child).
   for (let i = 0; i < boxes.length; i++) {
     for (let j = i + 1; j < boxes.length; j++) {
       const a = boxes[i]!;
       const b = boxes[j]!;
       if (a.el === b.el || a.el.contains(b.el) || b.el.contains(a.el)) continue;
+      if (floating(a.el) || floating(b.el)) continue;
       const width = Math.min(a.rect.right, b.rect.right) - Math.max(a.rect.left, b.rect.left);
       const height = Math.min(a.rect.bottom, b.rect.bottom) - Math.max(a.rect.top, b.rect.top);
       if (width <= 1 || height <= 1) continue;

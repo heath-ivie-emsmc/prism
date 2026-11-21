@@ -84,6 +84,25 @@ public sealed class HardeningTests
     }
 
     [Fact]
+    public void Deployed_environments_refuse_a_local_login_return_url_and_development_allows_it()
+    {
+        var options = new PrismAuthOptions
+        {
+            AccountPortalBaseUrl = "https://account.example.test",
+            AdminPortalApiBaseUrl = "https://api.example.test",
+            LoginTokenPublicKeyUrl = "https://account.example.test/key/public",
+            PublicBaseUrl = "https://prism.example.test",
+            LoginReturnUrl = "http://localhost:4200/api/auth/sso/callback",
+        };
+
+        ValidateOptionsResult deployed = new DeployedAuthOptionsValidator(new FakeEnvironment("Staging")).Validate(null, options);
+
+        Assert.True(deployed.Failed);
+        Assert.Contains("LoginReturnUrl", deployed.FailureMessage, StringComparison.Ordinal);
+        Assert.True(new DeployedAuthOptionsValidator(new FakeEnvironment("Development")).Validate(null, options).Succeeded);
+    }
+
+    [Fact]
     public void Development_may_use_http_loopback_urls()
     {
         var options = new PrismAuthOptions { AccountPortalBaseUrl = "http://localhost:1" };

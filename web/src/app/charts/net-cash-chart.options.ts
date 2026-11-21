@@ -60,7 +60,16 @@ export function buildNetCashOption(allMonths: readonly NetCashMonth[], kind: Net
     tooltip: {
       trigger: 'axis',
       confine: true,
-      valueFormatter: (value: unknown) => formatExact(Number(value)),
+      // One line per month. The projected line repeats the latest actual month, and gaps arrive as "-", so a default list shows NaN rows.
+      formatter: (params: unknown) => {
+        const items = (Array.isArray(params) ? params : [params]) as { axisValue: string; dataIndex: number; seriesType: string; marker: string; seriesName: string }[];
+        const first = items[0];
+        const month = first ? months[first.dataIndex] : undefined;
+        if (!first || !month) return '';
+        const title = `${month.label} ${month.year}`;
+        const range = month.low !== undefined && month.high !== undefined ? `<br/>Likely ${formatExact(month.low)} to ${formatExact(month.high)}` : '';
+        return `${title}<br/>${month.kind === 'projected' ? 'Projected' : 'Net cash collected'}: <b>${formatExact(month.value)}</b>${range}`;
+      },
     },
     xAxis: {
       type: 'category',
@@ -144,17 +153,17 @@ export function buildNetCashOption(allMonths: readonly NetCashMonth[], kind: Net
 
   const latest = months[lastActual];
   const change = lastActual >= 0 ? changeFromPrior(months, lastActual) : null;
-  const callout = latest ? `${latest.label} ${formatCompact(latest.value)}${change === null ? '' : `, ${Math.round(change)}%`}` : '';
+  const callout = latest ? `${latest.label} ${formatLabel(latest.value)}${change === null ? '' : `, ${Math.round(change)}%`}` : '';
   // The latest actual month is a larger filled point with its figure written under it, as in the mockup.
   const actualData = months.map((m, i) =>
     i === lastActual
-      ? { value: m.value, symbolSize: 14, itemStyle: { color: colors.projected }, label: { show: true, position: 'bottom', distance: 10, color: colors.text, fontWeight: 'bold', formatter: callout } }
+      ? { value: m.value, symbolSize: 14, itemStyle: { color: colors.projected }, label: { show: true, position: 'bottom', align: lastActual === months.length - 1 ? 'right' : 'center', distance: 10, color: colors.text, fontWeight: 'bold', formatter: callout } }
       : i < lastActual
         ? { value: m.value }
         : null,
   );
   // The projected line starts at the latest actual month so the two lines join.
-  const projectedData = months.map((m, i) => (i >= lastActual && firstProjected !== -1 ? m.value : null));
+  const projectedData = months.map((m, i) => (i < lastActual || firstProjected === -1 ? null : i === lastActual ? { value: m.value, symbol: 'none' } : m.value));
   return {
     ...base,
     series: [
@@ -166,7 +175,7 @@ export function buildNetCashOption(allMonths: readonly NetCashMonth[], kind: Net
         symbol: 'circle',
         symbolSize: 8,
         lineStyle: { width: 2, color: colors.projected },
-        itemStyle: { color: 'transparent', borderColor: colors.projected, borderWidth: 2 },
+        itemStyle: { color: '#ffffff', borderColor: colors.projected, borderWidth: 2 },
       },
       {
         name: 'Projected',
@@ -176,7 +185,7 @@ export function buildNetCashOption(allMonths: readonly NetCashMonth[], kind: Net
         symbol: 'circle',
         symbolSize: 8,
         lineStyle: { width: 2, color: colors.projected, type: 'dashed' },
-        itemStyle: { color: 'transparent', borderColor: colors.projected, borderWidth: 2 },
+        itemStyle: { color: '#ffffff', borderColor: colors.projected, borderWidth: 2 },
       },
       range,
       ...(dividerSeries ? [dividerSeries] : []),

@@ -38,6 +38,31 @@ public sealed class PrismAuthOptionsValidatorTests
     }
 
     [Fact]
+    public void Accepts_a_loopback_login_return_url_for_local_development()
+    {
+        PrismAuthOptions options = Valid();
+        options.LoginReturnUrl = "http://localhost:4200/api/auth/sso/callback";
+
+        Assert.True(Validate(options).Succeeded);
+    }
+
+    [Theory]
+    [InlineData("https://prism.example.test/api/auth/sso/callback")]
+    [InlineData("http://evil.example.test/api/auth/sso/callback")]
+    [InlineData("http://user:pw@localhost:4200/cb")]
+    [InlineData("/api/auth/sso/callback")]
+    public void Rejects_a_login_return_url_that_is_not_plain_loopback(string url)
+    {
+        PrismAuthOptions options = Valid();
+        options.LoginReturnUrl = url;
+
+        ValidateOptionsResult result = Validate(options);
+
+        Assert.True(result.Failed);
+        Assert.Contains(result.Failures, f => f.Contains("LoginReturnUrl", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void Rejects_an_empty_base_configuration()
     {
         ValidateOptionsResult result = Validate(new PrismAuthOptions());

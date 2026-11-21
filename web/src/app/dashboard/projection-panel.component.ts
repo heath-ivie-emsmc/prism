@@ -93,9 +93,14 @@ const PAYERS: readonly PayerShare[] = [
       flex-direction: column;
       gap: 1rem;
       padding: 1.25rem;
-      border: 1px solid var(--ems-border-neutral-subtle);
-      border-radius: var(--ems-corner-xl, 1rem);
-      background: var(--ems-surface-neutral-subtle);
+      /* The same surface, ring and shadow as the library card, matching the other panels. */
+      border-radius: var(--ems-corner-md);
+      background: var(--ems-surface-neutral-default);
+      box-shadow:
+        inset 0 0 0 var(--ems-border-width-default) var(--ems-border-neutral-default),
+        var(--ems-fx-neutral-default-frosted-raised-glowing);
+      -webkit-backdrop-filter: var(--ems-fx-frosted);
+      backdrop-filter: var(--ems-fx-frosted);
     }
     .panel__header {
       display: flex;

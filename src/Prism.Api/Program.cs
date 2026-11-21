@@ -2,6 +2,7 @@ using Microsoft.OpenApi;
 using Prism.Api;
 using Prism.Api.Auth;
 using Prism.Api.Health;
+using Prism.Api.Metrics;
 using Prism.Api.Observability;
 using Prism.Infrastructure.Configuration;
 using Scalar.AspNetCore;
@@ -23,6 +24,7 @@ builder.Services.AddProblemDetails();
 builder.Services.AddPrismForwardedHeaders();
 builder.Services.AddPrismPersistence(builder.Configuration);
 builder.Services.AddPrismAuth(builder.Configuration);
+builder.Services.AddPrismMetrics();
 
 var app = builder.Build();
 
@@ -37,7 +39,9 @@ app.UsePrismSecurityHeaders();
 app.UseMiddleware<Prism.Api.Http.CorrelationIdMiddleware>();
 
 // One line per request: method, path (never the query), status, time. Before the exception handler so failures are logged too.
-app.UseSerilogRequestLogging();
+// The request log writes through this host's own logger, not the process-wide static one, which belongs to whichever host started last
+// (several hosts share a process in the integration tests).
+app.UseSerilogRequestLogging(options => options.Logger = app.Services.GetRequiredService<Serilog.ILogger>());
 app.UseExceptionHandler();
 
 // Static files come first, before routing: the static file middleware skips any request that already matched an endpoint,
@@ -78,7 +82,9 @@ app.MapScalarApiReference("/docs", options => options.WithTitle("Prism API")).Re
 // The handshake is a browser flow registered with the portal, so it is not versioned. The JSON API lives under /api/v1.
 RouteGroupBuilder api = app.MapGroup("/api").RequireAuthorization();
 api.MapSsoEndpoints();
-api.MapGroup(ApiRoutes.V1).MapIdentityEndpoints();
+RouteGroupBuilder v1 = api.MapGroup(ApiRoutes.V1);
+v1.MapIdentityEndpoints();
+v1.MapMetricEndpoints();
 
 // Unknown paths fall back to index.html so client-side routes work on reload, except /api (and /api/...), where an
 // unknown path must stay a plain 404 and never turn into HTML. The docs and OpenAPI routes are real endpoints and match first.

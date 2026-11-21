@@ -1,5 +1,6 @@
 import { ChangeDetectionStrategy, Component, computed, effect, inject, signal, untracked } from '@angular/core';
-import { toSignal } from '@angular/core/rxjs-interop';
+import { rxResource, toSignal } from '@angular/core/rxjs-interop';
+import { of } from 'rxjs';
 import { FormControl, ReactiveFormsModule } from '@angular/forms';
 import {
   EmsBreadcrumbsComponent,
@@ -9,7 +10,8 @@ import {
 } from '@ems-management-consultants/ui';
 import { AuthService } from '../auth/auth.service';
 import { DashboardContext, MOCK_CONTEXT, divisionsFor } from './dashboard-context';
-import { formatDate, formatInstant, periodOptions } from './dashboard-format';
+import { apPeriodEnd, apPeriodLabel, formatDate } from './dashboard-format';
+import { NetCollectionsPeriodsDto, NetCollectionsService } from '../metrics/net-collections.service';
 import { KpiCardComponent } from './kpi-card.component';
 import { NetCashPanelComponent } from './net-cash-panel.component';
 import { ProjectionPanelComponent } from './projection-panel.component';
@@ -35,7 +37,7 @@ const CRUMBS: EmsBreadcrumb[] = [{ label: 'Dashboard' }];
         <div class="dashboard__title">
           <h1>{{ providerName() }}</h1>
           <p class="dashboard__subtitle">
-            Revenue overview · Data through {{ dataThrough() }} · Updated {{ updatedAt() }}
+            Revenue overview@if (dataThrough()) { · Data through {{ dataThrough() }} }
           </p>
         </div>
 
@@ -56,7 +58,7 @@ const CRUMBS: EmsBreadcrumb[] = [{ label: 'Dashboard' }];
 
       <!-- Layout only: every figure below is placeholder content until the Metric Catalog serves real values. -->
       <section class="dashboard__overview" aria-label="Key metrics">
-        <app-net-cash-panel class="dashboard__cash" />
+        <app-net-cash-panel class="dashboard__cash" [providerId]="providerId()" [endPeriod]="endPeriod()" [serviceLine]="serviceLine()" />
 
         <app-kpi-card title="Transports" value="140" [delta]="{ direction: 'down', text: '6 fewer than Sep' }" footnote="Rotor wing 92 · Fixed wing 48">
           <div class="bars" role="img" aria-label="Transports by month, last six months">
@@ -106,6 +108,15 @@ const CRUMBS: EmsBreadcrumb[] = [{ label: 'Dashboard' }];
     }
     .dashboard__crumbs {
       margin-top: 0.5rem;
+    }
+    /* The menu wraps under the logo on small screens and brings its own space, so the page starts closer to it. */
+    @media (max-width: 899.98px) {
+      .dashboard {
+        padding-block-start: 0.25rem;
+      }
+      .dashboard__crumbs {
+        margin-top: 0;
+      }
     }
     .dashboard__header {
       display: flex;
@@ -221,6 +232,7 @@ const CRUMBS: EmsBreadcrumb[] = [{ label: 'Dashboard' }];
 })
 export class DashboardComponent {
   private readonly auth = inject(AuthService);
+  private readonly netCollections = inject(NetCollectionsService);
 
   /** Mocked: replaced by the Provider context API. */
   protected readonly context = signal<DashboardContext>(MOCK_CONTEXT);
@@ -237,14 +249,27 @@ export class DashboardComponent {
   protected readonly mileUnit = signal<MileUnit>('statute');
 
   protected readonly serviceLine = signal<ServiceLineSelection>('air');
-  protected readonly period = new FormControl<string>(periodOptions(MOCK_CONTEXT.dataThrough)[0]?.value ?? '', { nonNullable: true });
+  /** The newest accounting period to show, as yyyyMM. Empty until the Provider's periods have loaded. */
+  protected readonly period = new FormControl<string>('', { nonNullable: true });
   protected readonly division = new FormControl<string>(ALL_DIVISIONS, { nonNullable: true });
 
   /** The first Provider name in the session, exactly as the token carries it. The mock name shows only when the user has no Provider. */
   protected readonly providerName = computed(() => this.auth.me()?.providers[0]?.name || this.context().providerName);
 
-  protected readonly dataThrough = computed(() => formatDate(this.context().dataThrough));
-  protected readonly updatedAt = computed(() => formatInstant(this.context().updatedAt, this.context().timeZone));
+  /** The Provider whose data is shown: the first one the user was assigned. A switcher comes later. The API checks it again. */
+  protected readonly providerId = computed(() => this.auth.me()?.providers[0]?.id ?? null);
+
+  private readonly periodsResource = rxResource<NetCollectionsPeriodsDto | null, string | null>({
+    params: () => this.providerId(),
+    stream: ({ params }) => (params ? this.netCollections.periods(params) : of(null)),
+  });
+
+  /** The newest accounting period that has data. The data is complete through the end of it. */
+  private readonly newestPeriod = computed(() => this.periodsResource.value()?.periods[0]?.period ?? '');
+  protected readonly dataThrough = computed(() => {
+    const end = apPeriodEnd(this.newestPeriod());
+    return end ? formatDate(end) : '';
+  });
 
   protected readonly showServiceLineToggle = computed(() => this.context().enabledServiceLines.length > 1);
   protected readonly serviceLineOptions = computed(() =>
@@ -253,8 +278,9 @@ export class DashboardComponent {
 
   protected readonly labels = computed(() => defaultLabels(this.serviceLine()));
   protected readonly periods = computed<EmsPickerOption<string>[]>(() =>
-    periodOptions(this.context().dataThrough).map((option) => ({ value: option.value, label: option.label })),
+    (this.periodsResource.value()?.periods ?? []).map((p) => ({ value: p.period, label: apPeriodLabel(p.period) })),
   );
+  protected readonly endPeriod = toSignal(this.period.valueChanges, { initialValue: this.period.value });
   protected readonly divisionOptions = computed<EmsPickerOption<string>[]>(() => [
     { value: ALL_DIVISIONS, label: this.labels().allReportingDivisions },
     ...divisionsFor(this.context().reportingDivisions, this.serviceLine()).map((division) => ({
@@ -266,6 +292,14 @@ export class DashboardComponent {
   private readonly selectedDivision = toSignal(this.division.valueChanges, { initialValue: this.division.value });
 
   constructor() {
+    // Start on the newest period once the list arrives, and again if the chosen one is no longer in the list (a different Provider).
+    effect(() => {
+      const options = this.periods();
+      const selected = this.endPeriod();
+      if (options.length > 0 && !options.some((option) => option.value === selected)) {
+        untracked(() => this.period.setValue(options[0]!.value));
+      }
+    });
     // Changing the Service Line can remove the chosen Reporting Division from the list. Fall back to "all" instead of leaving a dead choice.
     effect(() => {
       const options = this.divisionOptions();

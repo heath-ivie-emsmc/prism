@@ -57,17 +57,45 @@ public sealed class SecureCookieAndConfigurationTests
         Assert.Contains(ex.Failures, failure => failure.Contains("ConnectionStrings:Prism", StringComparison.Ordinal));
     }
 
-    [Fact]
-    public async Task A_deployed_host_refuses_to_start_without_redis()
+    private const string ValidWarehouse = "Host=dw.invalid;Database=dw;Username=u;Password=p;SSL Mode=VerifyFull";
+
+    private static async Task<OptionsValidationException> StartDeployedWithAsync(Dictionary<string, string?> settings)
     {
         WebApplicationBuilder builder = WebApplication.CreateBuilder(new WebApplicationOptions { EnvironmentName = "Production" });
         builder.WebHost.UseTestServer();
-        builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?> { ["ConnectionStrings:Prism"] = "Host=unused.invalid;Database=unused" });
+        builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?> { ["ConnectionStrings:Prism"] = "Host=unused.invalid;Database=unused" }.Concat(settings).ToDictionary());
         builder.Services.AddPrismPersistence(builder.Configuration);
         await using WebApplication app = builder.Build();
 
-        OptionsValidationException ex = await Assert.ThrowsAsync<OptionsValidationException>(() => app.StartAsync(TestContext.Current.CancellationToken));
+        return await Assert.ThrowsAsync<OptionsValidationException>(() => app.StartAsync(TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task A_deployed_host_refuses_to_start_without_redis()
+    {
+        OptionsValidationException ex = await StartDeployedWithAsync(new() { ["ConnectionStrings:Warehouse"] = ValidWarehouse });
 
         Assert.Contains(ex.Failures, failure => failure.Contains("ConnectionStrings:Redis", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task A_deployed_host_refuses_to_start_without_the_warehouse()
+    {
+        OptionsValidationException ex = await StartDeployedWithAsync(new() { ["ConnectionStrings:Redis"] = "localhost:6379" });
+
+        Assert.Contains(ex.Failures, failure => failure.Contains("ConnectionStrings:Warehouse", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task A_deployed_host_refuses_an_unencrypted_warehouse_connection_without_echoing_it()
+    {
+        OptionsValidationException ex = await StartDeployedWithAsync(new()
+        {
+            ["ConnectionStrings:Redis"] = "localhost:6379",
+            ["ConnectionStrings:Warehouse"] = "Host=dw.invalid;Database=dw;Username=u;Password=NeverShowThis1;SSL Mode=Disable",
+        });
+
+        Assert.Contains(ex.Failures, failure => failure.Contains("SSL Mode", StringComparison.Ordinal));
+        Assert.DoesNotContain("NeverShowThis1", ex.Message, StringComparison.Ordinal);
     }
 }

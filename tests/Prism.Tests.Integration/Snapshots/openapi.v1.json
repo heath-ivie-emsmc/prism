@@ -73,10 +73,495 @@
           }
         }
       }
+    },
+    "/api/v1/providers/{providerId}/metrics/net-collections": {
+      "get": {
+        "tags": [
+          "Metrics"
+        ],
+        "summary": "Net cash collected by month",
+        "description": "Net cash collected for the Provider in each of the last \u0060months\u0060 accounting periods ending with \u0060endPeriod\u0060, from the latest warehouse load. \u0060endPeriod\u0060 is \u0060yyyyMM\u0060 and defaults to the newest period that has data. \u0060months\u0060 defaults to 6 and is at most 24. Months with no data are left out, not returned as zero. The figures are aggregates: no patient or claim detail. Returns 404 when the Provider is not one the caller may read in full (not assigned, or limited to some Facilities).",
+        "operationId": "GetNetCollections",
+        "parameters": [
+          {
+            "name": "providerId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "endPeriod",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "months",
+            "in": "query",
+            "schema": {
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": [
+                "integer",
+                "string"
+              ],
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCollectionsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service Unavailable",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/providers/{providerId}/metrics/net-collections/projection": {
+      "get": {
+        "tags": [
+          "Metrics"
+        ],
+        "summary": "Projected net cash for the next three months",
+        "description": "The cash the warehouse forecasts for up to three months after \u0060endPeriod\u0060 (\u0060yyyyMM\u0060, default the newest period with net cash data), from the latest forecast load. \u0060serviceLine\u0060 is \u0060all\u0060 (default), \u0060air\u0060 or \u0060ground\u0060. Each month has the projected \u0060value\u0060 and a likely range (\u0060low\u0060 to \u0060high\u0060), the lower and higher of the AR-based and budget-based forecasts. \u0060total\u0060, \u0060low\u0060 and \u0060high\u0060 are the sums over the returned months. Fewer than three months, or none, come back when the forecast is shorter. Aggregates only. Returns 404 when the Provider is not one the caller may read in full.",
+        "operationId": "GetNetCashProjection",
+        "parameters": [
+          {
+            "name": "providerId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "EndPeriod",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "ServiceLine",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCashProjectionResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service Unavailable",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/providers/{providerId}/metrics/net-collections/breakdown": {
+      "get": {
+        "tags": [
+          "Metrics"
+        ],
+        "summary": "Net cash by aircraft type or level of service",
+        "description": "Net cash collected in \u0060period\u0060 (\u0060yyyyMM\u0060, default the newest period with net cash data) and the month before it, split by aircraft type (air) or level of service (ground), and by base and vehicle (tail number or unit). \u0060serviceLine\u0060 is \u0060all\u0060, \u0060air\u0060 (default) or \u0060ground\u0060. Net cash is payments less refunds by the accounting period they posted in, without the Old AR import, so the groups add up to the net cash for the period. \u0060transports\u0060 are the encounters with cash posted in the period. Legacy Old AR bases are counted under their current base. Aggregates only: no patient or claim detail. Returns 404 when the Provider is not one the caller may read in full.",
+        "operationId": "GetNetCashBreakdown",
+        "parameters": [
+          {
+            "name": "providerId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Period",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "ServiceLine",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCashBreakdownResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service Unavailable",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/providers/{providerId}/metrics/net-collections/periods": {
+      "get": {
+        "tags": [
+          "Metrics"
+        ],
+        "summary": "Accounting periods with net cash data",
+        "description": "The accounting periods the Provider has net cash data for, newest first, as \u0060yyyyMM\u0060 with a display label. Fills the Period drop-down.",
+        "operationId": "GetNetCollectionsPeriods",
+        "parameters": [
+          {
+            "name": "providerId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCollectionsPeriodsResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service Unavailable",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
     "schemas": {
+      "BreakdownFiguresResponse": {
+        "required": [
+          "cash",
+          "transports",
+          "loadedMiles",
+          "primaryMix",
+          "secondaryMix"
+        ],
+        "type": "object",
+        "properties": {
+          "cash": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?$",
+            "type": [
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "transports": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "loadedMiles": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?$",
+            "type": [
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "primaryMix": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "secondaryMix": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          }
+        },
+        "description": "Net cash (\u0060Cash\u0060, USD), \u0060Transports\u0060 (encounters with cash posted in the month) and \u0060LoadedMiles\u0060.\n\u0060PrimaryMix\u0060 and \u0060SecondaryMix\u0060 are scene and interfacility transports for air, emergency and non-emergency for ground."
+      },
+      "BreakdownGroupResponse": {
+        "required": [
+          "key",
+          "name",
+          "serviceLine",
+          "current",
+          "prior"
+        ],
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "serviceLine": {
+            "type": "string"
+          },
+          "current": {
+            "$ref": "#/components/schemas/BreakdownFiguresResponse"
+          },
+          "prior": {
+            "$ref": "#/components/schemas/BreakdownFiguresResponse"
+          }
+        },
+        "description": "An aircraft type or level of service. \u0060Key\u0060 is stable, \u0060Name\u0060 is for display, \u0060ServiceLine\u0060 is \u0060air\u0060 or \u0060ground\u0060."
+      },
+      "BreakdownRowResponse": {
+        "required": [
+          "groupKey",
+          "groupName",
+          "serviceLine",
+          "base",
+          "vehicle",
+          "current",
+          "prior"
+        ],
+        "type": "object",
+        "properties": {
+          "groupKey": {
+            "type": "string"
+          },
+          "groupName": {
+            "type": "string"
+          },
+          "serviceLine": {
+            "type": "string"
+          },
+          "base": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "vehicle": {
+            "type": "string"
+          },
+          "current": {
+            "$ref": "#/components/schemas/BreakdownFiguresResponse"
+          },
+          "prior": {
+            "$ref": "#/components/schemas/BreakdownFiguresResponse"
+          }
+        },
+        "description": "A vehicle (tail number or unit) at a base or station. \u0060Base\u0060 is null when the warehouse has none."
+      },
       "MeResponse": {
         "required": [
           "userName",
@@ -106,6 +591,315 @@
           }
         },
         "description": "Response of \u0060GET /api/me\u0060."
+      },
+      "MetricResponse": {
+        "required": [
+          "key",
+          "name",
+          "description",
+          "unit"
+        ],
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "unit": {
+            "type": "string"
+          }
+        },
+        "description": "What a Metric is: stable key, display name, meaning and unit."
+      },
+      "NetCashBreakdownResponse": {
+        "required": [
+          "metric",
+          "providerId",
+          "period",
+          "priorPeriod",
+          "serviceLine",
+          "periodOpen",
+          "groups",
+          "rows"
+        ],
+        "type": "object",
+        "properties": {
+          "metric": {
+            "$ref": "#/components/schemas/MetricResponse"
+          },
+          "providerId": {
+            "type": "string"
+          },
+          "period": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "priorPeriod": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "serviceLine": {
+            "type": "string"
+          },
+          "periodOpen": {
+            "type": "boolean"
+          },
+          "groups": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BreakdownGroupResponse"
+            }
+          },
+          "rows": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BreakdownRowResponse"
+            }
+          }
+        },
+        "description": "Net cash for \u0060Period\u0060 and the month before it (\u0060PriorPeriod\u0060), by \u0060Groups\u0060 (aircraft type or level of service) and \u0060Rows\u0060 (base and vehicle).\n\u0060PeriodOpen\u0060 is true while the accounting period is still open: cash is still posting into it, so the figures are not final."
+      },
+      "NetCashProjectionMonthResponse": {
+        "required": [
+          "period",
+          "label",
+          "year",
+          "value",
+          "low",
+          "high"
+        ],
+        "type": "object",
+        "properties": {
+          "period": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "year": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "value": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?$",
+            "type": [
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "low": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?$",
+            "type": [
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "high": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?$",
+            "type": [
+              "number",
+              "string"
+            ],
+            "format": "double"
+          }
+        },
+        "description": "One projected month: \u0060Period\u0060 is \u0060yyyyMM\u0060, \u0060Value\u0060 the projected cash, \u0060Low\u0060 to \u0060High\u0060 the likely range."
+      },
+      "NetCashProjectionResponse": {
+        "required": [
+          "metric",
+          "providerId",
+          "afterPeriod",
+          "serviceLine",
+          "snapshotDate",
+          "total",
+          "low",
+          "high",
+          "months"
+        ],
+        "type": "object",
+        "properties": {
+          "metric": {
+            "$ref": "#/components/schemas/MetricResponse"
+          },
+          "providerId": {
+            "type": "string"
+          },
+          "afterPeriod": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "serviceLine": {
+            "type": "string"
+          },
+          "snapshotDate": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "total": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?$",
+            "type": [
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "low": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?$",
+            "type": [
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "high": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?$",
+            "type": [
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "months": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NetCashProjectionMonthResponse"
+            }
+          }
+        },
+        "description": "The cash forecast for the months after \u0060AfterPeriod\u0060. \u0060Total\u0060, \u0060Low\u0060 and \u0060High\u0060 are sums over \u0060Months\u0060."
+      },
+      "NetCollectionsPeriodsResponse": {
+        "required": [
+          "providerId",
+          "periods"
+        ],
+        "type": "object",
+        "properties": {
+          "providerId": {
+            "type": "string"
+          },
+          "periods": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PeriodResponse"
+            }
+          }
+        }
+      },
+      "NetCollectionsPointResponse": {
+        "required": [
+          "period",
+          "label",
+          "year",
+          "value"
+        ],
+        "type": "object",
+        "properties": {
+          "period": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "year": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "value": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?$",
+            "type": [
+              "number",
+              "string"
+            ],
+            "format": "double"
+          }
+        },
+        "description": "One month: \u0060Period\u0060 is \u0060yyyyMM\u0060, \u0060Label\u0060 the short month name, \u0060Value\u0060 the amount in the Metric\u0027s unit."
+      },
+      "NetCollectionsResponse": {
+        "required": [
+          "metric",
+          "providerId",
+          "endPeriod",
+          "months",
+          "snapshotDate",
+          "points"
+        ],
+        "type": "object",
+        "properties": {
+          "metric": {
+            "$ref": "#/components/schemas/MetricResponse"
+          },
+          "providerId": {
+            "type": "string"
+          },
+          "endPeriod": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "months": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "snapshotDate": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "points": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NetCollectionsPointResponse"
+            }
+          }
+        },
+        "description": "Net cash collected for a Provider, by accounting period."
+      },
+      "PeriodResponse": {
+        "required": [
+          "period",
+          "label"
+        ],
+        "type": "object",
+        "properties": {
+          "period": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          }
+        }
       },
       "ProblemDetails": {
         "type": "object",
@@ -178,6 +972,9 @@
     },
     {
       "name": "Identity"
+    },
+    {
+      "name": "Metrics"
     }
   ]
 }

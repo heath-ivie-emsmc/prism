@@ -71,6 +71,21 @@ public sealed partial class GuardTests
     }
 
     [Fact]
+    public void Only_the_factories_create_database_connections()
+    {
+        // The warehouse connection gets its read-only, time-limited and encrypted settings in WarehouseDataSourceFactory.
+        // Prism's own database goes through PrismNpgsqlConfiguration. Nothing else in production code may open a connection by hand.
+        string[] banned = ["new NpgsqlConnection(", "NpgsqlDataSource.Create(", "new NpgsqlDataSourceBuilder("];
+        var offenders = ProductionFolders
+            .SelectMany(folder => RepoFiles.Source(folder))
+            .Where(file => !file.EndsWith("WarehouseDataSourceFactory.cs", StringComparison.Ordinal))
+            .SelectMany(file => banned.Where(token => File.ReadAllText(file).Contains(token, StringComparison.Ordinal)).Select(token => $"{RepoFiles.Relative(file)}: {token}"))
+            .ToList();
+
+        Assert.Empty(offenders);
+    }
+
+    [Fact]
     public void Application_and_infrastructure_code_does_not_read_the_system_clock_or_make_random_ids()
     {
         var offenders = ProductionFolders

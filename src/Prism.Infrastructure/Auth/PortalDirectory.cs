@@ -77,7 +77,7 @@ public sealed class PortalDirectory(
             logger,
             providers.Count,
             providers.Sum(provider => provider.FacilityIds.Count),
-            string.Join(", ", providers.Take(10).Select(provider => $"{provider.Id}({provider.FacilityIds.Count})")));
+            string.Join(", ", providers.Take(10).Select(provider => $"{provider.Id}({provider.FacilityIds.Count}: {string.Join(' ', provider.FacilityIds.Where(id => id.All(char.IsAsciiDigit)).Take(20))})")));
 
         if (providers.Count >= MaxProviders)
         {
@@ -362,7 +362,7 @@ public sealed class PortalDirectory(
 
 internal static partial class PortalDirectoryLog
 {
-    [LoggerMessage(EventId = 2002, Level = LogLevel.Information, Message = "Portal returned {CompanyCount} assigned companies with {FacilityCount} facilities in total. First companies as id(facilities): [{FirstCompanies}].")]
+    [LoggerMessage(EventId = 2002, Level = LogLevel.Information, Message = "Portal returned {CompanyCount} assigned companies with {FacilityCount} facilities in total. First companies as id(facility count: facility ids): [{FirstCompanies}].")]
     public static partial void AssignedCompanies(ILogger logger, int companyCount, int facilityCount, string firstCompanies);
 
     [LoggerMessage(EventId = 2003, Level = LogLevel.Warning, Message = "The portal returned at least {Limit} assigned companies. Only the first {Limit} are used.")]

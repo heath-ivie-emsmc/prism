@@ -56,24 +56,60 @@ test.describe('accessibility', () => {
     });
   }
 
-  test('the net cash table lists the same months as the chart, with the projection marked', async ({ page }) => {
+  test('the net cash table lists the same months as the chart', async ({ page }) => {
     await openDashboard(page);
     await chooseNetCashView(page, 'table');
 
     const rows = await page.locator('app-net-cash-panel tbody tr').allTextContents();
-    expect(rows).toHaveLength(9);
+    expect(rows).toHaveLength(6);
     expect(rows[0]).toContain('May 2026');
-    expect(rows.filter((r) => r.includes('Projected'))).toHaveLength(3);
+    expect(rows[5]).toContain('Oct 2026');
     expect(rows[5]).toContain('$1,100,240.00');
   });
 
-  test('turning the projection off removes projected months from the chart description and the table', async ({ page }) => {
+  test('the projection switch adds three projected months to the chart and the expected total', async ({ page }) => {
     await openDashboard(page);
-    await page.getByRole('switch', { name: /projection/i }).uncheck();
+    const projection = page.getByRole('switch', { name: 'Show 3-month projection' });
+    await expect(projection).toHaveAttribute('aria-checked', 'false');
+    await expect(page.getByText('Expected, next 3 months')).toBeHidden();
 
-    await expect(page.locator('app-net-cash-panel [role="img"]')).not.toHaveAttribute('aria-label', /Projected/);
+    await projection.click();
+
+    await expect(projection).toHaveAttribute('aria-checked', 'true');
+    await expect(page.getByText('Expected, next 3 months')).toBeVisible();
+    expect(await page.locator('app-net-cash-panel [role="img"]').getAttribute('aria-label')).toMatch(/Projected Nov/);
+    expect(await axeViolations(page)).toEqual([]);
+    expect((await layoutErrors(page)).errors).toEqual([]);
+  });
+
+  test('the projection asks the API for the chosen period and Service Line, and says so when it fails', async ({ page }) => {
+    const asked: string[] = [];
+    await page.route(/net-collections\/projection/, (route) => {
+      asked.push(new URL(route.request().url()).search);
+      return route.fulfill({ status: 503, json: { title: 'Service Unavailable' } });
+    });
+    await openDashboard(page);
+
+    await page.getByRole('switch', { name: 'Show 3-month projection' }).click();
+
+    await expect(page.getByText('The projection is not available right now.')).toBeVisible();
+    expect(asked[0]).toBe('?endPeriod=202610&serviceLine=air');
+    await expect(page.getByText('Expected, next 3 months')).toBeHidden();
+    expect(await axeViolations(page)).toEqual([]);
+  });
+
+  test('Last 12 months shows twelve months in the table', async ({ page }) => {
+    await openDashboard(page);
+    await page.getByRole('radio', { name: 'Last 12 months' }).click();
     await chooseNetCashView(page, 'table');
-    await expect(page.locator('app-net-cash-panel tbody tr')).toHaveCount(6);
+
+    await expect(page.locator('app-net-cash-panel tbody tr')).toHaveCount(12);
+  });
+
+  test('the Period drop-down lists accounting periods from the data, newest first', async ({ page }) => {
+    await openDashboard(page);
+
+    await expect(page.locator('input.ems-select__input').first()).toHaveValue('October 2026');
   });
 
   test('every chart has a text alternative: a description and a table view', async ({ page }) => {
@@ -81,7 +117,7 @@ test.describe('accessibility', () => {
 
     for (const view of ['line', 'bar'] as const) {
       await chooseNetCashView(page, view);
-      expect(await page.locator('app-net-cash-panel [role="img"]').getAttribute('aria-label')).toMatch(/Latest month Oct .*Projected Nov/);
+      expect(await page.locator('app-net-cash-panel [role="img"]').getAttribute('aria-label')).toMatch(/Latest month Oct/);
     }
     // The same numbers are one control away, as a real table.
     await chooseNetCashView(page, 'table');

@@ -14,6 +14,8 @@ import {
 } from '@ems-management-consultants/ui';
 import { AuthService } from '../auth/auth.service';
 
+import { providerLogo as findProviderLogo } from './provider-logo';
+
 type ColorModePreference = 'system' | 'e2-light' | 'e2-dark';
 
 const NEXT_MODE: Readonly<Record<string, ColorModePreference>> = {
@@ -43,7 +45,14 @@ const MODE_LABEL: Readonly<Record<string, string>> = {
     <a class="skip-link" href="#main" (click)="skipToMain($event)">Skip to main content</a>
     <header>
     <ems-nav-bar label="Primary">
-      <a emsNavLogo routerLink="/dashboard" aria-label="Prism home"><ems-logo variant="emsmc" /></a>
+      <a emsNavLogo class="shell__brand" routerLink="/dashboard" [attr.aria-label]="providerName() + ' home'">
+        @if (providerLogo(); as logo) {
+          <!-- On a plate so a logo stays readable in any color mode: light for a logo drawn for a white page, dark for a white logo. The link carries the name, so the image has no alt. -->
+          <span class="shell__logo-plate" [class.shell__logo-plate--dark]="logo.plate === 'dark'"><img class="shell__logo" [src]="logo.url" alt="" /></span>
+        } @else {
+          <span class="shell__brand-name">{{ providerName() }}</span>
+        }
+      </a>
       <a emsNavTab module routerLink="/dashboard">
         <ems-icon name="show_chart" size="sm" />
         Prism
@@ -77,6 +86,10 @@ const MODE_LABEL: Readonly<Record<string, string>> = {
     </ems-nav-bar>
     </header>
     <router-outlet />
+    <footer class="shell__footer">
+      <span class="shell__powered">Powered by</span>
+      <ems-logo variant="emsmc" />
+    </footer>
   `,
   styles: `
     /* Off screen until it has keyboard focus, then the first thing on the page (WCAG 2.4.1). */
@@ -95,6 +108,49 @@ const MODE_LABEL: Readonly<Record<string, string>> = {
       top: 0.5rem;
       outline: 2px solid var(--ems-border-focus-default);
       outline-offset: 2px;
+    }
+    :host {
+      display: flex;
+      flex-direction: column;
+      min-height: 100dvh;
+    }
+    :host > router-outlet + * {
+      flex: 1 0 auto;
+    }
+    .shell__logo-plate {
+      display: inline-flex;
+      align-items: center;
+      padding: 0.25rem 0.75rem;
+      border-radius: var(--ems-corner-sm, 0.5rem);
+      background: #fff;
+    }
+    .shell__logo-plate--dark {
+      background: #26262b;
+    }
+    .shell__logo {
+      display: block;
+      height: 2.5rem;
+      width: auto;
+    }
+    .shell__brand-name {
+      font-weight: var(--ems-font-weight-heavy);
+      max-width: 14rem;
+    }
+    /* Stays at the bottom of the window, or just after the content when the page is short. */
+    .shell__footer {
+      position: sticky;
+      bottom: 0;
+      z-index: 10;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.75rem;
+      margin-top: auto;
+      padding: 0.5rem 1.5rem;
+      border-top: 1px solid var(--ems-border-neutral-default);
+      background: var(--ems-surface-neutral-page);
+      color: var(--ems-text-muted);
+      font-size: var(--ems-font-size-small);
     }
     .shell__trailing {
       display: inline-flex;
@@ -117,6 +173,8 @@ export class ShellComponent {
   private readonly auth = inject(AuthService);
   private readonly theme = inject(EmsThemeService);
 
+  protected readonly providerName = computed(() => this.auth.me()?.providers[0]?.name ?? 'Prism');
+  protected readonly providerLogo = computed(() => findProviderLogo(this.auth.me()?.providers[0]?.name));
   protected readonly displayName = computed(() => this.auth.me()?.displayName ?? '');
   protected readonly themeLabel = computed(() => MODE_LABEL[this.theme.colorMode()] ?? 'System');
 

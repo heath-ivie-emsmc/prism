@@ -19,6 +19,20 @@ interface Probe {
 const build = (kind: 'line' | 'bar', months = MONTHS) => buildNetCashOption(months, kind, COLORS) as unknown as Probe;
 
 describe('buildNetCashOption', () => {
+  it('shows one tooltip line per month, never NaN, with the likely range for projected months', () => {
+    const tooltip = (build('line') as unknown as { tooltip: { formatter: (p: unknown) => string } }).tooltip;
+    const rows = (index: number) => [{ dataIndex: index, seriesName: 'Net cash collected' }, { dataIndex: index, seriesName: 'Projected', value: '-' }];
+
+    const actual = tooltip.formatter(rows(1));
+    const projected = tooltip.formatter(rows(2));
+
+    expect(actual).toContain('Oct 2026');
+    expect(actual).toContain('$1,100,000.00');
+    expect(projected).toContain('Projected');
+    expect(projected).toContain('Likely $1,150,000.00 to $1,280,000.00');
+    expect(actual + projected).not.toContain('NaN');
+  });
+
   it('writes the year under the first month and under January', () => {
     expect(build('bar').xAxis.data).toEqual(['May\n2026', 'Oct', 'Nov', 'Jan\n2027']);
   });

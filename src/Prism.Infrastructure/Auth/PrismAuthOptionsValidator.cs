@@ -70,11 +70,19 @@ public sealed class PrismAuthOptionsValidator : IValidateOptions<PrismAuthOption
             failures.Add("Rate limits must be at least 1 request per minute.");
         }
 
+        if (!string.IsNullOrWhiteSpace(options.LoginReturnUrl) && !IsLoopbackHttp(options.LoginReturnUrl))
+        {
+            failures.Add($"{PrismAuthOptions.SectionName}:{nameof(options.LoginReturnUrl)} must be an absolute http URL on localhost.");
+        }
+
         if (!string.IsNullOrWhiteSpace(options.PublicBaseUrl) && !IsHttpsOrLoopback(options.PublicBaseUrl))
         {
             failures.Add($"{PrismAuthOptions.SectionName}:{nameof(options.PublicBaseUrl)} must be an absolute https URL.");
         }
     }
+
+    private static bool IsLoopbackHttp(string value) =>
+        Uri.TryCreate(value, UriKind.Absolute, out Uri? uri) && uri.Scheme == Uri.UriSchemeHttp && uri.IsLoopback && uri.UserInfo.Length == 0;
 
     private static bool IsHttpsOrLoopback(string value) =>
         Uri.TryCreate(value, UriKind.Absolute, out Uri? uri)

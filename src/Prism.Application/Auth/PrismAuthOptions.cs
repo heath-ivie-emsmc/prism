@@ -15,6 +15,13 @@ public sealed class PrismAuthOptions
 
     public string AdminPortalApiBaseUrl { get; set; } = "";
 
+    /// <summary>
+    /// Local development only: a loopback callback URL (such as <c>http://localhost:4200/api/auth/sso/callback</c>) that is listed under the
+    /// application's development redirect URLs in the portal, so the portal sends the login token back to this machine instead of the
+    /// application's registered login URL. Empty means use the registered login URL. A deployed host refuses to start with it set.
+    /// </summary>
+    public string LoginReturnUrl { get; set; } = "";
+
     /// <summary>The expected <c>iss</c> of login tokens.</summary>
     public string LoginTokenIssuer { get; set; } = "";
 

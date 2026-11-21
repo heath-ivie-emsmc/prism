@@ -26,6 +26,10 @@ reusing another environment's portal. Per environment, set:
 `appsettings.Staging.json`, `.QA.json` and `.Production.json` carry the portal values from M6. They leave `ApplicationId` and
 `PublicBaseUrl` out on purpose: whoever registers the application sets them, and until then the host refuses to start.
 
+`Auth:LoginReturnUrl` is for local development only. The portal sends the login token to the application's registered Login Redirect URL, which for a deployed stage app is the stage host.
+To sign in from your own machine, list `http://localhost:4200/api/auth/sso/callback` under the application's Development Redirect URLs in the portal and set `LoginReturnUrl` to the same text.
+The start endpoint then sends the user to the portal's `/login?appId=&returnUrl=&state=`. It must be an `http` loopback address, and a deployed host refuses to start with it set.
+
 Other settings and their defaults:
 
 | Setting | Default | Meaning |

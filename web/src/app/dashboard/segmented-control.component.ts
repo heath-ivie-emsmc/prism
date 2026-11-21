@@ -27,6 +27,7 @@ export interface SegmentOption<T extends string> {
           [attr.aria-checked]="option.value === value()"
           [attr.aria-label]="iconOnly() ? option.label : null"
           [attr.title]="iconOnly() ? option.label : null"
+          [disabled]="disabled()"
           [tabindex]="option.value === value() ? 0 : -1"
           (click)="value.set(option.value)"
           (keydown)="onKeydown($event)"
@@ -71,6 +72,10 @@ export interface SegmentOption<T extends string> {
       color: var(--ems-text-default);
       box-shadow: 0 1px 2px rgb(0 0 0 / 12%);
     }
+    .segments__option:disabled {
+      cursor: not-allowed;
+      opacity: 0.6;
+    }
     .segments__option:focus-visible {
       outline: 2px solid var(--ems-border-focus-default);
       outline-offset: 2px;
@@ -82,6 +87,8 @@ export class SegmentedControlComponent<T extends string> {
   readonly value = model.required<T>();
   readonly label = input.required<string>();
   readonly iconOnly = input(false);
+  /** The choice is shown but cannot be changed, for a filter the data does not support yet. */
+  readonly disabled = input(false);
 
   protected onKeydown(event: KeyboardEvent): void {
     const step = event.key === 'ArrowRight' || event.key === 'ArrowDown' ? 1 : event.key === 'ArrowLeft' || event.key === 'ArrowUp' ? -1 : 0;

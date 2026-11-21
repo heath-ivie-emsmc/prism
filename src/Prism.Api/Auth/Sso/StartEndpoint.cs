@@ -30,6 +30,12 @@ internal static class StartEndpoint
         context.Response.Cookies.Append(cookies.State, state, cookies.StateOptions());
 
         string url = $"{settings.AccountPortalBaseUrl.TrimEnd('/')}/?appId={Uri.EscapeDataString(settings.ApplicationId)}&state={Uri.EscapeDataString(state)}";
+        if (!string.IsNullOrWhiteSpace(settings.LoginReturnUrl))
+        {
+            // Local development: the portal sends the token to this registered development redirect, not the application's login URL.
+            url = $"{settings.AccountPortalBaseUrl.TrimEnd('/')}/login?appId={Uri.EscapeDataString(settings.ApplicationId)}&returnUrl={Uri.EscapeDataString(settings.LoginReturnUrl)}&state={Uri.EscapeDataString(state)}";
+        }
+
         bool forceAuth = reauth is "1" || string.Equals(reauth, "true", StringComparison.OrdinalIgnoreCase);
         string forceQuery = settings.AccountPortalForceAuthQuery.TrimStart('?', '&');
         if (forceAuth && forceQuery.Length > 0)

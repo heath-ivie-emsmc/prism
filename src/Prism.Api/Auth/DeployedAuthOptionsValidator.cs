@@ -29,6 +29,11 @@ public sealed class DeployedAuthOptionsValidator(IHostEnvironment environment) :
             }
         }
 
+        if (!string.IsNullOrWhiteSpace(options.LoginReturnUrl))
+        {
+            failures.Add($"{PrismAuthOptions.SectionName}:{nameof(options.LoginReturnUrl)} is for local development and cannot be set in a deployed environment.");
+        }
+
         if (options.RequireSecureCookies == false)
         {
             failures.Add($"{PrismAuthOptions.SectionName}:{nameof(options.RequireSecureCookies)} cannot be false in a deployed environment.");

@@ -18,6 +18,10 @@ export const routes: Routes = [
         path: 'dashboard',
         loadComponent: () => import('./dashboard/dashboard.component').then((m) => m.DashboardComponent),
       },
+      {
+        path: 'dashboard/net-cash',
+        loadComponent: () => import('./breakdown/net-cash-breakdown.component').then((m) => m.NetCashBreakdownComponent),
+      },
     ],
   },
   { path: '**', redirectTo: '' },
