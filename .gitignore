@@ -1,0 +1,15 @@
+bin/
+obj/
+.vs/
+*.user
+TestResults/
+coverage/
+node_modules/
+dist/
+.angular/
+.env
+.env.*
+!.env.example
+
+# Built SPA, copied in by web: npm run build:api
+src/Prism.Api/wwwroot/

@@ -1,0 +1,15 @@
+**/bin/
+**/obj/
+**/node_modules/
+web/dist/
+web/.angular/
+src/Prism.Api/wwwroot/
+tests/
+tools/
+.git/
+.claude/
+docs/
+*.pem
+*.key
+**/.env
+**/secrets.json

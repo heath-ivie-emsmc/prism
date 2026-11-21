@@ -1,0 +1,42 @@
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 4
+
+[*.{json,yml,yaml,csproj,props,slnx,ts,html,scss,css}]
+indent_size = 2
+
+[*.cs]
+csharp_style_namespace_declarations = file_scoped:warning
+dotnet_style_qualification_for_field = false:warning
+
+# Shared analyzer severities, taken from the M6 solution's root .editorconfig.
+# S-prefixed rules come from SonarAnalyzer.CSharp and have no effect until it is added to the build.
+[*.cs]
+dotnet_diagnostic.S3776.severity = warning
+dotnet_diagnostic.S4457.severity = warning
+dotnet_diagnostic.S107.severity = warning
+dotnet_diagnostic.IDE0028.severity = warning
+dotnet_diagnostic.CA1873.severity = none
+
+# EF-generated migrations use block-scoped namespaces and skip maintainability metrics.
+[src/**/Migrations/*.cs]
+csharp_style_namespace_declarations = block_scoped:silent
+dotnet_style_namespace_declarations = block_scoped:silent
+dotnet_diagnostic.S3776.severity = none
+dotnet_diagnostic.S4457.severity = none
+dotnet_diagnostic.CA1873.severity = none
+dotnet_diagnostic.S107.severity = none
+dotnet_diagnostic.IDE0161.severity = none
+dotnet_diagnostic.IDE0028.severity = none
+dotnet_diagnostic.CA1501.severity = none
+dotnet_diagnostic.CA1502.severity = none
+dotnet_diagnostic.CA1505.severity = none
+dotnet_diagnostic.CA1506.severity = none
+dotnet_diagnostic.CA1861.severity = none
+dotnet_diagnostic.CA1859.severity = none

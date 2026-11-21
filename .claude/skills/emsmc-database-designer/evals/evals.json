@@ -1,0 +1,23 @@
+{
+  "skill_name": "emsmc-database-designer",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "I need to design a database for a task management system. Users can create projects, each project has multiple tasks, tasks can be assigned to users, and tasks have comments. Users belong to teams. I need the full PostgreSQL schema.",
+      "expected_output": "Mermaid ER diagram + PostgreSQL DDL with all mandatory columns (id identity PK, timestamps, audit user columns on user-facing tables), triggers, proper naming conventions, FK constraints without CASCADE, FILLFACTOR on all objects.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "Add a tags feature to this table. Tags are shared across the system (not per-project). Tasks can have multiple tags. I need the PostgreSQL DDL for the new tables and any ALTER statements needed. The existing task table uses int4 id with identity.",
+      "expected_output": "A tag table and task_tag junction table with proper naming, mandatory columns (id, timestamps), FK constraints using RESTRICT only, proper junction table naming convention, FILLFACTOR, triggers.",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "I have a PostgreSQL audit_log table that gets about 500K inserts per day. It has columns: id, user_id, action, entity_type, entity_id, details (jsonb), created_at_timestamp. Design the table with partitioning, proper indexes, and make sure it follows all our conventions. Also give me the SQL Server equivalent.",
+      "expected_output": "Both PostgreSQL and SQL Server DDL. PostgreSQL with declarative monthly partitioning, int8 PK (high volume), jsonb with default, indexes with high-cardinality columns first. SQL Server with nvarchar, partition function/scheme, datetime2. Both with mandatory columns, triggers, FILLFACTOR, proper naming.",
+      "files": []
+    }
+  ]
+}

@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>Prism.Utility.AdminPortalSetup</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Prism.Application\Prism.Application.csproj" />
+    <ProjectReference Include="..\..\src\Prism.Infrastructure\Prism.Infrastructure.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Prism.Tests" />
+  </ItemGroup>
+
+</Project>
