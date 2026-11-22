@@ -225,7 +225,7 @@ test.describe('payer mix', () => {
 
     await expect(page.getByRole('heading', { level: 2, name: 'What changed in fixed wing' })).toBeVisible();
     await expect(page.getByText('Fixed wing cash fell $137,770.00 (22%) from September.')).toBeVisible();
-    const cards = page.locator('app-what-changed .card');
+    const cards = page.locator('app-what-changed .card:not(.card--attention)');
     await expect(cards).toHaveCount(2);
     await expect(cards.first()).toContainText('September had unusually high payments on older transports');
     await expect(cards.first()).toContainText('Temporary');

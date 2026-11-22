@@ -54,10 +54,10 @@ test.describe('saved views', () => {
   test('every chart has the same numbers as a table one control away', async ({ page }) => {
     await openView(page, 5);
 
-    await page.getByRole('button', { name: 'Table', exact: true }).first().click();
+    await page.getByRole('radio', { name: 'Table', exact: true }).first().click();
+    await expect(page.locator('app-metric-widget table tbody tr')).toHaveCount(6);
     const rows = await page.locator('app-metric-widget table tbody tr').allTextContents();
 
-    expect(rows).toHaveLength(6);
     expect(rows[5]).toContain('Oct 2026');
     expect(rows[5]).toContain('$1,100,240.00');
   });
@@ -152,6 +152,87 @@ test.describe('saved views', () => {
     expect(bytes.length).toBeGreaterThan(5_000);
     await expect.poll(() => lastAnnouncement(page)).toMatch(/^Image saved as prism-Cash-overview-/);
     await expect(page.locator('.snapshot-caption')).toHaveCount(0);
+  });
+
+  test('the header offers every presentation the catalog lists as icon buttons, and a viewer\'s choice is not saved', async ({ page }) => {
+    let writes = 0;
+    page.on('request', (r) => { if (r.url().includes('/saved-views/') && r.method() !== 'GET') writes += 1; });
+    await openView(page, 5);
+
+    const group = page.getByRole('radiogroup', { name: 'Show Net cash collected as' });
+    await expect(group.getByRole('radio')).toHaveCount(3);
+    await expect(group.getByRole('radio', { name: 'Line' })).toBeChecked();
+    await group.getByRole('radio', { name: 'Column' }).click();
+    await expect(group.getByRole('radio', { name: 'Column' })).toBeChecked();
+    await expect(page.locator('app-chart canvas').first()).toBeVisible();
+    await page.screenshot({ path: 'e2e-report/saved-view-switcher.png' });
+    expect(writes).toBe(0);
+    await expect(page.getByText('Unsaved changes')).toHaveCount(0);
+
+    // The mock's keyboard path: arrow keys move through the group like any radio group.
+    await group.getByRole('radio', { name: 'Column' }).focus();
+    await page.keyboard.press('ArrowRight');
+    await expect(group.getByRole('radio', { name: 'Table' })).toBeChecked();
+    await expect(page.locator('app-metric-widget table').first()).toBeVisible();
+  });
+
+  test('a taller widget gives a taller chart, and the chart ends where the card ends', async ({ page }) => {
+    const heights: number[] = [];
+    for (const h of [3, 6]) {
+      await page.route(/\/api\/v1\/providers\/[^/]+\/saved-views\/5$/, async (route) => {
+        if (route.request().method() !== 'GET') return route.fallback();
+        await route.fulfill({ headers: { ETag: '"1"' }, json: { id: 5, name: 'Cash overview', description: null, ownerName: 'jdoe', isOwner: true, version: '1', updatedAt: '2026-11-22T10:00:00Z', layout: { version: 1, density: 'compact', widgets: [{ id: 'w1', metricKey: 'net_collections', presentation: 'column', x: 0, y: 0, w: 12, h }] } } });
+      });
+      await openView(page, 5);
+      const box = await page.evaluate(() => {
+        const card = document.querySelector('app-grid-canvas ems-card')!.getBoundingClientRect();
+        const foot = [...document.querySelectorAll('app-grid-canvas .widget__foot')].pop()!.getBoundingClientRect();
+        return { chart: document.querySelector('app-grid-canvas app-chart')!.getBoundingClientRect().height, spare: card.bottom - foot.bottom };
+      });
+      heights.push(box.chart);
+      expect(box.spare, 'nothing but the card padding is left below the last line').toBeLessThan(40);
+      await page.unroute(/\/api\/v1\/providers\/[^/]+\/saved-views\/5$/);
+    }
+    expect(heights[1]! - heights[0]!).toBeGreaterThan(150);
+  });
+
+  test('a bar stays drawn under the pointer, and the charts are not grey', async ({ page }) => {
+    await page.route(/\/api\/v1\/providers\/[^/]+\/saved-views\/5$/, async (route) => {
+      if (route.request().method() !== 'GET') return route.fallback();
+      await route.fulfill({
+        headers: { ETag: '"1"' },
+        json: { id: 5, name: 'Cash overview', description: null, ownerName: 'jdoe', isOwner: true, version: '1', updatedAt: '2026-11-22T10:00:00Z', layout: { version: 1, density: 'comfortable', widgets: [{ id: 'w1', metricKey: 'net_collections', presentation: 'column', x: 0, y: 0, w: 12, h: 3 }] } },
+      });
+    });
+    await openView(page, 5);
+    const canvas = page.locator('app-grid-canvas app-chart canvas').first();
+    const box = (await canvas.boundingBox())!;
+    // Find a bar by scanning one row of the canvas for a run of solid pixels, then read the colour in its middle.
+    const bar = await canvas.evaluate((el, y) => {
+      const c = el as HTMLCanvasElement;
+      const scale = c.width / c.clientWidth;
+      const row = c.getContext('2d')!.getImageData(0, Math.round(y * scale), c.width, 1).data;
+      let run = 0;
+      for (let x = 0; x < c.width; x += 1) {
+        run = row[x * 4 + 3]! === 255 && Math.abs(row[x * 4]! - row[x * 4 + 2]!) > 20 ? run + 1 : 0;
+        if (run >= 20) return { x: (x - 10) / scale, y };
+      }
+      return null;
+    }, box.height - 40);
+    expect(bar, 'a bar was drawn').not.toBeNull();
+    const probe = async () =>
+      canvas.evaluate((el, at) => {
+        const c = el as HTMLCanvasElement;
+        const scale = c.width / c.clientWidth;
+        const data = c.getContext('2d')!.getImageData(Math.round(at.x * scale), Math.round(at.y * scale), 1, 1).data;
+        return [data[0], data[1], data[2], data[3]];
+      }, bar!);
+    const before = await probe();
+    expect(before[3]).toBe(255);
+
+    await page.mouse.move(box.x + bar!.x, box.y + bar!.y);
+    await page.waitForTimeout(400);
+    expect(await probe()).toEqual(before);
   });
 
   test('a move is cancelled when focus leaves, so Tab never traps', async ({ page }) => {

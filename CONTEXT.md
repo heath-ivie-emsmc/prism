@@ -44,6 +44,10 @@ _Avoid_: Cause, factor, reason
 The written summary of the Findings for one view and period: a headline, the ranked Findings and what is left unexplained. It is shown on the dashboard only.
 _Avoid_: AI summary, analysis, report
 
+**Attention Check**:
+One named rule over a Provider's claims that flags the ones needing customer action, such as Denied (a denial code and money still owed) or Needs attention (denied, on hold or in collections). The checks are the tabs on the review page. A count of flagged claims is an aggregate; the claims behind it are claim-level data that need the claims permission and leave an audit record.
+_Avoid_: Alert, exception, work queue
+
 **Label**:
 The display name a Provider sees for a renamable term, such as Reporting Division. It is set per Provider, with defaults by Service Line, and never changes the term's API key.
 _Avoid_: Alias, custom field name, translation

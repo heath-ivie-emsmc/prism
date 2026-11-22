@@ -32,6 +32,35 @@ describe('WidgetHostComponent', () => {
     expect(root.querySelector('[role="toolbar"]')).toBeNull();
   });
 
+  const switcher = (root: HTMLElement) => [...root.querySelectorAll<HTMLButtonElement>('app-segmented-control button')];
+
+  it('offers one icon button per presentation the catalog lists, each named, with the current one pressed', async () => {
+    const { root } = await create({ editing: false });
+
+    expect(switcher(root).map((b) => b.getAttribute('aria-label'))).toEqual(NET_CASH.presentations.map((p) => p.name));
+    expect(switcher(root).filter((b) => b.getAttribute('aria-checked') === 'true').map((b) => b.getAttribute('aria-label'))).toEqual(['Line']);
+    expect(root.querySelector('[role="radiogroup"][aria-label="Show Net cash collected as"]')).not.toBeNull();
+    expect(root.textContent).toContain('US dollars');
+  });
+
+  it('in view mode a different choice is the viewer\'s own: the chart changes and nothing is sent to the page', async () => {
+    const { fixture, root, actions, http } = await create({ editing: false });
+
+    switcher(root).find((b) => b.getAttribute('aria-label') === 'Table')!.click();
+    await settle(fixture, http, { [`${BASE}/metrics/net-collections`]: SERIES });
+
+    expect(root.querySelector('table')).not.toBeNull();
+    expect(actions).toEqual([]);
+  });
+
+  it('in edit mode the choice goes to the page to be saved with the layout', async () => {
+    const { root, actions } = await create({ editing: true });
+
+    switcher(root).find((b) => b.getAttribute('aria-label') === 'Column')!.click();
+
+    expect(actions).toEqual([{ kind: 'presentation', key: 'column' }]);
+  });
+
   it('gives every tool a name that includes the widget, in one toolbar', async () => {
     const { root } = await create();
 

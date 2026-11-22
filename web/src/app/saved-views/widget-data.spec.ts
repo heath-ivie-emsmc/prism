@@ -150,4 +150,15 @@ describe('widget chart options', () => {
     expect(formatValue(95.25, 'percent', true)).toBe('95.3%');
     expect(formatValue(12345, 'count', false)).toBe('12,345');
   });
+
+  it('draws with solid colors and no hover recolouring, so a bar never disappears under the pointer', () => {
+    const solid = { ...COLORS, categorical: ['#38469b', '#00724c', '#752e58'] };
+    const data = { unit: 'usd', categories: ['a', 'b'], series: [{ name: 'One', values: [1, 2] }, { name: 'Two', values: [3, 4] }] } as unknown as Parameters<typeof buildWidgetOption>[0];
+    for (const kind of ['column', 'line', 'stacked', 'donut'] as const) {
+      const option = buildWidgetOption(data, kind, solid) as { color: string[]; series: { emphasis?: { disabled?: boolean } }[] };
+      expect(option.color).toEqual(['#38469b', '#00724c', '#752e58']);
+      expect(option.series.every((series) => series.emphasis?.disabled === true)).toBe(true);
+      expect(JSON.stringify(option)).not.toContain('color-mix');
+    }
+  });
 });

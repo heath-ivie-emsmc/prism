@@ -825,6 +825,9 @@ export class ViewBuilderComponent {
       case 'preset':
         this.applyPreset(widget, action.preset);
         break;
+      case 'presentation':
+        this.applySetting(widget, { kind: 'presentation', key: action.key });
+        break;
       case 'settings':
         this.selectedId.set(id);
         setTimeout(() => document.getElementById('settings-heading')?.focus());

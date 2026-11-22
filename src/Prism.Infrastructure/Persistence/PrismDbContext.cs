@@ -8,6 +8,8 @@ public sealed class PrismDbContext(DbContextOptions<PrismDbContext> options) : D
 {
     public DbSet<RevokedSession> RevokedSessions => Set<RevokedSession>();
 
+    public DbSet<AuditEntry> AuditEntries => Set<AuditEntry>();
+
     public DbSet<SavedView> SavedViews => Set<SavedView>();
 
     public DbSet<SavedViewShare> SavedViewShares => Set<SavedViewShare>();
@@ -35,6 +37,30 @@ public sealed class PrismDbContext(DbContextOptions<PrismDbContext> options) : D
             // Every request looks a session up by id; the purge looks rows up by expiry.
             entity.HasIndex(e => e.SessionId).IsUnique().HasDatabaseName("uk_revoked_session__session_id");
             entity.HasIndex(e => e.SessionExpiresAtTimestamp).HasDatabaseName("ix_revoked_session__session_expires_at_timestamp");
+        });
+
+        modelBuilder.Entity<AuditEntry>(entity =>
+        {
+            entity.ToTable("audit_entry");
+            entity.HasKey(e => e.Id).HasName("pk_audit_entry");
+
+            // An audit trail can outgrow int4, so the key is bigint.
+            entity.Property(e => e.Id).HasColumnName("id").UseIdentityAlwaysColumn();
+            entity.Property(e => e.ProviderId).HasColumnName("provider_id");
+            entity.Property(e => e.PortalUserId).HasColumnName("portal_user_id");
+            entity.Property(e => e.Action).HasColumnName("action").HasMaxLength(50).IsRequired();
+            entity.Property(e => e.CheckKey).HasColumnName("check_key").HasMaxLength(50).IsRequired();
+            entity.Property(e => e.Period).HasColumnName("period").HasMaxLength(6).IsRequired();
+            entity.Property(e => e.RowCount).HasColumnName("row_count");
+            entity.Property(e => e.CreatedAtTimestamp).HasColumnName("created_at_timestamp")
+                .HasDefaultValueSql("now()").ValueGeneratedOnAdd();
+            entity.Property(e => e.UpdatedAtTimestamp).HasColumnName("updated_at_timestamp")
+                .HasDefaultValueSql("now()").ValueGeneratedOnAddOrUpdate();
+
+            // Reviews ask who read a Provider's data over a time range; the Provider is the high-cardinality tenant filter.
+            entity.HasIndex(e => new { e.ProviderId, e.CreatedAtTimestamp }).HasDatabaseName("ix_audit_entry__provider_id__created_at_timestamp");
+            // And what one user has read.
+            entity.HasIndex(e => new { e.PortalUserId, e.CreatedAtTimestamp }).HasDatabaseName("ix_audit_entry__portal_user_id__created_at_timestamp");
         });
 
         ConfigureSavedViews(modelBuilder);

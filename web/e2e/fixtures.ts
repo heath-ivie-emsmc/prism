@@ -5,7 +5,7 @@ const MOCK_ME = {
   userName: 'jdoe',
   displayName: 'Jane Doe',
   providers: [{ id: '526', name: 'Seminole County Fire Department', facilityCount: 3 }],
-  permissions: ['prism.app', 'prism.dashboard.view', 'prism.views.manage'],
+  permissions: ['prism.app', 'prism.dashboard.view', 'prism.claims.view', 'prism.views.manage'],
 };
 
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -372,12 +372,54 @@ async function mockSavedViews(page: import('@playwright/test').Page): Promise<vo
   });
 }
 
+const claim = (id: number, over: Record<string, unknown> = {}) => ({
+  id: String(id), claimRef: `FW-26104${id}`, serviceDate: '2026-10-02', payer: 'Meridian Health Plan', payerCategory: 'Insurance', vehicle: 'N418CV',
+  reportingDivision: 'Sky Harbor base', status: 'Submitted', denialCode: 'CO-16', denialReason: 'Missing documentation', balanceDue: 24600,
+  filingDueDate: '2026-11-26', daysLeft: 21, ...over,
+});
+const DENIED = [claim(18), claim(57, { payer: 'Northstar Health', vehicle: 'N227CV', balanceDue: 23600, filingDueDate: '2026-11-29', daysLeft: 24 })];
+const HELD = [
+  claim(61, { denialCode: null, denialReason: null, status: 'On_Hold', balanceDue: 1200, daysLeft: -3, filingDueDate: '2026-11-02' }),
+  claim(62, { denialCode: null, denialReason: null, status: 'Submitted', balanceDue: 800, daysLeft: 200, filingDueDate: '2027-06-08' }),
+];
+const OTHERS = [claim(71, { denialCode: null, denialReason: null, balanceDue: 90, daysLeft: 300 }), claim(72, { denialCode: null, denialReason: null, balanceDue: 75, daysLeft: 310 })];
+const ALL = [...DENIED, ...HELD, ...OTHERS, claim(81, { denialCode: null, denialReason: null, balanceDue: 10, daysLeft: 320 }), claim(82, { denialCode: null, denialReason: null, balanceDue: 20, daysLeft: 330 })];
+export const CLAIM_LISTS: Record<string, unknown[]> = { denied: DENIED, needs_attention: [...DENIED, ...HELD], all: ALL };
+
+/** The claims-needing-attention routes: counts, a list per check, and the CSV export. */
+async function mockClaims(page: Page): Promise<void> {
+  const base = /\/api\/v1\/providers\/[^/]+\/claims\/attention\//;
+  // Playwright tries the most recently added route first, so the general list route goes first and counts and export override it.
+  await page.route(new RegExp(`${base.source}[a-z_]+(\\?.*)?$`), (route) => {
+    const check = /attention\/([a-z_]+)/.exec(route.request().url())![1]!;
+    const claims = CLAIM_LISTS[check] ?? [];
+    return route.fulfill({ json: { providerId: '526', check, period: '202610', dataThrough: '2026-11-05', total: claims.length, page: 1, pageSize: 25, claims } });
+  });
+  await page.route(new RegExp(`${base.source}counts(\\?.*)?$`), (route) =>
+    route.fulfill({
+      json: {
+        providerId: '526', period: '202610', dataThrough: '2026-11-05', deniedBalanceDue: 48200,
+        counts: [{ key: 'denied', name: 'Denied', count: 2 }, { key: 'needs_attention', name: 'Needs attention', count: 4 }, { key: 'all', name: 'All', count: 8 }],
+      },
+    }),
+  );
+  await page.route(new RegExp(`${base.source}[a-z_]+/export(\\?.*)?$`), (route) => {
+    const check = /attention\/([a-z_]+)\/export/.exec(route.request().url())![1]!;
+    return route.fulfill({
+      status: 200,
+      headers: { 'content-type': 'text/csv; charset=utf-8', 'content-disposition': `attachment; filename=prism-needs-attention-${check.replace('_', '-')}-2026-11-22.csv` },
+      body: '"Claim"\r\n"FW-1"\r\n',
+    });
+  });
+}
+
 export const test = base.extend({
   page: async ({ page }, use) => {
     if (!process.env['PRISM_E2E_STORAGE_STATE']) {
       await page.route('**/api/v1/me', (route) => route.fulfill({ json: MOCK_ME }));
       await mockNetCollections(page);
       await mockSavedViews(page);
+      await mockClaims(page);
     }
     await use(page);
   },

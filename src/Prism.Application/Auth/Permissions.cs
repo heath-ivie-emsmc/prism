@@ -8,6 +8,7 @@ public static class Permissions
 {
     public const string App = "prism.app";
     public const string DashboardView = "prism.dashboard.view";
+    public const string ClaimsView = "prism.claims.view";
     public const string PhiView = "prism.phi.view";
     public const string SettingsManage = "prism.settings.manage";
     public const string ViewsManage = "prism.views.manage";
@@ -18,6 +19,7 @@ public static class Permissions
     [
         new(App, "Prism (sign in)", Group),
         new(DashboardView, "Dashboard: view", Group),
+        new(ClaimsView, "Claim-level data: view and export", Group),
         new(PhiView, "Patient-level data: view (reserved, not used yet)", Group),
         new(SettingsManage, "Provider settings: manage", Group),
         new(ViewsManage, "Saved views: create, edit, delete and share", Group),
@@ -25,10 +27,10 @@ public static class Permissions
 
     public static IReadOnlyList<RoleDefinition> Roles { get; } =
     [
-        new("ProviderAnalyst", [App, DashboardView, ViewsManage]),
-        new("ProviderAdmin", [App, DashboardView, SettingsManage, ViewsManage]),
+        new("ProviderAnalyst", [App, DashboardView, ClaimsView, ViewsManage]),
+        new("ProviderAdmin", [App, DashboardView, ClaimsView, SettingsManage, ViewsManage]),
         new("PlatformSupport", [App, DashboardView]),
-        new("SuperUser", [App, DashboardView, PhiView, SettingsManage, ViewsManage]),
+        new("SuperUser", [App, DashboardView, ClaimsView, PhiView, SettingsManage, ViewsManage]),
     ];
 
     /// <summary>

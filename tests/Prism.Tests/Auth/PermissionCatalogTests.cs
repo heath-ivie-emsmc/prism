@@ -5,17 +5,23 @@ namespace Prism.Tests.Auth;
 public sealed class PermissionCatalogTests
 {
     [Fact]
-    public void An_analyst_can_sign_in_view_the_dashboard_and_manage_saved_views()
+    public void An_analyst_can_sign_in_view_the_dashboard_review_claims_and_manage_saved_views()
     {
-        Assert.Equal([Permissions.App, Permissions.DashboardView, Permissions.ViewsManage], Permissions.ForRoles(["ProviderAnalyst"]));
+        Assert.Equal([Permissions.App, Permissions.DashboardView, Permissions.ClaimsView, Permissions.ViewsManage], Permissions.ForRoles(["ProviderAnalyst"]));
     }
 
     [Fact]
     public void A_provider_admin_can_also_manage_settings()
     {
         Assert.Equal(
-            [Permissions.App, Permissions.DashboardView, Permissions.SettingsManage, Permissions.ViewsManage],
+            [Permissions.App, Permissions.DashboardView, Permissions.ClaimsView, Permissions.SettingsManage, Permissions.ViewsManage],
             Permissions.ForRoles(["ProviderAdmin"]));
+    }
+
+    [Fact]
+    public void Platform_support_cannot_see_claim_level_data()
+    {
+        Assert.DoesNotContain(Permissions.ClaimsView, Permissions.ForRoles(["PlatformSupport"]));
     }
 
     [Fact]
@@ -29,7 +35,7 @@ public sealed class PermissionCatalogTests
     {
         IReadOnlyList<string> granted = Permissions.ForRoles(["ProviderAnalyst", "PlatformSupport", "ProviderAdmin"]);
 
-        Assert.Equal([Permissions.App, Permissions.DashboardView, Permissions.SettingsManage, Permissions.ViewsManage], granted);
+        Assert.Equal([Permissions.App, Permissions.DashboardView, Permissions.ClaimsView, Permissions.SettingsManage, Permissions.ViewsManage], granted);
     }
 
     [Theory]

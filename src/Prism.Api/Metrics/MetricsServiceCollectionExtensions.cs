@@ -1,4 +1,6 @@
+using Microsoft.Extensions.Options;
 using Prism.Api.Http;
+using Prism.Application.Attention;
 using Prism.Application.Insights;
 using Prism.Application.Metrics;
 using Prism.Application.Warehouse;
@@ -30,6 +32,9 @@ public static class MetricsServiceCollectionExtensions
         services.AddSingleton<IInsightAnalysis, PayerMixAnalysis>();
         services.AddSingleton<InsightsEngine>();
         services.AddSingleton<IInsightService, CachedInsightService>();
+        services.AddSingleton<IValidateOptions<FilingLimitOptions>, FilingLimitOptionsValidator>();
+        services.AddOptions<FilingLimitOptions>().BindConfiguration(FilingLimitOptions.SectionName).ValidateOnStart();
+        services.AddSingleton<IClaimAttention, ClaimAttentionReader>();
         services.AddExceptionHandler<WarehouseExceptionHandler>();
         return services;
     }
@@ -39,5 +44,15 @@ public static class MetricsServiceCollectionExtensions
         NetCollectionsEndpoints.Map(v1);
         CatalogEndpoints.Map(v1);
         InsightsEndpoints.Map(v1);
+        Attention.ClaimAttentionEndpoints.Map(v1);
     }
+}
+
+/// <summary>Refuses to start with a filing limit outside 1 to 1,825 days, so a typo cannot silently make every deadline wrong.</summary>
+internal sealed class FilingLimitOptionsValidator : IValidateOptions<FilingLimitOptions>
+{
+    public ValidateOptionsResult Validate(string? name, FilingLimitOptions options) =>
+        options.IsValid()
+            ? ValidateOptionsResult.Success
+            : ValidateOptionsResult.Fail($"{FilingLimitOptions.SectionName} limits must be between {FilingLimitOptions.MinDays} and {FilingLimitOptions.MaxDays} days.");
 }

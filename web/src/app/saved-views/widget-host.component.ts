@@ -1,8 +1,9 @@
 import { CdkDragHandle } from '@angular/cdk/drag-drop';
-import { ChangeDetectionStrategy, Component, ElementRef, HostListener, computed, inject, input, output, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, ElementRef, HostListener, computed, inject, input, linkedSignal, output, signal } from '@angular/core';
 import { MatMenuModule } from '@angular/material/menu';
 import { EmsButtonDirective, EmsCardComponent, EmsChipComponent, EmsIconComponent } from '@ems-management-consultants/ui';
 import { CatalogMetricDto, LayoutWidget, SizePreset } from './layout.model';
+import { SegmentOption, SegmentedControlComponent } from '../dashboard/segmented-control.component';
 import { MetricWidgetComponent, WidgetStatus } from './metric-widget.component';
 
 /** Everything a widget's toolbar can ask the page to do. The page owns the layout, so the host only reports. */
@@ -11,9 +12,13 @@ export type WidgetAction =
   | { readonly kind: 'move-key'; readonly event: KeyboardEvent }
   | { readonly kind: 'move-blur' }
   | { readonly kind: 'preset'; readonly preset: SizePreset }
+  | { readonly kind: 'presentation'; readonly key: string }
   | { readonly kind: 'settings' }
   | { readonly kind: 'remove' }
   | { readonly kind: 'reorder'; readonly direction: -1 | 1 };
+
+/** What a Metric's unit is called above its chart. Anything not listed shows as the catalog gives it. */
+const UNIT_LABELS: Readonly<Record<string, string>> = { USD: 'US dollars', percent: 'Percent', transports: 'Transports', miles: 'Miles', 'USD per transport': 'US dollars per transport', days: 'Days' };
 
 /**
  * One widget on the grid: a card with the Metric's name as its h2 and the Metric inside. In edit mode it adds a toolbar (one Tab stop, arrow keys inside) with
@@ -21,11 +26,19 @@ export type WidgetAction =
  */
 @Component({
   selector: 'app-widget-host',
-  imports: [CdkDragHandle, EmsButtonDirective, EmsCardComponent, EmsChipComponent, EmsIconComponent, MatMenuModule, MetricWidgetComponent],
+  imports: [CdkDragHandle, EmsButtonDirective, EmsCardComponent, EmsChipComponent, EmsIconComponent, MatMenuModule, MetricWidgetComponent, SegmentedControlComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <ems-card [heading]="title()">
       <div emsCardActions>
+      @if (kinds().length > 1) {
+        <span class="host__unit">{{ unitLabel() }}</span>
+        <span data-snapshot-skip>
+          <app-segmented-control [label]="'Show ' + title() + ' as'" [options]="kinds()" [value]="shown()" (valueChange)="choose($event)" [iconOnly]="true" />
+        </span>
+      } @else {
+        <span class="host__unit">{{ unitLabel() }}</span>
+      }
       @if (editing()) {
         <div class="host__tools" role="toolbar" [attr.aria-label]="title() + ' actions'">
           <button emsButton="flat" fab color="neutral" type="button" class="host__tool" cdkDragHandle [tabindex]="tab(0)" [attr.aria-label]="'Move ' + title()" [attr.aria-pressed]="moving()" (keydown)="moveKey($event)" (blur)="action.emit({ kind: 'move-blur' })" (click)="!moving() && action.emit({ kind: 'move-start' })">
@@ -51,7 +64,7 @@ export type WidgetAction =
       @if (moving()) {
         <ems-chip state="info" icon="open_with">Moving</ems-chip>
       }
-      <app-metric-widget [widget]="widget()" [metric]="metric()" [editing]="editing()" (status)="status.emit($event)" />
+      <app-metric-widget [widget]="shownWidget()" [metric]="metric()" [editing]="editing()" (status)="status.emit($event)" />
     </ems-card>
   `,
   styles: `
@@ -59,6 +72,19 @@ export type WidgetAction =
       display: block;
       min-width: 0;
       height: 100%;
+    }
+    /* The card fills the grid area the widget was given, and its content area fills the card, so a taller widget really is taller. */
+    ems-card {
+      height: 100%;
+    }
+    :host ::ng-deep ems-card .ems-card__content {
+      flex: 1 1 auto;
+      min-height: 0;
+    }
+    .host__unit {
+      margin-inline-end: 0.75rem;
+      color: var(--ems-text-muted);
+      font-size: var(--ems-font-size-small);
     }
     .host__tools {
       display: flex;
@@ -96,6 +122,24 @@ export class WidgetHostComponent {
 
   readonly action = output<WidgetAction>();
   readonly status = output<WidgetStatus>();
+
+  /**
+   * How this viewer is looking at the Metric. It starts as the saved presentation and follows it when the owner changes it. In view mode a different choice
+   * is the viewer's own and is not saved. In edit mode the choice is the owner's and goes to the page, which saves it with the layout.
+   */
+  protected readonly shown = linkedSignal(() => this.widget().presentation);
+  protected readonly shownWidget = computed<LayoutWidget>(() => ({ ...this.widget(), presentation: this.shown() }));
+  /** One option per way the catalog says this Metric can be drawn, so a new presentation in the catalog shows up here with no change to this file. */
+  protected readonly kinds = computed<SegmentOption<string>[]>(() => this.metric().presentations.map((p) => ({ value: p.key, label: p.name, icon: p.icon })));
+  protected readonly unitLabel = computed(() => UNIT_LABELS[this.metric().unit] ?? this.metric().unit);
+
+  protected choose(key: string): void {
+    if (this.editing()) {
+      this.action.emit({ kind: 'presentation', key });
+    } else {
+      this.shown.set(key);
+    }
+  }
 
   private readonly element = inject<ElementRef<HTMLElement>>(ElementRef);
   private readonly active = signal(0);

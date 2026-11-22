@@ -97,6 +97,19 @@ public sealed class MetricCatalogTests
         }
     }
 
+    private static readonly string[] DrawableKinds = ["line", "column", "stacked", "donut", "table", "tile"];
+
+    [Fact]
+    public void Presentations_are_only_kinds_the_widgets_can_draw_and_every_metric_can_be_read_as_a_table()
+    {
+        foreach (MetricCatalogEntry entry in MetricCatalog.Entries.Where(e => e.CanBePlaced))
+        {
+            Assert.All(entry.Presentations, p => Assert.Contains(p.Key, DrawableKinds));
+            Assert.Contains(entry.Presentations, p => p.Key == "table");
+            Assert.All(entry.Presentations, p => Assert.False(string.IsNullOrWhiteSpace(p.Name) || string.IsNullOrWhiteSpace(p.Icon)));
+        }
+    }
+
     [Fact]
     public void Options_only_apply_to_presentations_the_metric_has_and_their_defaults_are_valid()
     {

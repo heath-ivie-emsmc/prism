@@ -43,6 +43,15 @@ export async function openSavedViews(page: Page): Promise<void> {
   await page.waitForTimeout(200);
 }
 
+/** The claims review page, waiting until its rows are in. */
+export async function openNeedsAttention(page: Page, query = 'check=denied&period=202610&line=air&group=fixed-wing'): Promise<void> {
+  await page.goto(`/dashboard/needs-attention?${query}`);
+  await page.locator('app-needs-attention h1').waitFor();
+  await page.locator('app-needs-attention tbody tr').first().waitFor();
+  await page.evaluate(() => document.fonts.ready);
+  await page.waitForTimeout(300);
+}
+
 /** One saved view, read-only or in edit mode, after its widgets have loaded and drawn. */
 export async function openView(page: Page, id: number | 'new', options: { edit?: boolean; widgets?: number } = {}): Promise<void> {
   await page.goto(`/saved-views/${id}`);

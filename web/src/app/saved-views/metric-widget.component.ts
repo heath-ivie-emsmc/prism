@@ -1,6 +1,5 @@
-import { ChangeDetectionStrategy, Component, computed, effect, inject, input, output, signal, untracked } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, effect, inject, input, output, untracked } from '@angular/core';
 import { rxResource } from '@angular/core/rxjs-interop';
-import { EmsButtonDirective } from '@ems-management-consultants/ui';
 import { of } from 'rxjs';
 import { ChartColors, ChartComponent } from '../charts/chart.component';
 import { DashboardFilterContext } from '../dashboard/dashboard-filter-context';
@@ -23,7 +22,7 @@ const CHART_KINDS: ReadonlySet<string> = new Set(['line', 'column', 'stacked', '
  */
 @Component({
   selector: 'app-metric-widget',
-  imports: [ChartComponent, EmsButtonDirective, LoadProblemComponent, SkeletonComponent],
+  imports: [ChartComponent, LoadProblemComponent, SkeletonComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     @if (unavailable()) {
@@ -45,13 +44,7 @@ const CHART_KINDS: ReadonlySet<string> = new Set(['line', 'column', 'stacked', '
           <p class="widget__value">{{ data.headline?.value }}</p>
           <p class="widget__note">{{ data.headline?.note }}</p>
         } @else {
-          @if (canToggle()) {
-            <div class="widget__toggle" data-snapshot-skip role="group" [attr.aria-label]="'View ' + metric().name + ' as'">
-              <button emsButton="flat" type="button" [attr.aria-pressed]="!showTable()" (click)="showTable.set(false)">Chart</button>
-              <button emsButton="flat" type="button" [attr.aria-pressed]="showTable()" (click)="showTable.set(true)">Table</button>
-            </div>
-          }
-          @if (showTable() || widget().presentation === 'table') {
+          @if (widget().presentation === 'table') {
             <div class="widget__table" role="region" tabindex="0" [attr.aria-label]="data.table.caption">
               <table>
                 <caption>{{ data.table.caption }}</caption>
@@ -94,10 +87,18 @@ const CHART_KINDS: ReadonlySet<string> = new Set(['line', 'column', 'stacked', '
     }
   `,
   styles: `
+    /* The widget fills the card the grid gave it, and the chart takes whatever is left after the notes. A taller widget gives a taller chart. */
     :host {
-      display: block;
+      display: flex;
+      flex-direction: column;
+      flex: 1 1 auto;
       min-width: 0;
-      --chart-height: 14rem;
+      min-height: 0;
+      --chart-height: 100%;
+    }
+    app-chart {
+      flex: 1 1 auto;
+      min-height: 14rem;
     }
     .widget__value {
       margin: 0;
@@ -122,6 +123,9 @@ const CHART_KINDS: ReadonlySet<string> = new Set(['line', 'column', 'stacked', '
       outline-offset: -2px;
     }
     .widget__table {
+      flex: 1 1 auto;
+      min-height: 0;
+      overflow-y: auto;
       max-width: 100%;
       overflow-x: auto;
     }
@@ -157,7 +161,6 @@ export class MetricWidgetComponent {
 
   private readonly filters = inject(DashboardFilterContext);
   private readonly loader = inject(WidgetDataService);
-  protected readonly showTable = signal(false);
 
   protected readonly unavailable = computed(() => !LOADABLE_METRICS.includes(this.widget().metricKey) || !this.metric().presentations.some((p) => p.key === this.widget().presentation));
   protected readonly lineName = computed(() => ({ air: 'air', ground: 'ground', both: 'air and ground together' })[this.filters.serviceLine()]);
@@ -165,7 +168,6 @@ export class MetricWidgetComponent {
   protected readonly ready = computed(() => !!this.filters.providerId() && !!this.filters.endPeriod() && !this.filters.periodsLoading());
   protected readonly isTile = computed(() => this.widget().presentation === 'tile');
   protected readonly periodLabel = computed(() => this.filters.periods().find((p) => p.value === this.filters.endPeriod())?.label ?? 'this period');
-  protected readonly canToggle = computed(() => CHART_KINDS.has(this.widget().presentation));
 
   /** The query, or null when the widget cannot or should not load yet. The key changes only when something the Metric depends on changes. */
   private readonly query = computed<WidgetQuery | null>(() => {

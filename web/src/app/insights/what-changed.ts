@@ -38,6 +38,9 @@ export function plainMoney(amount: number): string {
   return money.format(Math.abs(amount));
 }
 
+/** An icon for what the finding is about, so two cards with the same label do not look alike. Anything not listed uses the label's icon. */
+const KIND_ICONS: Readonly<Record<string, string>> = { 'aged-payments': 'calendar_clock', volume: 'bar_chart', 'payer-mix': 'groups' };
+
 export function toCardView(card: InsightCardDto, expected: boolean, index: number): CardView {
   const label = LABELS[card.label];
   const amount = signedMoney(card.impact);
@@ -49,7 +52,7 @@ export function toCardView(card: InsightCardDto, expected: boolean, index: numbe
     body: card.body,
     label: card.label,
     labelText: label.text,
-    icon: label.icon,
+    icon: KIND_ICONS[card.kind] ?? label.icon,
     amount,
     amountNote,
     amountSpoken: `${amount} ${amountNote}`,

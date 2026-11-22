@@ -85,3 +85,27 @@ html {
   clip-path: inset(50%);
   white-space: nowrap;
 }
+
+/*
+ * The Send to CSE drawer: a dialog pinned to the right edge, full height. It is in the overlay layer, so it sits above the page and any floating button.
+ * Square on the page side, rounded on the open side.
+ */
+/* The library makes every dialog surface transparent with !important, because <ems-dialog> paints its own card. The drawer paints its own surface here. */
+.ems-ui .ems-dialog-panel.cse-drawer-panel .mat-mdc-dialog-surface,
+.ems-ui .ems-dialog-panel.cse-drawer-panel .mdc-dialog__surface {
+  border-radius: 1rem 0 0 1rem !important;
+  height: 100%;
+  overflow: hidden !important;
+  background: var(--ems-surface-neutral-elevated) !important;
+  color: var(--ems-text-default);
+  box-shadow: var(--ems-fx-neutral-default-frosted-raised-glowing, 0 0 24px rgb(0 0 0 / 0.2)) !important;
+}
+.ems-ui .cse-drawer-panel .mat-mdc-dialog-container {
+  height: 100%;
+}
+@media (max-width: 599.98px) {
+  .ems-ui .ems-dialog-panel.cse-drawer-panel .mat-mdc-dialog-surface,
+  .ems-ui .ems-dialog-panel.cse-drawer-panel .mdc-dialog__surface {
+    border-radius: 0 !important;
+  }
+}

@@ -42,7 +42,7 @@ describe('ChartComponent', () => {
     const { fixture } = await render();
 
     expect(fixture.componentInstance.colorsSeen).toBeDefined();
-    expect(Object.keys(fixture.componentInstance.colorsSeen!)).toEqual(['text', 'mutedText', 'grid', 'actual', 'highlight', 'projected', 'narrow']);
+    expect(Object.keys(fixture.componentInstance.colorsSeen!)).toEqual(['text', 'mutedText', 'grid', 'actual', 'highlight', 'projected', 'categorical', 'narrow']);
   });
 
   it('has no axe violations', async () => {

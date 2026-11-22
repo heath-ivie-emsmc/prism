@@ -42,6 +42,7 @@ public static class AuthServiceCollectionExtensions
         services.AddAuthorization(options =>
         {
             options.AddPolicy(Permissions.DashboardView, policy => policy.RequireClaim(SessionTokenIssuer.PermissionsClaim, Permissions.DashboardView));
+            options.AddPolicy(Permissions.ClaimsView, policy => policy.RequireClaim(SessionTokenIssuer.PermissionsClaim, Permissions.ClaimsView));
             options.AddPolicy(Permissions.ViewsManage, policy => policy.RequireClaim(SessionTokenIssuer.PermissionsClaim, Permissions.ViewsManage));
         });
 

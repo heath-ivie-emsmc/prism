@@ -1,6 +1,6 @@
 import type { ElementHandle } from '@playwright/test';
 import { expect, test } from './fixtures';
-import { lastAnnouncement, openDashboard, openView } from './support';
+import { lastAnnouncement, openDashboard, openNeedsAttention, openView } from './support';
 
 /** Everything works without a mouse (WCAG 2.1.1, 2.1.2, 2.4.3, 2.4.7, 2.4.11). */
 /**
@@ -117,6 +117,61 @@ test.describe('keyboard', () => {
     expect(text, 'the first Tab stop should be a "Skip to main content" link').toContain('skip');
     await page.keyboard.press('Enter');
     await expect(page.locator('main')).toBeFocused();
+  });
+
+  test.describe('needs attention', () => {
+    test('Tab reaches every control, each shows focus, and nothing traps', async ({ page }) => {
+      await openNeedsAttention(page);
+
+      const seen: string[] = [];
+      const missing: string[] = [];
+      for (let i = 0; i < 60; i++) {
+        await page.keyboard.press('Tab');
+        const focused = page.locator(':focus');
+        if ((await focused.count()) === 0) break;
+        const id = await focused.evaluate((n) => `${n.tagName.toLowerCase()}|${n.getAttribute('aria-label') ?? (n.textContent ?? '').trim().slice(0, 30)}|${n.className}`);
+        if (seen.includes(id) && seen[0] === id) break;
+        seen.push(id);
+        const indicator = await focusIndicator((await focused.elementHandle()) as ElementHandle<Element>);
+        if (!indicator.visible) missing.push(indicator.description);
+      }
+
+      expect(seen.some((s) => s.includes('Select all 2 claims'))).toBe(true);
+      expect(seen.some((s) => s.includes('Select claim FW-2610457'))).toBe(true);
+      expect(seen.length, 'a keyboard trap would run to the limit').toBeLessThan(60);
+      expect(missing, 'controls with no visible focus indicator').toEqual([]);
+    });
+
+    test('a claim is ticked with Space, Send to CSE opens the drawer with Enter, Tab stays inside it, and Escape returns focus', async ({ page }) => {
+      await openNeedsAttention(page);
+      await page.getByRole('checkbox', { name: 'Select claim FW-2610418' }).focus();
+      await page.keyboard.press('Space');
+      const send = page.locator('app-needs-attention button.send');
+      await expect(send).toBeEnabled();
+
+      await send.focus();
+      await page.keyboard.press('Enter');
+      const drawer = page.getByRole('dialog', { name: 'Send to your CSE' });
+      await expect(drawer).toBeVisible();
+      for (let i = 0; i < 10; i++) {
+        await page.keyboard.press('Tab');
+        expect(await page.evaluate(() => !!document.activeElement?.closest('[role="dialog"]')), `Tab ${i + 1} left the drawer`).toBe(true);
+      }
+
+      await page.keyboard.press('Escape');
+      await expect(drawer).toBeHidden();
+      await expect(send).toBeFocused();
+    });
+
+    test('the radio tabs move with the arrow keys and change the list', async ({ page }) => {
+      await openNeedsAttention(page);
+      await page.getByRole('radio', { name: 'Denied (2)' }).focus();
+
+      await page.keyboard.press('ArrowRight');
+
+      await expect(page.getByRole('radio', { name: 'Needs attention (4)' })).toHaveAttribute('aria-checked', 'true');
+      await expect(page.locator('app-needs-attention tbody tr')).toHaveCount(4);
+    });
   });
 
   test.describe('saved views', () => {

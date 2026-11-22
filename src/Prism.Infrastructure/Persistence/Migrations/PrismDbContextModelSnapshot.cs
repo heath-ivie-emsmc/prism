@@ -16,7 +16,7 @@ partial class PrismDbContextModelSnapshot : ModelSnapshot
     // If you encounter a merge conflict in the line below, it means you need to
     // discard one of the migration branches and recreate its migrations on top of
     // the other branch. See https://aka.ms/efcore-docs-migrations-conflicts for more info.
-    public override string LastMigrationId => "20261122194742_CreateSavedViews";
+    public override string LastMigrationId => "20261122224619_CreateAuditEntry";
 
     protected override void BuildModel(ModelBuilder modelBuilder)
     {
@@ -26,6 +26,73 @@ partial class PrismDbContextModelSnapshot : ModelSnapshot
             .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
         NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
+
+        modelBuilder.Entity("Prism.Infrastructure.Persistence.Entities.AuditEntry", b =>
+            {
+                var id = b.Property<long>("Id")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("bigint")
+                    .HasColumnName("id");
+
+                NpgsqlPropertyBuilderExtensions.UseIdentityAlwaysColumn(id);
+
+                b.Property<string>("Action")
+                    .IsRequired()
+                    .HasMaxLength(50)
+                    .HasColumnType("character varying(50)")
+                    .HasColumnName("action");
+
+                b.Property<string>("CheckKey")
+                    .IsRequired()
+                    .HasMaxLength(50)
+                    .HasColumnType("character varying(50)")
+                    .HasColumnName("check_key");
+
+                b.Property<DateTimeOffset>("CreatedAtTimestamp")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("timestamp with time zone")
+                    .HasColumnName("created_at_timestamp")
+                    .HasDefaultValueSql("now()");
+
+                b.Property<string>("Period")
+                    .IsRequired()
+                    .HasMaxLength(6)
+                    .HasColumnType("character varying(6)")
+                    .HasColumnName("period");
+
+                b.Property<long>("PortalUserId")
+                    .HasColumnType("bigint")
+                    .HasColumnName("portal_user_id");
+
+                b.Property<int>("ProviderId")
+                    .HasColumnType("integer")
+                    .HasColumnName("provider_id");
+
+                b.Property<int>("RowCount")
+                    .HasColumnType("integer")
+                    .HasColumnName("row_count");
+
+                b.Property<DateTimeOffset>("UpdatedAtTimestamp")
+                    .ValueGeneratedOnAddOrUpdate()
+                    .HasColumnType("timestamp with time zone")
+                    .HasColumnName("updated_at_timestamp")
+                    .HasDefaultValueSql("now()");
+
+                b.HasKey("Id")
+                    .HasName("pk_audit_entry");
+
+                b.HasIndex("PortalUserId", "CreatedAtTimestamp")
+                    .HasDatabaseName("ix_audit_entry__portal_user_id__created_at_timestamp")
+                    .HasAnnotation("Npgsql:StorageParameter:fillfactor", 90);
+
+                b.HasIndex("ProviderId", "CreatedAtTimestamp")
+                    .HasDatabaseName("ix_audit_entry__provider_id__created_at_timestamp")
+                    .HasAnnotation("Npgsql:StorageParameter:fillfactor", 90);
+
+                b.ToTable("audit_entry");
+
+                b.HasAnnotation("Npgsql:StorageParameter:fillfactor", 90);
+            });
 
         modelBuilder.Entity("Prism.Infrastructure.Persistence.Entities.RevokedSession", b =>
             {

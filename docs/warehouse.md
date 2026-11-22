@@ -135,7 +135,19 @@ Three Metrics feed the "What changed" panel. Each is also a public API Metric un
 - **Remainder:** called normal only when it is within one standard deviation of the last 12 months' changes, and only when all 12 months have cash.
 - **Thresholds:** a finding is shown at 10% of the size of the change or more, at most 5. They are constants in `InsightThresholds` and are meant to be tuned against real months.
 - **Cache:** results are kept for 10 minutes, keyed on Provider, period, Service Line, group and the Data Through date, with a size cap of 500 and at most 4 computed at once.
-- **Not built:** denied claims and timely filing (needs the claim-level table), an LLM, and "Ask about this view".
+- **Not built:** an LLM and "Ask about this view". Denied claims are reached from the review page (see Claims needing attention), not computed here: a Finding never carries claim detail.
+
+## Claims needing attention
+
+`GET /api/v1/providers/{providerId}/claims/attention/counts`, `.../{checkKey}` and `.../{checkKey}/export` read claim rows from the latest `reporting.trip_detail_snapshot` load, by date of service in the period. They need `prism.claims.view`; the list and the export write an audit row (`audit_entry`: who, which Provider, which check, period, row count, never claim data).
+
+- **Columns read (an explicit list; the table also holds patient names, SSNs, birth dates and addresses, which are never selected):** `encounter_id`, `run_number`, `dos`, `prim_pay`, `prim_pay_category`, `vehicle`, `reporting_division`, `status`, `denial_code`, `denial_reason`, `balance_due`, `in_collections`, `level_of_service`, `snapshot_date`. The columns and rules live in `ClaimAttentionSql`.
+- **Denied:** a denial code and `balance_due > 0`. **Needs attention:** Denied, `status = 'On_Hold'`, or `in_collections = 'Yes'`. **All:** every claim in the period.
+- **Claim reference:** `run_number`, or `encounter_id` when it is blank. Confirm this is the number customers know.
+- **Balance due is not an expected payment.** The table has no estimate, so the page shows what is still owed and says so.
+- **Filing deadline is derived, not read.** Due date = date of service + the filing limit for the payer category (`Attention:FilingLimitDays`, 365 days by default, per `prim_pay_category` when set). Days left count from Data Through. The limits are a placeholder until the real ones are supplied.
+- **Bounds:** list pages of at most 100; the warehouse row cap (10,000) applies, and more matching claims returns 422 instead of a truncated list. Claim rows are never cached.
+- Facility-restricted users get 404, as on every Metric route.
 
 ## Not yet done
 

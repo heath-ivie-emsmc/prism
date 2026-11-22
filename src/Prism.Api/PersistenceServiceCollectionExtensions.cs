@@ -23,6 +23,7 @@ public static class PersistenceServiceCollectionExtensions
         services.AddDbContext<PrismDbContext>((provider, options) =>
             options.UsePrismNpgsql(provider.GetRequiredService<IOptions<PrismDatabaseOptions>>().Value.ConnectionString));
         services.AddScoped<ISessionRevocationStore, SessionRevocationStore>();
+        services.AddScoped<Prism.Application.Audit.IAuditLog, AuditLog>();
         services.AddSingleton<IDatabaseProbe, PrismDatabaseProbe>();
         services.AddPrismRedis();
         services.AddPrismWarehouse();

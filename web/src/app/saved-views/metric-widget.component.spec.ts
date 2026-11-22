@@ -21,24 +21,21 @@ async function create(w: LayoutWidget, metric = NET_CASH, replies: Record<string
 }
 
 describe('MetricWidgetComponent', () => {
-  it('draws a chart with a text description, and offers the same numbers as a table', async () => {
-    const { root, fixture } = await create(widget('a', 0, 0));
+  it('draws a chart with a text description', async () => {
+    const { root } = await create(widget('a', 0, 0));
 
     expect(root.querySelector('app-chart [role="img"]')?.getAttribute('aria-label')).toContain('Net cash collected, 2 months to Oct 2026');
-    [...root.querySelectorAll('button')].find((b) => b.textContent!.trim() === 'Table')!.click();
-    fixture.detectChanges();
+    expect(root.querySelector('table')).toBeNull();
+  });
+
+  it('draws the table presentation as a real table, with a caption, scoped headers and a focusable scroll region', async () => {
+    const { root } = await create(widget('a', 0, 0, { presentation: 'table' }));
 
     const table = root.querySelector('table')!;
     expect(table.querySelector('caption')?.textContent).toBe('Net cash collected by month');
     expect([...table.querySelectorAll('thead th')].map((th) => th.getAttribute('scope'))).toEqual(['col', 'col', 'col']);
     expect(table.querySelector('tbody th')?.getAttribute('scope')).toBe('row');
     expect(root.querySelector('[role="region"]')?.getAttribute('tabindex')).toBe('0');
-  });
-
-  it('draws a table presentation as a table with no toggle', async () => {
-    const { root } = await create(widget('a', 0, 0, { presentation: 'table' }));
-
-    expect(root.querySelector('table')).not.toBeNull();
     expect(root.querySelector('[role="group"]')).toBeNull();
   });
 

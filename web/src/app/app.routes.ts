@@ -28,6 +28,11 @@ export const routes: Routes = [
         loadComponent: () => import('./payer-mix/payer-mix.component').then((m) => m.PayerMixComponent),
       },
       {
+        path: 'dashboard/needs-attention',
+        title: 'Needs attention · Prism',
+        loadComponent: () => import('./attention/needs-attention.component').then((m) => m.NeedsAttentionComponent),
+      },
+      {
         path: 'saved-views',
         title: 'Saved views · Prism',
         loadComponent: () => import('./saved-views/saved-views-list.component').then((m) => m.SavedViewsListComponent),

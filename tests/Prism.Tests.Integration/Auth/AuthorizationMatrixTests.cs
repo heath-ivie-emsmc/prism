@@ -149,4 +149,34 @@ public sealed class AuthorizationMatrixTests : IDisposable
 
         Assert.False(result.Succeeded);
     }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task The_claims_view_policy_needs_that_permission_in_the_session(bool granted)
+    {
+        var authorization = factory.Services.GetRequiredService<IAuthorizationService>();
+        var identity = new System.Security.Claims.ClaimsIdentity(
+            granted ? [new System.Security.Claims.Claim(Prism.Infrastructure.Auth.SessionTokenIssuer.PermissionsClaim, Prism.Application.Auth.Permissions.ClaimsView)] : [],
+            "test");
+
+        AuthorizationResult result = await authorization.AuthorizeAsync(
+            new System.Security.Claims.ClaimsPrincipal(identity), Prism.Application.Auth.Permissions.ClaimsView);
+
+        Assert.Equal(granted, result.Succeeded);
+    }
+
+    [Fact]
+    public async Task The_dashboard_view_permission_does_not_satisfy_the_claims_view_policy()
+    {
+        var authorization = factory.Services.GetRequiredService<IAuthorizationService>();
+        var identity = new System.Security.Claims.ClaimsIdentity(
+            [new System.Security.Claims.Claim(Prism.Infrastructure.Auth.SessionTokenIssuer.PermissionsClaim, Prism.Application.Auth.Permissions.DashboardView)],
+            "test");
+
+        AuthorizationResult result = await authorization.AuthorizeAsync(
+            new System.Security.Claims.ClaimsPrincipal(identity), Prism.Application.Auth.Permissions.ClaimsView);
+
+        Assert.False(result.Succeeded);
+    }
 }

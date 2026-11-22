@@ -1316,6 +1316,368 @@
         }
       }
     },
+    "/api/v1/providers/{providerId}/claims/attention/counts": {
+      "get": {
+        "tags": [
+          "Claims needing attention"
+        ],
+        "summary": "How many claims each Attention Check flags",
+        "description": "For \u0060period\u0060 (\u0060yyyyMM\u0060, required) and \u0060serviceLine\u0060 (\u0060all\u0060, \u0060air\u0060 or \u0060ground\u0060, default \u0060all\u0060) and optionally \u0060group\u0060 (an aircraft type or level of service key from the breakdown route, such as \u0060fixed-wing\u0060), the number of claims flagged by each Attention Check (\u0060denied\u0060, \u0060needs_attention\u0060, \u0060all\u0060), by date of service in the latest warehouse load, and the balance still owed on the denied claims. Aggregates only, but it needs the claims permission. Returns 404 when the Provider is not one the caller may read in full.",
+        "operationId": "GetAttentionCounts",
+        "parameters": [
+          {
+            "name": "providerId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Period",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "ServiceLine",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Group",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AttentionCountsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service Unavailable",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/providers/{providerId}/claims/attention/{checkKey}": {
+      "get": {
+        "tags": [
+          "Claims needing attention"
+        ],
+        "summary": "The claims one Attention Check flags",
+        "description": "The claims flagged by \u0060checkKey\u0060 (\u0060denied\u0060, \u0060needs_attention\u0060 or \u0060all\u0060) for \u0060period\u0060 (\u0060yyyyMM\u0060, required), \u0060serviceLine\u0060 and optionally \u0060group\u0060, soonest estimated filing deadline first. \u0060page\u0060 starts at 1 and \u0060pageSize\u0060 is at most 100. \u0060balanceDue\u0060 is what is still owed, not an estimate of what will be paid. \u0060filingDueDate\u0060 is an estimate: the date of service plus a filing limit for the payer category, and \u0060daysLeft\u0060 counts from \u0060dataThrough\u0060. Claim data is PHI: it needs the claims permission and the read is audited. More than 10,000 matching claims returns 422. Returns 404 for an unknown Provider or check.",
+        "operationId": "GetAttentionClaims",
+        "parameters": [
+          {
+            "name": "providerId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "checkKey",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Period",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "ServiceLine",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Group",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Page",
+            "in": "query",
+            "schema": {
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": [
+                "integer",
+                "string"
+              ],
+              "format": "int32"
+            }
+          },
+          {
+            "name": "PageSize",
+            "in": "query",
+            "schema": {
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": [
+                "integer",
+                "string"
+              ],
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AttentionClaimsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unprocessable Entity",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service Unavailable",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/providers/{providerId}/claims/attention/{checkKey}/export": {
+      "get": {
+        "tags": [
+          "Claims needing attention"
+        ],
+        "summary": "Download the claims one Attention Check flags as CSV",
+        "description": "The same claims, in the same order, as the list route, as a CSV file with every cell quoted and spreadsheet formulas neutralized. The file name is built from the check and the date only. Claim data is PHI: it needs the claims permission and the download is audited. More than 10,000 matching claims returns 422.",
+        "operationId": "ExportAttentionClaims",
+        "parameters": [
+          {
+            "name": "providerId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "checkKey",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Period",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "ServiceLine",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Group",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unprocessable Entity",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service Unavailable",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/providers/{providerId}/saved-views": {
       "get": {
         "tags": [
@@ -2088,6 +2450,216 @@
   },
   "components": {
     "schemas": {
+      "AttentionClaimResponse": {
+        "required": [
+          "id",
+          "claimRef",
+          "serviceDate",
+          "payer",
+          "payerCategory",
+          "vehicle",
+          "reportingDivision",
+          "status",
+          "denialCode",
+          "denialReason",
+          "balanceDue",
+          "filingDueDate",
+          "daysLeft"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "claimRef": {
+            "type": "string"
+          },
+          "serviceDate": {
+            "type": "string"
+          },
+          "payer": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "payerCategory": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "vehicle": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "reportingDivision": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "denialCode": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "denialReason": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "balanceDue": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?$",
+            "type": [
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "filingDueDate": {
+            "type": "string"
+          },
+          "daysLeft": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          }
+        },
+        "description": "One flagged claim. Every field is PHI: it can identify a patient\u0027s claim."
+      },
+      "AttentionClaimsResponse": {
+        "required": [
+          "providerId",
+          "check",
+          "period",
+          "dataThrough",
+          "total",
+          "page",
+          "pageSize",
+          "claims"
+        ],
+        "type": "object",
+        "properties": {
+          "providerId": {
+            "type": "string"
+          },
+          "check": {
+            "type": "string"
+          },
+          "period": {
+            "type": "string"
+          },
+          "dataThrough": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "total": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "page": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "pageSize": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "claims": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AttentionClaimResponse"
+            }
+          }
+        },
+        "description": "One page of the claims a check flags."
+      },
+      "AttentionCountResponse": {
+        "required": [
+          "key",
+          "name",
+          "count"
+        ],
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "count": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          }
+        },
+        "description": "One check and how many claims it flags."
+      },
+      "AttentionCountsResponse": {
+        "required": [
+          "providerId",
+          "period",
+          "dataThrough",
+          "counts",
+          "deniedBalanceDue"
+        ],
+        "type": "object",
+        "properties": {
+          "providerId": {
+            "type": "string"
+          },
+          "period": {
+            "type": "string"
+          },
+          "dataThrough": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "counts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AttentionCountResponse"
+            }
+          },
+          "deniedBalanceDue": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?$",
+            "type": [
+              "number",
+              "string"
+            ],
+            "format": "double"
+          }
+        },
+        "description": "The number of claims each Attention Check flags in a period. Aggregates only."
+      },
       "BreakdownFiguresResponse": {
         "required": [
           "cash",
@@ -3989,6 +4561,9 @@
     }
   },
   "tags": [
+    {
+      "name": "Claims needing attention"
+    },
     {
       "name": "Health"
     },

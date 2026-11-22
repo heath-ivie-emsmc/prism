@@ -1,5 +1,5 @@
 import { expect, test } from './fixtures';
-import { axeViolations, chooseNetCashView, layoutErrors, openDashboard, openSavedViews, openView } from './support';
+import { axeViolations, chooseNetCashView, layoutErrors, openDashboard, openNeedsAttention, openSavedViews, openView } from './support';
 
 /** WCAG 2.2 AA beyond the static page: other states, other pages, user settings. Every test also gates on axe. */
 test.describe('accessibility', () => {
@@ -235,6 +235,53 @@ test.describe('accessibility', () => {
     expect(running).toBe(0);
   });
 
+  test.describe('needs attention', () => {
+    test('has a title, one h1, one main, headings that do not skip, and every control inside a landmark', async ({ page }) => {
+      await openNeedsAttention(page);
+
+      await expect(page).toHaveTitle(/^Needs attention · Prism$/);
+      await expect(page.locator('h1')).toHaveCount(1);
+      await expect(page.locator('main')).toHaveCount(1);
+      const levels = await page.evaluate(() => [...document.querySelectorAll('h1, h2, h3, h4, h5, h6')].map((h) => Number(h.tagName[1])));
+      expect(levels.filter((level, i) => i > 0 && level - levels[i - 1]! > 1), `heading levels: ${levels.join(',')}`).toEqual([]);
+      const outside = await page.evaluate(() =>
+        [...document.querySelectorAll('h1, h2, button, a[href], input, textarea, [role="radio"]')]
+          .filter((el) => !el.closest('main, nav, header, footer, .skip-link, [role="main"], [role="navigation"], .cdk-overlay-container'))
+          .map((el) => el.tagName.toLowerCase() + ':' + (el.textContent ?? '').trim().slice(0, 20)),
+      );
+      expect(outside).toEqual([]);
+    });
+
+    test('the table has a caption, scoped headers and a focusable scroll region, and every status and deadline is in words', async ({ page }) => {
+      await openNeedsAttention(page, 'check=needs_attention&period=202610&line=air&group=fixed-wing');
+
+      await expect(page.locator('app-needs-attention table caption')).toHaveCount(1);
+      expect(await page.locator('app-needs-attention thead th').evaluateAll((els) => els.map((e) => e.getAttribute('scope')))).toEqual(Array(7).fill('col'));
+      await expect(page.locator('app-needs-attention tbody th[scope="row"]')).toHaveCount(4);
+      await expect(page.locator('app-needs-attention [role="region"]')).toHaveAttribute('tabindex', '0');
+      await expect(page.locator('app-needs-attention tbody')).toContainText('On hold');
+      await expect(page.locator('app-needs-attention tbody')).toContainText('Overdue by 3 days');
+    });
+
+    test('ticking claims is announced with the count', async ({ page }) => {
+      await openNeedsAttention(page);
+
+      await page.getByRole('checkbox', { name: 'Select claim FW-2610418' }).check();
+      await expect(page.locator('app-needs-attention [role="status"]').first()).toHaveText('1 claim selected');
+    });
+
+    test('forced colors keep the selected row, the badge and the drawer visible', async ({ page }) => {
+      await page.emulateMedia({ forcedColors: 'active' });
+      await openNeedsAttention(page);
+      await page.getByRole('checkbox', { name: 'Select all 2 claims on this page' }).check();
+      await expect(page.locator('.send__badge')).toBeVisible();
+      await page.locator('app-needs-attention button.send').click();
+
+      await expect(page.getByRole('dialog', { name: 'Send to your CSE' })).toBeVisible();
+      expect((await layoutErrors(page)).errors).toEqual([]);
+    });
+  });
+
   test.describe('saved views', () => {
     test('each page has a title, one h1, one main, and headings that do not skip', async ({ page }) => {
       for (const [open, title] of [
@@ -285,7 +332,7 @@ test.describe('accessibility', () => {
       const label = (await page.locator('app-metric-widget app-chart [role="img"]').first().getAttribute('aria-label')) ?? '';
       expect(label.length).toBeGreaterThan(20);
       expect(label.length).toBeLessThanOrEqual(250);
-      await page.getByRole('button', { name: 'Table', exact: true }).first().click();
+      await page.getByRole('radio', { name: 'Table', exact: true }).first().click();
       await expect(page.locator('app-metric-widget table caption')).toHaveText('Net cash collected by month');
     });
 

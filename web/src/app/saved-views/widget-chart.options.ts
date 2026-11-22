@@ -27,7 +27,7 @@ export function formatValue(value: number, unit: WidgetData['unit'], compact: bo
  * Series are told apart by shape and dash as well as colour, and ECharts' own generated description is off so the widget's own text stands.
  */
 export function buildWidgetOption(data: WidgetData, kind: ChartKind, colors: ChartColors): EChartsCoreOption {
-  const palette = [colors.actual, colors.highlight, colors.projected, colors.mutedText, colors.text];
+  const palette = colors.categorical?.length ? [...colors.categorical] : [colors.actual, colors.highlight, colors.projected, colors.mutedText, colors.text];
   const base = {
     animation: false,
     aria: { enabled: true, label: { enabled: false }, decal: { show: data.series.length >= 4 } },
@@ -46,6 +46,7 @@ export function buildWidgetOption(data: WidgetData, kind: ChartKind, colors: Cha
         {
           type: 'pie',
           radius: ['45%', '70%'],
+          emphasis: { disabled: true },
           itemStyle: { borderColor: colors.text, borderWidth: 1 },
           label: { color: colors.text, formatter: (p: { name: string; percent: number }) => (colors.narrow ? '' : `${p.name} ${p.percent.toFixed(0)}%`) },
           data: data.categories.map((name, i) => ({ name, value: latest?.values[i] ?? 0 })),
@@ -69,6 +70,7 @@ export function buildWidgetOption(data: WidgetData, kind: ChartKind, colors: Cha
     series: data.series.map((series, i) => ({
       name: series.name,
       type: bar ? 'bar' : 'line',
+      emphasis: { disabled: true },
       data: [...series.values],
       ...(kind === 'stacked' ? { stack: 'total' } : {}),
       ...(bar ? { itemStyle: { borderColor: colors.text, borderWidth: kind === 'stacked' ? 1 : 0 } } : { symbol: SYMBOLS[i % SYMBOLS.length], symbolSize: 8, lineStyle: { type: DASHES[i % DASHES.length], width: 2 } }),

@@ -34,6 +34,8 @@ public sealed class AuthTestFactory : WebApplicationFactory<Program>
     /// <summary>A hand-written stand-in for the Prism database, so these tests need no Postgres. The real store is tested against Postgres.</summary>
     public FakeSessionRevocationStore Revocations { get; } = new();
 
+    public FakeAuditLog Audit { get; } = new();
+
     /// <summary>Stands in for the database connection check behind /ready.</summary>
     public FakeDatabaseProbe Database { get; } = new();
 
@@ -78,6 +80,8 @@ public sealed class AuthTestFactory : WebApplicationFactory<Program>
             ConfigureTestServices?.Invoke(services);
             services.RemoveAll<IDatabaseProbe>();
             services.AddSingleton<IDatabaseProbe>(Database);
+            services.RemoveAll<Prism.Application.Audit.IAuditLog>();
+            services.AddSingleton<Prism.Application.Audit.IAuditLog>(Audit);
             services.RemoveAll<ISessionRevocationStore>();
             services.AddSingleton<ISessionRevocationStore>(Revocations);
             services.RemoveAll<IPortalDirectory>();

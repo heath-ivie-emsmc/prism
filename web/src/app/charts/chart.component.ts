@@ -25,6 +25,11 @@ export interface ChartColors {
   readonly highlight: string;
   /** Outline and line for projected months. */
   readonly projected: string;
+  /**
+   * Solid colors for charts whose series have no fixed meaning, in the order they are used. Plain hex values on purpose: ECharts lightens a color when
+   * a bar is hovered and cannot read the theme's color-mix() tokens, so a series drawn in one of those disappears on hover.
+   */
+  readonly categorical?: readonly string[];
   /** The chart is too narrow for a figure on every bar or point, so only the key one is shown. */
   readonly narrow: boolean;
 }
@@ -150,6 +155,13 @@ export class ChartComponent {
       actual: token(style, '--ems-surface-neutral-strong', '#606060'),
       highlight: token(style, '--ems-surface-error-stronger', '#a01f1f'),
       projected: token(style, '--ems-surface-accent-emerald', '#00704a'),
+      categorical: [
+        token(style, '--ems-surface-primary-default', '#38469b'),
+        token(style, '--ems-surface-accent-emerald', '#00724c'),
+        token(style, '--ems-surface-accent-plum', '#752e58'),
+        token(style, '--ems-surface-warning-strong', '#784109'),
+        token(style, '--ems-surface-error-strong', '#a22020'),
+      ],
       narrow: this.host().nativeElement.clientWidth < NARROW_CHART_PX,
     };
   }
