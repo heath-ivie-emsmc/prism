@@ -37,7 +37,7 @@ public sealed class ProviderDivisionDirectory(IWarehouse warehouse, IWarehousePr
         }
 
         IReadOnlyList<long> rows = await warehouse.QueryAsync(
-            new WarehouseQuery(DivisionsSql, new Dictionary<string, object?> { [WarehouseQuery.ProviderParameter] = warehouseId }),
+            new WarehouseQuery(DivisionsSql, new Dictionary<string, object?> { [WarehouseQuery.ProviderParameter] = warehouseId }) { Name = "ProviderDivisionDirectory" },
             reader => reader.GetInt64(0),
             cancellationToken);
         IReadOnlySet<string> ids = rows.Select(id => id.ToString(CultureInfo.InvariantCulture)).ToHashSet(StringComparer.Ordinal);

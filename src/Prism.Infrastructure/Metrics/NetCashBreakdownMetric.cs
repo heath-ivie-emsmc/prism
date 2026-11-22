@@ -16,24 +16,13 @@ public sealed class NetCashBreakdownMetric(IWarehouse warehouse, IWarehouseProvi
     // Adjustment periods are named "-202608" and belong to the month "202608". The base is the reporting division as the warehouse names it, without a
     // "- Old AR ..." suffix, so a legacy division is counted under its current one.
     internal const string BreakdownSql =
-        """
+        $$"""
         WITH periods AS (
             SELECT id, replace(name, '-', '') AS ym
             FROM ods.accounting_period
             WHERE provider_id = @provider_id AND name IN (@period, @prior, '-' || @period, '-' || @prior)
         ),
-        cash AS (
-            SELECT et.encounter_id, p.ym, SUM(et.balance_amount) / 100.0 AS amount
-            FROM ods.encounter_transaction et
-            JOIN periods p ON p.id = et.accounting_period_id
-            WHERE et.type = 'Credit' AND et.user_source IS DISTINCT FROM 'Old AR Import'
-              AND EXISTS (
-                  SELECT 1
-                  FROM ods.encounter_transaction_credit_attribute a
-                  JOIN ods.credit c ON c.id = a.credit_id
-                  WHERE a.encounter_transaction_id = et.id AND c.credit_type_id IN (2, 5))
-            GROUP BY et.encounter_id, p.ym
-        ),
+        {{NetCashSql.CashCte}},
         trips AS (
             SELECT encounter_id, level_of_service, vehicle, response_type, loaded_miles,
                    nullif(nullif(trim(regexp_replace(reporting_division, '\s*-\s*Old AR.*$', '', 'i')), ''), '<none>') AS base
@@ -76,7 +65,7 @@ public sealed class NetCashBreakdownMetric(IWarehouse warehouse, IWarehouseProvi
                 ["prior"] = prior.ToString(),
                 ["include_air"] = serviceLine is ServiceLineFilter.Both or ServiceLineFilter.Air,
                 ["include_ground"] = serviceLine is ServiceLineFilter.Both or ServiceLineFilter.Ground,
-            });
+            }) { Name = "NetCashBreakdownMetric" };
 
         IReadOnlyList<Slice> slices = await warehouse.QueryAsync(
             query,
@@ -90,7 +79,7 @@ public sealed class NetCashBreakdownMetric(IWarehouse warehouse, IWarehouseProvi
 
         var openQuery = new WarehouseQuery(
             PeriodOpenSql,
-            new Dictionary<string, object?> { [WarehouseQuery.ProviderParameter] = query.Parameters[WarehouseQuery.ProviderParameter], ["period"] = period.ToString() });
+            new Dictionary<string, object?> { [WarehouseQuery.ProviderParameter] = query.Parameters[WarehouseQuery.ProviderParameter], ["period"] = period.ToString() }) { Name = "NetCashBreakdownMetric#2" };
         IReadOnlyList<bool> openRows = await warehouse.QueryAsync(openQuery, reader => reader.GetBoolean(0), cancellationToken);
         bool periodOpen = openRows.Count > 0 && openRows[0];
 

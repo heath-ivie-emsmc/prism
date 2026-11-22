@@ -38,7 +38,7 @@ public sealed class WarehouseProviderResolver(IWarehouse warehouse, IOptions<Pri
         }
 
         IReadOnlyList<int> rows = await warehouse.QueryAsync(
-            new WarehouseQuery(ResolveSql, new Dictionary<string, object?> { [WarehouseQuery.ProviderParameter] = portalCompanyId }),
+            new WarehouseQuery(ResolveSql, new Dictionary<string, object?> { [WarehouseQuery.ProviderParameter] = portalCompanyId }) { Name = "WarehouseProviderResolver" },
             reader => reader.GetInt32(0),
             cancellationToken);
         int resolved = rows.Count == 1 ? rows[0] : IWarehouseProviderResolver.Unmapped;

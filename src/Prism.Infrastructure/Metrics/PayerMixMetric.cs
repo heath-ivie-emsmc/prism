@@ -23,7 +23,7 @@ public sealed class PayerMixMetric(IWarehouse warehouse, IWarehouseProviderResol
 
     // The payer name decides VA first: the warehouse files VA and TRICARE payers under Insurance and Facility as often as under Other Govt. Payers.
     internal const string PayerMixSql =
-        """
+        $$"""
         WITH trips AS (
             SELECT level_of_service, prim_pay, prim_pay_category, dos
             FROM reporting.trip_detail_snapshot
@@ -35,16 +35,7 @@ public sealed class PayerMixMetric(IWarehouse warehouse, IWarehouseProviderResol
             SELECT to_char(dos, 'YYYYMM') AS ym,
                    lower(replace(trim(COALESCE(level_of_service, '')), ' ', '-')) AS group_key,
                    MIN(level_of_service) OVER (PARTITION BY lower(replace(trim(COALESCE(level_of_service, '')), ' ', '-'))) AS group_name,
-                   CASE
-                       WHEN prim_pay ~* '\m(VA|CHAMP[A-Z]*|TRICARE)\M' THEN 'va'
-                       WHEN prim_pay_category IN ('Insurance', 'TPL') THEN 'commercial'
-                       WHEN prim_pay_category IN ('Medicare', 'Medicare Advantage') THEN 'medicare'
-                       WHEN prim_pay_category IN ('Medicaid', 'Medicaid MCO') THEN 'medicaid'
-                       WHEN prim_pay_category = 'Other Govt. Payers' THEN 'other-gov'
-                       WHEN prim_pay_category = 'Facility' THEN 'facility'
-                       WHEN prim_pay_category = 'Patient' THEN 'patient'
-                       ELSE 'not-recorded'
-                   END AS payer
+                   {{PayerGroupSql.CaseExpression}} AS payer
             FROM trips
             WHERE (@include_air AND level_of_service IN ('Rotor Wing', 'Fixed Wing'))
                OR (@include_ground AND COALESCE(level_of_service, '') NOT IN ('Rotor Wing', 'Fixed Wing'))
@@ -69,7 +60,7 @@ public sealed class PayerMixMetric(IWarehouse warehouse, IWarehouseProviderResol
                 ["include_air"] = serviceLine is ServiceLineFilter.Both or ServiceLineFilter.Air,
                 ["include_ground"] = serviceLine is ServiceLineFilter.Both or ServiceLineFilter.Ground,
                 ["group_key"] = groupKey ?? string.Empty,
-            });
+            }) { Name = "PayerMixMetric" };
 
         IReadOnlyList<Row> rows = await warehouse.QueryAsync(
             query,

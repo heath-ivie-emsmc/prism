@@ -3,7 +3,7 @@ import { rxResource, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { map, of } from 'rxjs';
-import { EmsBreadcrumb, EmsBreadcrumbsComponent, EmsIconComponent, EmsMessageComponent, EmsPickerOption, EmsSelectComponent } from '@ems-management-consultants/ui';
+import { EmsBreadcrumb, EmsBreadcrumbsComponent, EmsMessageComponent, EmsPickerOption, EmsSelectComponent } from '@ems-management-consultants/ui';
 import { AuthService } from '../auth/auth.service';
 import { LoadProblemComponent } from '../shared/load-problem.component';
 import { SkeletonComponent } from '../shared/skeleton.component';
@@ -13,6 +13,7 @@ import { BreakdownLine } from '../breakdown/net-cash-breakdown.model';
 import { apPeriodEnd, apPeriodLabel, formatDate } from '../dashboard/dashboard-format';
 import { SegmentOption, SegmentedControlComponent } from '../dashboard/segmented-control.component';
 import { NetCollectionsPeriodsDto, NetCollectionsService, PayerMixDto } from '../metrics/net-collections.service';
+import { WhatChangedComponent } from '../insights/what-changed.component';
 import { PayerDonutsComponent } from './payer-donuts.component';
 import { PayerLegendComponent } from './payer-legend.component';
 import { PayerStackedComponent } from './payer-stacked.component';
@@ -43,11 +44,10 @@ interface TableRow {
 /**
  * Payer mix for one aircraft type or level of service: the share of its transports by primary payer, in the chosen month and the month before.
  * Transports belong to the month they happened (date of service). The group, month and Service Line are in the address, so the page can be shared.
- * The written explanation panel on the left is not built yet.
  */
 @Component({
   selector: 'app-payer-mix',
-  imports: [SkeletonComponent, LoadProblemComponent, PayerDonutsComponent, PayerLegendComponent, PayerStackedComponent, ChartComponent, EmsBreadcrumbsComponent, EmsIconComponent, EmsMessageComponent, EmsSelectComponent, ReactiveFormsModule, SegmentedControlComponent],
+  imports: [WhatChangedComponent, SkeletonComponent, LoadProblemComponent, PayerDonutsComponent, PayerLegendComponent, PayerStackedComponent, ChartComponent, EmsBreadcrumbsComponent, EmsMessageComponent, EmsSelectComponent, ReactiveFormsModule, SegmentedControlComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <main class="page">
@@ -65,10 +65,7 @@ interface TableRow {
       </header>
 
       <div class="page__panels">
-        <section class="app-panel deferred" aria-labelledby="deferred-title">
-          <h2 id="deferred-title"><ems-icon name="auto_awesome" />What changed in {{ groupLower() }}</h2>
-          <p>A written explanation of what moved this group is planned and is not available yet. The payer mix on the right is the data it will be built from.</p>
-        </section>
+        <app-what-changed [providerId]="providerId()" [period]="month()" [line]="line()" [group]="group()" [groupName]="groupName()" />
 
         <section class="app-panel" aria-labelledby="mix-title">
           <header class="mix__header">
@@ -211,11 +208,6 @@ interface TableRow {
       .page__panels {
         grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
       }
-    }
-    .deferred p {
-      margin: 0.75rem 0 0;
-      color: var(--ems-text-muted);
-      line-height: var(--ems-line-height-body);
     }
     .app-panel {
       display: flex;

@@ -38,7 +38,7 @@ public sealed class NetCashProjectionMetric(IWarehouse warehouse, IWarehouseProv
                 ["include_air"] = serviceLine is ServiceLineFilter.Both or ServiceLineFilter.Air,
                 ["include_ground"] = serviceLine is ServiceLineFilter.Both or ServiceLineFilter.Ground,
                 ["month_limit"] = INetCashProjectionMetric.ProjectedMonths,
-            });
+            }) { Name = "NetCashProjectionMetric" };
 
         IReadOnlyList<(DateOnly Month, decimal Total, decimal Low, decimal High, DateOnly? Snapshot)> rows = await warehouse.QueryAsync(
             query,

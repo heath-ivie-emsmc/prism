@@ -220,11 +220,77 @@ test.describe('payer mix', () => {
     await expect(page.getByRole('heading', { level: 2, name: 'Fixed wing payer mix' })).toBeVisible();
   });
 
-  test('the explanation panel says it is not built yet', async ({ page }) => {
+  test('the explanation panel gives the headline, a card for each finding with its label in words, and the remainder', async ({ page }) => {
     await openPayerMix(page);
 
     await expect(page.getByRole('heading', { level: 2, name: 'What changed in fixed wing' })).toBeVisible();
-    await expect(page.getByText(/is planned and is not available yet/)).toBeVisible();
+    await expect(page.getByText('Fixed wing cash fell $137,770.00 (22%) from September.')).toBeVisible();
+    const cards = page.locator('app-what-changed .card');
+    await expect(cards).toHaveCount(2);
+    await expect(cards.first()).toContainText('September had unusually high payments on older transports');
+    await expect(cards.first()).toContainText('Temporary');
+    await expect(cards.first()).toContainText('−$85,000.00');
+    await expect(cards.nth(1)).toContainText('Watch');
+    await expect(cards.nth(1)).toContainText('expected per month');
+    await expect(page.getByText('The remaining $14,370.00 is normal month-to-month variation.')).toBeVisible();
+    await expect(page.getByText('Based on payments, payer mix and claim data through 10/31/2026.')).toBeVisible();
+    expect(await axeViolations(page)).toEqual([]);
+  });
+
+  test('the explanation asks for the page\'s month, Service Line and group, and again when the month changes', async ({ page }) => {
+    const asked: string[] = [];
+    await page.route(/insights\/what-changed/, (route) => {
+      asked.push(new URL(route.request().url()).search);
+      return route.fallback();
+    });
+    await openPayerMix(page);
+    expect(asked).toContain('?period=202610&serviceLine=air&group=fixed-wing');
+
+    await page.locator('input.ems-select__input').first().click();
+    await page.getByRole('option', { name: 'September 2026' }).click();
+
+    await expect.poll(() => asked.at(-1)).toBe('?period=202609&serviceLine=air&group=fixed-wing');
+  });
+
+  test('when the explanation cannot load it says so, keeps the charts, and stays accessible', async ({ page }) => {
+    await page.route(/insights\/what-changed/, (route) => route.fulfill({ status: 503, json: { title: 'Host=secret.internal Password=hunter2' } }));
+    await openPayerMix(page);
+
+    await expect(page.locator('app-what-changed').getByText("We can't load what changed right now")).toBeVisible();
+    await expect(page.getByText('hunter2')).toHaveCount(0);
+    await expect(page.locator('app-payer-mix app-chart canvas')).toBeVisible();
+    expect(await axeViolations(page)).toEqual([]);
+  });
+
+  test('when there is nothing to explain it says so', async ({ page }) => {
+    await page.route(/insights\/what-changed/, (route) => route.fulfill({ status: 204 }));
+    await openPayerMix(page);
+
+    await expect(page.getByText('There is no net cash for fixed wing in this month or the month before it to explain.')).toBeVisible();
+    expect(await axeViolations(page)).toEqual([]);
+  });
+
+  test('long finding text wraps inside its card at every size and nothing is cut off', async ({ page }) => {
+    const long = 'Fixed wing and a very long unbroken group name '.repeat(6) + 'Supercalifragilisticexpialidocious'.repeat(4);
+    await page.route(/insights\/what-changed/, (route) =>
+      route.fulfill({
+        json: {
+          providerId: '526', period: '202610', priorPeriod: '202609', serviceLine: 'air', group: 'fixed-wing', groupName: 'Fixed wing', dataThrough: '2026-10-31',
+          headline: long, cashNow: 1, cashPrior: 2, delta: -1, deltaRatio: -0.5, normalizedDeltaRatio: null,
+          drivers: [{ kind: 'aged-payments', label: 'temporary', title: long, body: long, impact: -1234567.89 }],
+          expected: [{ kind: 'payer-mix', label: 'structural', title: long, body: long, impact: -38400 }],
+          remainder: { amount: -1, judgment: 'notEnoughHistory', text: long },
+        },
+      }),
+    );
+    mkdirSync(REPORT_DIR, { recursive: true });
+    for (const size of SIZES) {
+      await page.setViewportSize({ width: size.width, height: size.height });
+      await openPayerMix(page);
+      await expect(page.locator('app-what-changed .card').first()).toBeVisible();
+      await page.locator('app-what-changed').screenshot({ path: join(REPORT_DIR, `what-changed-long-${size.name}-${size.width}.png`) });
+      expect((await layoutErrors(page)).errors).toEqual([]);
+    }
   });
 
   test('when the payer mix cannot load it says so and stays accessible', async ({ page }) => {

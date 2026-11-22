@@ -201,6 +201,47 @@ async function mockNetCollections(page: import('@playwright/test').Page): Promis
       },
     });
   });
+  await page.route(/\/api\/v1\/providers\/[^/]+\/insights\/what-changed(\?.*)?$/, (route) => {
+    const url = new URL(route.request().url());
+    const period = url.searchParams.get('period') ?? '202610';
+    const group = url.searchParams.get('group');
+    return route.fulfill({
+      json: {
+        providerId: '526',
+        period,
+        priorPeriod: String(Number(period) - 1),
+        serviceLine: url.searchParams.get('serviceLine') === 'ground' ? 'ground' : 'air',
+        group,
+        groupName: group === 'fixed-wing' ? 'Fixed wing' : group === 'als' ? 'ALS' : group,
+        dataThrough: '2026-10-31',
+        headline: 'Fixed wing cash fell $137,770.00 (22%) from September. Most of it is timing, not a lasting change.',
+        cashNow: 487230,
+        cashPrior: 625000,
+        delta: -137770,
+        deltaRatio: -0.2204,
+        normalizedDeltaRatio: -0.0977,
+        drivers: [
+          {
+            kind: 'aged-payments',
+            label: 'temporary',
+            title: 'September had unusually high payments on older transports',
+            body: 'Payments on older transports in September ran $85,000.00 above the usual level, across 14 transports. Without that, fixed wing cash fell about 10%, not 22%.',
+            impact: -85000,
+          },
+        ],
+        expected: [
+          {
+            kind: 'payer-mix',
+            label: 'watch',
+            title: 'More fixed wing transports were Medicaid',
+            body: "Medicaid's share of fixed wing transports rose from 18% to 23%. At what transports have earned once paid, the shift in payer mix is expected to make cash about $38,400.00 lower a month as those claims are paid. This is an expected effect, not part of what moved this month's cash.",
+            impact: -38400,
+          },
+        ],
+        remainder: { amount: -14370, judgment: 'withinNormalRange', text: 'The remaining $14,370.00 is normal month-to-month variation.' },
+      },
+    });
+  });
   await page.route(/\/api\/v1\/providers\/[^/]+\/metrics\/net-collections(\?.*)?$/, (route) => {
     const url = new URL(route.request().url());
     const end = url.searchParams.get('endPeriod') ?? '202610';

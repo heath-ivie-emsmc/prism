@@ -4,6 +4,7 @@ using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Prism.Application.Auth;
+using Prism.Application.Insights;
 using Prism.Application.Metrics;
 using Prism.Application.Warehouse;
 using Prism.Tests.Integration.Auth;
@@ -19,6 +20,10 @@ public sealed class NetCollectionsEndpointTests : IDisposable
     private readonly FakeProjection projection = new();
     private readonly FakeBreakdown breakdown = new();
     private readonly FakePayerMix payerMix = new();
+    private readonly FakePaymentAge paymentAge = new();
+    private readonly FakeCashPerTransport cashPerTransport = new();
+    private readonly FakeNetCashByGroup byGroup = new();
+    private readonly FakeInsights insights = new();
     private readonly FakeTransportVolume transports = new();
     private readonly FakeCleanClaims cleanClaims = new();
     private readonly AuthTestFactory factory;
@@ -37,6 +42,14 @@ public sealed class NetCollectionsEndpointTests : IDisposable
             services.AddSingleton<INetCashBreakdownMetric>(breakdown);
             services.RemoveAll<IPayerMixMetric>();
             services.AddSingleton<IPayerMixMetric>(payerMix);
+            services.RemoveAll<IInsightService>();
+            services.AddSingleton<IInsightService>(insights);
+            services.RemoveAll<INetCashByGroupMetric>();
+            services.AddSingleton<INetCashByGroupMetric>(byGroup);
+            services.RemoveAll<ICashPerTransportMetric>();
+            services.AddSingleton<ICashPerTransportMetric>(cashPerTransport);
+            services.RemoveAll<IPaymentAgeMetric>();
+            services.AddSingleton<IPaymentAgeMetric>(paymentAge);
             services.RemoveAll<ITransportVolumeMetric>();
             services.AddSingleton<ITransportVolumeMetric>(transports);
             services.RemoveAll<ICleanClaimRateMetric>();
@@ -455,6 +468,331 @@ public sealed class NetCollectionsEndpointTests : IDisposable
     }
 
     [Fact]
+    public async Task Payment_age_returns_cells_by_payer_posting_month_and_age_for_the_chosen_group()
+    {
+        (HttpStatusCode status, JsonElement body) = await GetAsync($"{Series}/payment-age?period=202610&serviceLine=air&group=fixed-wing");
+
+        Assert.Equal(HttpStatusCode.OK, status);
+        Assert.Equal("payment_age", body.GetProperty("metric").GetProperty("key").GetString());
+        Assert.Equal(("202610", "air", "fixed-wing"), (body.GetProperty("period").GetString(), body.GetProperty("serviceLine").GetString(), body.GetProperty("group").GetString()));
+        JsonElement cell = body.GetProperty("cells")[0];
+        Assert.Equal(("commercial", "Commercial", "202610", 6, 3300m, 2), (cell.GetProperty("payerKey").GetString(), cell.GetProperty("payerName").GetString(), cell.GetProperty("postingPeriod").GetString(), cell.GetProperty("ageMonths").GetInt32(), cell.GetProperty("cash").GetDecimal(), cell.GetProperty("transports").GetInt32()));
+        Assert.Equal((100, new ApPeriod(2026, 10), ServiceLineFilter.Air, "fixed-wing"), paymentAge.LastCall);
+    }
+
+    [Fact]
+    public async Task Payment_age_without_parameters_uses_the_newest_period_and_air()
+    {
+        await GetAsync($"{Series}/payment-age");
+
+        Assert.Equal((100, new ApPeriod(2026, 11), ServiceLineFilter.Air, (string?)null), paymentAge.LastCall);
+    }
+
+    [Theory]
+    [InlineData("/api/v1/providers/999/metrics/net-collections/payment-age")]
+    [InlineData("/api/v1/providers/200/metrics/net-collections/payment-age")]
+    [InlineData("/api/v1/providers/abc/metrics/net-collections/payment-age")]
+    public async Task Payment_age_for_a_provider_the_user_is_not_assigned_to_or_is_limited_inside_is_not_found_and_never_queried(string url)
+    {
+        (HttpStatusCode status, _) = await GetAsync(url);
+
+        Assert.Equal(HttpStatusCode.NotFound, status);
+        Assert.Equal(0, paymentAge.Calls);
+    }
+
+    [Fact]
+    public async Task Payment_age_needs_the_dashboard_permission()
+    {
+        (HttpStatusCode status, _) = await GetAsync($"{Series}/payment-age", Permissions.App);
+
+        Assert.Equal(HttpStatusCode.Forbidden, status);
+        Assert.Equal(0, paymentAge.Calls);
+    }
+
+    [Theory]
+    [InlineData("period=2026-10")]
+    [InlineData("period=202613")]
+    [InlineData("serviceLine=1")]
+    [InlineData("serviceLine=Air,Ground")]
+    [InlineData("group=Fixed%20Wing")]
+    [InlineData("group=fixed-wing%27%3B%20DROP%20TABLE%20x")]
+    [InlineData("group=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")]
+    public async Task Payment_age_with_bad_parameters_is_a_400_problem_and_nothing_is_queried(string query)
+    {
+        (HttpStatusCode status, JsonElement body) = await GetAsync($"{Series}/payment-age?{query}");
+
+        Assert.Equal(HttpStatusCode.BadRequest, status);
+        Assert.True(body.TryGetProperty("errors", out _));
+        Assert.Equal(0, paymentAge.Calls);
+    }
+
+    [Fact]
+    public async Task Payment_age_in_a_warehouse_outage_is_a_503_that_says_nothing_about_why()
+    {
+        paymentAge.Failure = new WarehouseUnavailableException(new InvalidOperationException("Host=secret.internal Password=hunter2"));
+
+        (HttpStatusCode status, JsonElement body) = await GetAsync($"{Series}/payment-age?period=202610");
+
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, status);
+        Assert.DoesNotContain("hunter2", body.GetRawText(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Cash_per_transport_returns_every_payer_with_the_cohorts_and_names_the_group()
+    {
+        (HttpStatusCode status, JsonElement body) = await GetAsync($"{Series}/cash-per-transport?period=202610&serviceLine=air&group=fixed-wing");
+
+        Assert.Equal(HttpStatusCode.OK, status);
+        Assert.Equal("cash_per_transport_by_payer", body.GetProperty("metric").GetProperty("key").GetString());
+        Assert.Equal(("202610", "202505", "202604", "air", "fixed-wing"), (body.GetProperty("period").GetString(), body.GetProperty("cohortFrom").GetString(), body.GetProperty("cohortThrough").GetString(), body.GetProperty("serviceLine").GetString(), body.GetProperty("group").GetString()));
+        JsonElement commercial = body.GetProperty("payers")[0];
+        Assert.Equal(("commercial", 3, 2000m, 666.67m), (commercial.GetProperty("key").GetString(), commercial.GetProperty("transports").GetInt32(), commercial.GetProperty("cash").GetDecimal(), Math.Round(commercial.GetProperty("cashPerTransport").GetDecimal(), 2)));
+        Assert.Equal(JsonValueKind.Null, body.GetProperty("payers")[1].GetProperty("cashPerTransport").ValueKind);
+        Assert.Equal((100, new ApPeriod(2026, 10), ServiceLineFilter.Air, "fixed-wing"), cashPerTransport.LastCall);
+    }
+
+    [Fact]
+    public async Task Cash_per_transport_without_parameters_uses_the_newest_period_and_air()
+    {
+        await GetAsync($"{Series}/cash-per-transport");
+
+        Assert.Equal((100, new ApPeriod(2026, 11), ServiceLineFilter.Air, (string?)null), cashPerTransport.LastCall);
+    }
+
+    [Theory]
+    [InlineData("/api/v1/providers/999/metrics/net-collections/cash-per-transport")]
+    [InlineData("/api/v1/providers/200/metrics/net-collections/cash-per-transport")]
+    [InlineData("/api/v1/providers/abc/metrics/net-collections/cash-per-transport")]
+    public async Task Cash_per_transport_for_a_provider_the_user_is_not_assigned_to_or_is_limited_inside_is_not_found_and_never_queried(string url)
+    {
+        (HttpStatusCode status, _) = await GetAsync(url);
+
+        Assert.Equal(HttpStatusCode.NotFound, status);
+        Assert.Equal(0, cashPerTransport.Calls);
+    }
+
+    [Fact]
+    public async Task Cash_per_transport_needs_the_dashboard_permission()
+    {
+        (HttpStatusCode status, _) = await GetAsync($"{Series}/cash-per-transport", Permissions.App);
+
+        Assert.Equal(HttpStatusCode.Forbidden, status);
+        Assert.Equal(0, cashPerTransport.Calls);
+    }
+
+    [Theory]
+    [InlineData("period=2026-10")]
+    [InlineData("period=202613")]
+    [InlineData("serviceLine=1")]
+    [InlineData("serviceLine=Air,Ground")]
+    [InlineData("group=Fixed%20Wing")]
+    [InlineData("group=fixed-wing%27%3B%20DROP%20TABLE%20x")]
+    [InlineData("group=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")]
+    public async Task Cash_per_transport_with_bad_parameters_is_a_400_problem_and_nothing_is_queried(string query)
+    {
+        (HttpStatusCode status, JsonElement body) = await GetAsync($"{Series}/cash-per-transport?{query}");
+
+        Assert.Equal(HttpStatusCode.BadRequest, status);
+        Assert.True(body.TryGetProperty("errors", out _));
+        Assert.Equal(0, cashPerTransport.Calls);
+    }
+
+    [Fact]
+    public async Task Cash_per_transport_in_a_warehouse_outage_is_a_503_that_says_nothing_about_why()
+    {
+        cashPerTransport.Failure = new WarehouseUnavailableException(new InvalidOperationException("Host=secret.internal Password=hunter2"));
+
+        (HttpStatusCode status, JsonElement body) = await GetAsync($"{Series}/cash-per-transport?period=202610");
+
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, status);
+        Assert.DoesNotContain("hunter2", body.GetRawText(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Net_cash_by_group_returns_points_by_group_and_month()
+    {
+        (HttpStatusCode status, JsonElement body) = await GetAsync($"{Series}/by-group?period=202610&serviceLine=air");
+
+        Assert.Equal(HttpStatusCode.OK, status);
+        Assert.Equal("net_cash_by_group", body.GetProperty("metric").GetProperty("key").GetString());
+        Assert.Equal(("202610", "air"), (body.GetProperty("period").GetString(), body.GetProperty("serviceLine").GetString()));
+        JsonElement point = body.GetProperty("points")[0];
+        Assert.Equal(("fixed-wing", "Fixed wing", "air", "202610", 3000m, 4), (point.GetProperty("groupKey").GetString(), point.GetProperty("groupName").GetString(), point.GetProperty("serviceLine").GetString(), point.GetProperty("period").GetString(), point.GetProperty("cash").GetDecimal(), point.GetProperty("transports").GetInt32()));
+        Assert.Equal((100, new ApPeriod(2026, 10), ServiceLineFilter.Air), byGroup.LastCall);
+    }
+
+    [Fact]
+    public async Task Net_cash_by_group_without_parameters_uses_the_newest_period_and_air()
+    {
+        await GetAsync($"{Series}/by-group");
+
+        Assert.Equal((100, new ApPeriod(2026, 11), ServiceLineFilter.Air), byGroup.LastCall);
+    }
+
+    [Theory]
+    [InlineData("/api/v1/providers/999/metrics/net-collections/by-group")]
+    [InlineData("/api/v1/providers/200/metrics/net-collections/by-group")]
+    [InlineData("/api/v1/providers/abc/metrics/net-collections/by-group")]
+    public async Task Net_cash_by_group_for_a_provider_the_user_is_not_assigned_to_or_is_limited_inside_is_not_found_and_never_queried(string url)
+    {
+        (HttpStatusCode status, _) = await GetAsync(url);
+
+        Assert.Equal(HttpStatusCode.NotFound, status);
+        Assert.Equal(0, byGroup.Calls);
+    }
+
+    [Fact]
+    public async Task Net_cash_by_group_needs_the_dashboard_permission()
+    {
+        (HttpStatusCode status, _) = await GetAsync($"{Series}/by-group", Permissions.App);
+
+        Assert.Equal(HttpStatusCode.Forbidden, status);
+        Assert.Equal(0, byGroup.Calls);
+    }
+
+    [Theory]
+    [InlineData("period=2026-10")]
+    [InlineData("period=202613")]
+    [InlineData("serviceLine=1")]
+    [InlineData("serviceLine=Air,Ground")]
+    public async Task Net_cash_by_group_with_bad_parameters_is_a_400_problem_and_nothing_is_queried(string query)
+    {
+        (HttpStatusCode status, JsonElement body) = await GetAsync($"{Series}/by-group?{query}");
+
+        Assert.Equal(HttpStatusCode.BadRequest, status);
+        Assert.True(body.TryGetProperty("errors", out _));
+        Assert.Equal(0, byGroup.Calls);
+    }
+
+    [Fact]
+    public async Task Net_cash_by_group_in_a_warehouse_outage_is_a_503_that_says_nothing_about_why()
+    {
+        byGroup.Failure = new WarehouseUnavailableException(new InvalidOperationException("Host=secret.internal Password=hunter2"));
+
+        (HttpStatusCode status, JsonElement body) = await GetAsync($"{Series}/by-group?period=202610");
+
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, status);
+        Assert.DoesNotContain("hunter2", body.GetRawText(), StringComparison.Ordinal);
+    }
+
+    private const string Insights = "/api/v1/providers/100/insights/what-changed";
+
+    [Fact]
+    public async Task What_changed_returns_the_headline_drivers_expected_effects_and_remainder()
+    {
+        (HttpStatusCode status, JsonElement body) = await GetAsync($"{Insights}?period=202610&serviceLine=air&group=fixed-wing");
+
+        Assert.Equal(HttpStatusCode.OK, status);
+        Assert.Equal(("202610", "202609", "air", "fixed-wing", "Fixed wing", "2026-11-05"), (body.GetProperty("period").GetString(), body.GetProperty("priorPeriod").GetString(), body.GetProperty("serviceLine").GetString(), body.GetProperty("group").GetString(), body.GetProperty("groupName").GetString(), body.GetProperty("dataThrough").GetString()));
+        Assert.Equal("Fixed wing cash fell $137,770.00 (22%) from September.", body.GetProperty("headline").GetString());
+        Assert.Equal((-137_770m, -0.22m), (body.GetProperty("delta").GetDecimal(), body.GetProperty("deltaRatio").GetDecimal()));
+        JsonElement driver = body.GetProperty("drivers")[0];
+        Assert.Equal(("volume", "watch", -20_000m), (driver.GetProperty("kind").GetString(), driver.GetProperty("label").GetString(), driver.GetProperty("impact").GetDecimal()));
+        Assert.Equal("payer-mix", body.GetProperty("expected")[0].GetProperty("kind").GetString());
+        Assert.Equal(("withinNormalRange", -117_770m), (body.GetProperty("remainder").GetProperty("judgment").GetString(), body.GetProperty("remainder").GetProperty("amount").GetDecimal()));
+        Assert.Equal((100, new ApPeriod(2026, 10), ServiceLineFilter.Air, "fixed-wing"), insights.LastCall);
+    }
+
+    [Fact]
+    public async Task What_changed_without_parameters_uses_the_newest_period_and_air()
+    {
+        await GetAsync(Insights);
+
+        Assert.Equal((100, new ApPeriod(2026, 11), ServiceLineFilter.Air, (string?)null), insights.LastCall);
+    }
+
+    [Fact]
+    public async Task What_changed_with_nothing_to_explain_is_a_204()
+    {
+        insights.Empty = true;
+
+        (HttpStatusCode status, _) = await GetAsync($"{Insights}?period=202610");
+
+        Assert.Equal(HttpStatusCode.NoContent, status);
+    }
+
+    [Theory]
+    [InlineData("/api/v1/providers/999/insights/what-changed")]
+    [InlineData("/api/v1/providers/200/insights/what-changed")]
+    [InlineData("/api/v1/providers/abc/insights/what-changed")]
+    public async Task What_changed_for_a_provider_the_user_is_not_assigned_to_or_is_limited_inside_is_not_found_and_never_computed(string url)
+    {
+        (HttpStatusCode status, _) = await GetAsync(url);
+
+        Assert.Equal(HttpStatusCode.NotFound, status);
+        Assert.Equal(0, insights.Calls);
+    }
+
+    [Fact]
+    public async Task What_changed_needs_the_dashboard_permission()
+    {
+        (HttpStatusCode status, _) = await GetAsync(Insights, Permissions.App);
+
+        Assert.Equal(HttpStatusCode.Forbidden, status);
+        Assert.Equal(0, insights.Calls);
+    }
+
+    [Fact]
+    public async Task What_changed_asks_for_no_authentication_to_be_skipped()
+    {
+        using HttpClient anonymous = factory.CreateClient();
+
+        using HttpResponseMessage response = await anonymous.GetAsync($"{Insights}?period=202610", TestContext.Current.CancellationToken);
+
+        Assert.Contains(response.StatusCode, new[] { HttpStatusCode.Unauthorized, HttpStatusCode.Forbidden });
+        Assert.Equal(0, insights.Calls);
+    }
+
+    [Theory]
+    [InlineData("period=2026-10")]
+    [InlineData("period=202613")]
+    [InlineData("serviceLine=1")]
+    [InlineData("serviceLine=Air,Ground")]
+    [InlineData("group=Fixed%20Wing")]
+    [InlineData("group=fixed-wing%27%3B%20DROP%20TABLE%20x")]
+    [InlineData("group=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")]
+    public async Task What_changed_with_bad_parameters_is_a_400_problem_and_nothing_is_computed(string query)
+    {
+        (HttpStatusCode status, JsonElement body) = await GetAsync($"{Insights}?{query}");
+
+        Assert.Equal(HttpStatusCode.BadRequest, status);
+        Assert.True(body.TryGetProperty("errors", out _));
+        Assert.Equal(0, insights.Calls);
+    }
+
+    [Fact]
+    public async Task What_changed_ignores_a_provider_named_in_the_query_or_a_header()
+    {
+        using CookieClient client = factory.NewSignedInClient();
+        using HttpResponseMessage response = await client.SendAsync(
+            HttpMethod.Get, $"{Insights}?providerId=999", headers: new Dictionary<string, string> { ["X-Provider-Id"] = "999" });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(100, insights.LastCall.ProviderId);
+    }
+
+    [Fact]
+    public async Task What_changed_holds_figures_and_words_only_no_payer_or_patient_names()
+    {
+        (_, JsonElement body) = await GetAsync($"{Insights}?period=202610");
+
+        string text = body.GetRawText();
+        Assert.DoesNotContain("AETNA", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("primPay", text, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task What_changed_in_a_warehouse_outage_is_a_503_that_says_nothing_about_why()
+    {
+        insights.Failure = new WarehouseUnavailableException(new InvalidOperationException("Host=secret.internal Password=hunter2"));
+
+        (HttpStatusCode status, JsonElement body) = await GetAsync($"{Insights}?period=202610");
+
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, status);
+        Assert.DoesNotContain("hunter2", body.GetRawText(), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Transports_come_back_by_month_with_labels_the_split_of_the_last_month_and_the_open_flag()
     {
         (HttpStatusCode status, JsonElement body) = await GetAsync($"{Series}/transports?endPeriod=202610&months=3&serviceLine=air");
@@ -690,6 +1028,123 @@ public sealed class NetCollectionsEndpointTests : IDisposable
                 period.Month == 10,
                 [new NetCashBreakdownGroup("rotor-wing", "Rotor wing", true, current, prior)],
                 [new NetCashBreakdownRow("rotor-wing", "Rotor wing", true, "Rotor", "N119MF", current, prior)]));
+        }
+    }
+
+    private sealed class FakeInsights : IInsightService
+    {
+        public Exception? Failure { get; set; }
+
+        public bool Empty { get; set; }
+
+        public int Calls { get; private set; }
+
+        public (int ProviderId, ApPeriod Period, ServiceLineFilter ServiceLine, string? Group) LastCall { get; private set; }
+
+        public Task<InsightResult?> GetWhatChangedAsync(int providerId, ApPeriod period, ServiceLineFilter serviceLine, string? groupKey, CancellationToken cancellationToken)
+        {
+            Calls++;
+            LastCall = (providerId, period, serviceLine, groupKey);
+            if (Failure is not null)
+            {
+                return Task.FromException<InsightResult?>(Failure);
+            }
+
+            if (Empty)
+            {
+                return Task.FromResult<InsightResult?>(null);
+            }
+
+            var volume = new VolumeFinding(FindingLabel.Watch, -20_000m, 100m, 80m);
+            var mix = new PayerMixFinding(FindingLabel.Watch, -38_400m, "medicaid", "Medicaid", 0.18m, 0.23m);
+            var insight = new Insight(
+                new InsightHeadline(period, period.AddMonths(-1), groupKey, "Fixed wing", 487_230m, 625_000m, -137_770m, -0.22m),
+                [volume],
+                [mix],
+                new Remainder(-117_770m, RemainderJudgment.WithinNormalRange),
+                null);
+            return Task.FromResult<InsightResult?>(new InsightResult(insight, InsightText.Build(insight), new DateOnly(2026, 11, 5)));
+        }
+    }
+
+    private sealed class FakeNetCashByGroup : INetCashByGroupMetric
+    {
+        public Exception? Failure { get; set; }
+
+        public int Calls { get; private set; }
+
+        public (int ProviderId, ApPeriod Period, ServiceLineFilter ServiceLine) LastCall { get; private set; }
+
+        public Task<NetCashByGroup> GetNetCashByGroupAsync(int providerId, ApPeriod period, ServiceLineFilter serviceLine, CancellationToken cancellationToken)
+        {
+            Calls++;
+            LastCall = (providerId, period, serviceLine);
+            if (Failure is not null)
+            {
+                return Task.FromException<NetCashByGroup>(Failure);
+            }
+
+            return Task.FromResult(new NetCashByGroup(
+                INetCashByGroupMetric.Definition,
+                period,
+                INetCashByGroupMetric.MonthsBefore,
+                serviceLine,
+                [new NetCashByGroupPoint("fixed-wing", "Fixed wing", true, period, 3000m, 4)]));
+        }
+    }
+
+    private sealed class FakeCashPerTransport : ICashPerTransportMetric
+    {
+        public Exception? Failure { get; set; }
+
+        public int Calls { get; private set; }
+
+        public (int ProviderId, ApPeriod Period, ServiceLineFilter ServiceLine, string? Group) LastCall { get; private set; }
+
+        public Task<CashPerTransport> GetCashPerTransportAsync(int providerId, ApPeriod period, ServiceLineFilter serviceLine, string? groupKey, CancellationToken cancellationToken)
+        {
+            Calls++;
+            LastCall = (providerId, period, serviceLine, groupKey);
+            if (Failure is not null)
+            {
+                return Task.FromException<CashPerTransport>(Failure);
+            }
+
+            return Task.FromResult(new CashPerTransport(
+                ICashPerTransportMetric.Definition,
+                period,
+                period.AddMonths(-17),
+                period.AddMonths(-6),
+                serviceLine,
+                groupKey,
+                [new PayerCashPerTransport("commercial", "Commercial", 3, 2000m), new PayerCashPerTransport("va", "VA", 0, 0m)]));
+        }
+    }
+
+    private sealed class FakePaymentAge : IPaymentAgeMetric
+    {
+        public Exception? Failure { get; set; }
+
+        public int Calls { get; private set; }
+
+        public (int ProviderId, ApPeriod Period, ServiceLineFilter ServiceLine, string? Group) LastCall { get; private set; }
+
+        public Task<PaymentAge> GetPaymentAgeAsync(int providerId, ApPeriod period, ServiceLineFilter serviceLine, string? groupKey, CancellationToken cancellationToken)
+        {
+            Calls++;
+            LastCall = (providerId, period, serviceLine, groupKey);
+            if (Failure is not null)
+            {
+                return Task.FromException<PaymentAge>(Failure);
+            }
+
+            return Task.FromResult(new PaymentAge(
+                IPaymentAgeMetric.Definition,
+                period,
+                IPaymentAgeMetric.MonthsBefore,
+                serviceLine,
+                groupKey,
+                [new PaymentAgeCell("commercial", "Commercial", period, 6, 3300m, 2)]));
         }
     }
 

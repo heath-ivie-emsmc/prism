@@ -1,4 +1,5 @@
 using System.Data.Common;
+using System.Diagnostics;
 using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -24,6 +25,7 @@ public sealed partial class NpgsqlWarehouse(NpgsqlDataSource dataSource, IOption
     private async Task<IReadOnlyList<T>> RunAsync<T>(WarehouseQuery query, Func<DbDataReader, T> map, CancellationToken cancellationToken)
     {
         int maxRows = options.Value.MaxRows;
+        long started = Stopwatch.GetTimestamp();
         try
         {
             await using NpgsqlCommand command = dataSource.CreateCommand(query.Sql);
@@ -45,14 +47,21 @@ public sealed partial class NpgsqlWarehouse(NpgsqlDataSource dataSource, IOption
                 rows.Add(map(reader));
             }
 
+            LogCompleted(logger, query.Name, rows.Count, (long)Stopwatch.GetElapsedTime(started).TotalMilliseconds);
             return rows;
         }
         // A transient failure, a timeout on the client, or the server's own statement timeout (query_canceled) all mean "not now", not "your query is wrong".
         catch (NpgsqlException ex) when (ex is not PostgresException postgres || postgres.IsTransient || postgres.SqlState == PostgresErrorCodes.QueryCanceled)
         {
             // Connection and timeout failures. Npgsql messages never carry the password, and the SQL is not logged.
-            LogUnavailable(logger, ex);
+            LogUnavailable(logger, ex, query.Name, (long)Stopwatch.GetElapsedTime(started).TotalMilliseconds, (ex as PostgresException)?.SqlState ?? "none");
             throw new WarehouseUnavailableException(ex);
+        }
+        // Any other database error is a bug in the query. Only the SQL state code is logged: the message can quote values.
+        catch (PostgresException ex)
+        {
+            LogFailed(logger, query.Name, (long)Stopwatch.GetElapsedTime(started).TotalMilliseconds, ex.SqlState);
+            throw;
         }
     }
 
@@ -90,8 +99,14 @@ public sealed partial class NpgsqlWarehouse(NpgsqlDataSource dataSource, IOption
         }
     }
 
-    [LoggerMessage(Level = LogLevel.Warning, Message = "The data warehouse is unavailable")]
-    private static partial void LogUnavailable(ILogger logger, Exception exception);
+    [LoggerMessage(Level = LogLevel.Warning, Message = "The data warehouse is unavailable for query {Query} after {ElapsedMs} ms (SQL state {SqlState})")]
+    private static partial void LogUnavailable(ILogger logger, Exception exception, string query, long elapsedMs, string sqlState);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "The data warehouse refused query {Query} after {ElapsedMs} ms (SQL state {SqlState})")]
+    private static partial void LogFailed(ILogger logger, string query, long elapsedMs, string sqlState);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Warehouse query {Query} returned {Rows} rows in {ElapsedMs} ms")]
+    private static partial void LogCompleted(ILogger logger, string query, int rows, long elapsedMs);
 
     [GeneratedRegex(@"^\s*(select|with)\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, matchTimeoutMilliseconds: 250)]
     private static partial Regex StartsWithRead();

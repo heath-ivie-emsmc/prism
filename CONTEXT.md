@@ -32,6 +32,18 @@ _Avoid_: Mode, business unit, product
 One patient movement by a Provider, recorded under exactly one Service Line and one Reporting Division. It is the main unit counted on the dashboard.
 _Avoid_: Trip, run, call, mission
 
+**Finding**:
+One computed statement about why a Metric moved, such as unusually high aged payments or a shift in payer mix. It has a dollar impact, a basis (posted cash or expected effect) and the counts or shares behind it. A Finding is built from Metrics and never carries patient or claim detail.
+_Avoid_: Alert, anomaly, recommendation
+
+**Driver**:
+A Finding whose dollar impact counts toward explaining a change in posted cash. Drivers plus the remainder add up to the change. A Finding on another basis, such as the expected effect of a payer mix shift, is shown beside the Drivers and is not added to them.
+_Avoid_: Cause, factor, reason
+
+**Insight**:
+The written summary of the Findings for one view and period: a headline, the ranked Findings and what is left unexplained. It is shown on the dashboard only.
+_Avoid_: AI summary, analysis, report
+
 **Label**:
 The display name a Provider sees for a renamable term, such as Reporting Division. It is set per Provider, with defaults by Service Line, and never changes the term's API key.
 _Avoid_: Alias, custom field name, translation

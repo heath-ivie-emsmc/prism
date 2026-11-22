@@ -69,7 +69,7 @@ public sealed class NetCollectionsMetric(IWarehouse warehouse, IWarehouseProvide
 
     public async Task<IReadOnlyList<ApPeriod>> GetPeriodsAsync(int providerId, CancellationToken cancellationToken)
     {
-        var query = new WarehouseQuery(PeriodsSql, new Dictionary<string, object?> { [WarehouseQuery.ProviderParameter] = await providers.ResolveAsync(providerId, cancellationToken) });
+        var query = new WarehouseQuery(PeriodsSql, new Dictionary<string, object?> { [WarehouseQuery.ProviderParameter] = await providers.ResolveAsync(providerId, cancellationToken) }) { Name = "NetCollectionsMetric" };
 
         IReadOnlyList<string> rows = await warehouse.QueryAsync(query, reader => reader.GetString(0), cancellationToken);
 
@@ -97,7 +97,7 @@ public sealed class NetCollectionsMetric(IWarehouse warehouse, IWarehouseProvide
             parameters["include_ground"] = serviceLine is ServiceLineFilter.Ground;
         }
 
-        var query = new WarehouseQuery(sql, parameters);
+        var query = new WarehouseQuery(sql, parameters) { Name = "NetCollectionsMetric#2" };
 
         IReadOnlyList<(string Period, decimal Value, DateOnly? Snapshot)> rows = await warehouse.QueryAsync(
             query,

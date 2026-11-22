@@ -31,7 +31,7 @@ public sealed class CleanClaimRateMetric(IWarehouse warehouse, IWarehouseProvide
                 [WarehouseQuery.ProviderParameter] = await providers.ResolveAsync(providerId, cancellationToken),
                 ["through"] = Format(endPeriod),
                 ["since"] = Format(first),
-            });
+            }) { Name = "CleanClaimRateMetric" };
 
         IReadOnlyList<Row> rows = await warehouse.QueryAsync(
             query,

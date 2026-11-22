@@ -81,6 +81,53 @@ internal static partial class NetCollectionsEndpoints
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
 
+        group.MapGet("/payment-age", PaymentAgeRoute)
+            .WithName("GetPaymentAge")
+            .WithSummary("Net cash by payer and payment age")
+            .WithDescription(
+                "Net cash for `period` (`yyyyMM`, default the newest period with net cash data) and the twelve months before it, by payer group, posting month and payment age. "
+                + "Payment age is the number of months between the transport's date of service and the month the cash posted, so 0 is cash for a transport flown that month, and ages above 24 are counted at 24. "
+                + "Net cash is payments less refunds by posting month, without the Old AR import, as in the breakdown. Cash for transports with no date of service is left out, so the cells can add up to less than the breakdown. "
+                + "`serviceLine` is `all`, `air` (default) or `ground`. `group` narrows it to one aircraft type or level of service, using the `key` the breakdown route returns (for example `fixed-wing`). "
+                + "Aggregates only: no patient, claim or payer names. Returns 404 when the Provider is not one the caller may read in full.")
+            .Produces<PaymentAgeResponse>()
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
+
+        group.MapGet("/cash-per-transport", CashPerTransportRoute)
+            .WithName("GetCashPerTransport")
+            .WithSummary("Matured net cash per transport by payer")
+            .WithDescription(
+                "What a transport earns by primary payer group, for transports old enough to have been paid. The cohorts are the twelve date-of-service months that ended at least six months before `period` "
+                + "(`yyyyMM`, default the newest period with net cash data), returned as `cohortFrom` and `cohortThrough`. For each payer group: the `transports` in the cohorts (paid or not), the net `cash` posted for them up to and including `period` "
+                + "(payments less refunds, without the Old AR import), and `cashPerTransport`, which is null when the group has no transports. "
+                + "`serviceLine` is `all`, `air` (default) or `ground`. `group` narrows it to one aircraft type or level of service, using the `key` the breakdown route returns (for example `fixed-wing`). "
+                + "Every payer group is listed in a fixed order, with zeros. Aggregates only: no patient, claim or payer names. Returns 404 when the Provider is not one the caller may read in full.")
+            .Produces<CashPerTransportResponse>()
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
+
+        group.MapGet("/by-group", ByGroupRoute)
+            .WithName("GetNetCashByGroup")
+            .WithSummary("Net cash by month and aircraft type or level of service")
+            .WithDescription(
+                "Net cash collected by posting month for each aircraft type (air) or level of service (ground), for `period` (`yyyyMM`, default the newest period with net cash data) and the twelve months before it. "
+                + "Net cash is payments less refunds by the accounting period they posted in, without the Old AR import, so a group's month matches the same group in the breakdown. "
+                + "`transports` are the encounters with cash posted in the month. Months with no cash are left out, not returned as zero. Cash for an encounter with no trip record has no group and is left out. "
+                + "`serviceLine` is `all`, `air` (default) or `ground`. Aggregates only: no patient or claim detail. Returns 404 when the Provider is not one the caller may read in full.")
+            .Produces<NetCashByGroupResponse>()
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
+
         group.MapGet("/transports", TransportsRoute)
             .WithName("GetTransportVolume")
             .WithSummary("Transports and loaded miles by month")
@@ -324,6 +371,155 @@ internal static partial class NetCollectionsEndpoints
             mix.Shares.Select(s => new PayerMixShareResponse(s.Key, s.Name, s.Current, s.Prior)).ToArray()));
     }
 
+    public static async Task<IResult> PaymentAgeRoute(
+        [AsParameters] PayerMixRequest request,
+        ClaimsPrincipal user,
+        ProviderAccess access,
+        INetCollectionsMetric periods,
+        IPaymentAgeMetric metric,
+        CancellationToken cancellationToken)
+    {
+        (string providerId, string? period, string? serviceLine, string? groupKey) = (request.ProviderId, request.Period, request.ServiceLine, request.Group);
+        if (await access.ResolveAsync(user, providerId, cancellationToken) is not { } id)
+        {
+            return Results.NotFound();
+        }
+
+        ServiceLineFilter filter = ServiceLineFilter.Air;
+        if (serviceLine is not null && !TryParseServiceLine(serviceLine, out filter))
+        {
+            return Invalid("serviceLine", "serviceLine must be all, air or ground.");
+        }
+
+        if (groupKey is not null && !GroupKeyPattern().IsMatch(groupKey))
+        {
+            return Invalid("group", "group must be a key from the breakdown route, such as fixed-wing.");
+        }
+
+        ApPeriod chosen;
+        if (period is null)
+        {
+            IReadOnlyList<ApPeriod> available = await periods.GetPeriodsAsync(id, cancellationToken);
+            if (available.Count == 0)
+            {
+                return Results.Ok(new PaymentAgeResponse(MetricOf(IPaymentAgeMetric.Definition), providerId, null, ServiceLineName(filter), groupKey, []));
+            }
+
+            chosen = available.OrderDescending(Comparer<ApPeriod>.Create(ComparePeriods)).First();
+        }
+        else if (!ApPeriod.TryParse(period, out chosen))
+        {
+            return Invalid("period", "period must be a month written yyyyMM, for example 202610.");
+        }
+
+        PaymentAge age = await metric.GetPaymentAgeAsync(id, chosen, filter, groupKey, cancellationToken);
+        return Results.Ok(new PaymentAgeResponse(
+            MetricOf(age.Metric),
+            providerId,
+            age.Period.ToString(),
+            ServiceLineName(age.ServiceLine),
+            age.GroupKey,
+            age.Cells.Select(c => new PaymentAgeCellResponse(c.PayerKey, c.PayerName, c.PostingPeriod.ToString(), c.AgeMonths, c.Cash, c.Transports)).ToArray()));
+    }
+
+    public static async Task<IResult> CashPerTransportRoute(
+        [AsParameters] PayerMixRequest request,
+        ClaimsPrincipal user,
+        ProviderAccess access,
+        INetCollectionsMetric periods,
+        ICashPerTransportMetric metric,
+        CancellationToken cancellationToken)
+    {
+        (string providerId, string? period, string? serviceLine, string? groupKey) = (request.ProviderId, request.Period, request.ServiceLine, request.Group);
+        if (await access.ResolveAsync(user, providerId, cancellationToken) is not { } id)
+        {
+            return Results.NotFound();
+        }
+
+        ServiceLineFilter filter = ServiceLineFilter.Air;
+        if (serviceLine is not null && !TryParseServiceLine(serviceLine, out filter))
+        {
+            return Invalid("serviceLine", "serviceLine must be all, air or ground.");
+        }
+
+        if (groupKey is not null && !GroupKeyPattern().IsMatch(groupKey))
+        {
+            return Invalid("group", "group must be a key from the breakdown route, such as fixed-wing.");
+        }
+
+        ApPeriod chosen;
+        if (period is null)
+        {
+            IReadOnlyList<ApPeriod> available = await periods.GetPeriodsAsync(id, cancellationToken);
+            if (available.Count == 0)
+            {
+                return Results.Ok(new CashPerTransportResponse(MetricOf(ICashPerTransportMetric.Definition), providerId, null, null, null, ServiceLineName(filter), groupKey, []));
+            }
+
+            chosen = available.OrderDescending(Comparer<ApPeriod>.Create(ComparePeriods)).First();
+        }
+        else if (!ApPeriod.TryParse(period, out chosen))
+        {
+            return Invalid("period", "period must be a month written yyyyMM, for example 202610.");
+        }
+
+        CashPerTransport result = await metric.GetCashPerTransportAsync(id, chosen, filter, groupKey, cancellationToken);
+        return Results.Ok(new CashPerTransportResponse(
+            MetricOf(result.Metric),
+            providerId,
+            result.Period.ToString(),
+            result.CohortFrom.ToString(),
+            result.CohortThrough.ToString(),
+            ServiceLineName(result.ServiceLine),
+            result.GroupKey,
+            result.Payers.Select(p => new PayerCashPerTransportResponse(p.Key, p.Name, p.Transports, p.Cash, p.CashPerTransport)).ToArray()));
+    }
+
+    public static async Task<IResult> ByGroupRoute(
+        [AsParameters] ByGroupRequest request,
+        ClaimsPrincipal user,
+        ProviderAccess access,
+        INetCollectionsMetric periods,
+        INetCashByGroupMetric metric,
+        CancellationToken cancellationToken)
+    {
+        (string providerId, string? period, string? serviceLine) = (request.ProviderId, request.Period, request.ServiceLine);
+        if (await access.ResolveAsync(user, providerId, cancellationToken) is not { } id)
+        {
+            return Results.NotFound();
+        }
+
+        ServiceLineFilter filter = ServiceLineFilter.Air;
+        if (serviceLine is not null && !TryParseServiceLine(serviceLine, out filter))
+        {
+            return Invalid("serviceLine", "serviceLine must be all, air or ground.");
+        }
+
+        ApPeriod chosen;
+        if (period is null)
+        {
+            IReadOnlyList<ApPeriod> available = await periods.GetPeriodsAsync(id, cancellationToken);
+            if (available.Count == 0)
+            {
+                return Results.Ok(new NetCashByGroupResponse(MetricOf(INetCashByGroupMetric.Definition), providerId, null, ServiceLineName(filter), []));
+            }
+
+            chosen = available.OrderDescending(Comparer<ApPeriod>.Create(ComparePeriods)).First();
+        }
+        else if (!ApPeriod.TryParse(period, out chosen))
+        {
+            return Invalid("period", "period must be a month written yyyyMM, for example 202610.");
+        }
+
+        NetCashByGroup result = await metric.GetNetCashByGroupAsync(id, chosen, filter, cancellationToken);
+        return Results.Ok(new NetCashByGroupResponse(
+            MetricOf(result.Metric),
+            providerId,
+            result.Period.ToString(),
+            ServiceLineName(result.ServiceLine),
+            result.Points.Select(p => new NetCashByGroupPointResponse(p.GroupKey, p.GroupName, ServiceLineName(p.IsAir ? ServiceLineFilter.Air : ServiceLineFilter.Ground), p.Period.ToString(), p.Cash, p.Transports)).ToArray()));
+    }
+
     public static async Task<IResult> TransportsRoute(
         [AsParameters] TransportsRequest request,
         ClaimsPrincipal user,
@@ -427,7 +623,7 @@ internal static partial class NetCollectionsEndpoints
     private static MetricResponse MetricOf(MetricDefinition d) => new(d.Key, d.Name, d.Description, d.Unit);
 
     [GeneratedRegex("^[a-z0-9-]{1,40}$", RegexOptions.NonBacktracking | RegexOptions.CultureInvariant)]
-    private static partial Regex GroupKeyPattern();
+    internal static partial Regex GroupKeyPattern();
 
     private static NetCashBreakdownResponse ToResponse(string providerId, NetCashBreakdown breakdown) =>
         new(
@@ -453,7 +649,7 @@ internal static partial class NetCollectionsEndpoints
             [],
             []);
 
-    private static bool TryParseServiceLine(string? value, out ServiceLineFilter filter)
+    internal static bool TryParseServiceLine(string? value, out ServiceLineFilter filter)
     {
         filter = ServiceLineFilter.Both;
         // Exactly these three words: Enum.TryParse would also accept numbers and combinations.
@@ -472,7 +668,7 @@ internal static partial class NetCollectionsEndpoints
         }
     }
 
-    private static string ServiceLineName(ServiceLineFilter filter) => filter switch
+    internal static string ServiceLineName(ServiceLineFilter filter) => filter switch
     {
         ServiceLineFilter.Air => "air",
         ServiceLineFilter.Ground => "ground",
@@ -491,7 +687,7 @@ internal static partial class NetCollectionsEndpoints
             0m,
             []);
 
-    private static int ComparePeriods(ApPeriod a, ApPeriod b) => ((a.Year * 12) + a.Month).CompareTo((b.Year * 12) + b.Month);
+    internal static int ComparePeriods(ApPeriod a, ApPeriod b) => ((a.Year * 12) + a.Month).CompareTo((b.Year * 12) + b.Month);
 
     private static PeriodResponse Describe(ApPeriod period) =>
         new(period.ToString(), $"{Months[period.Month - 1]} {period.Year}");
@@ -505,7 +701,7 @@ internal static partial class NetCollectionsEndpoints
             null,
             []);
 
-    private static IResult Invalid(string field, string message) =>
+    internal static IResult Invalid(string field, string message) =>
         Results.ValidationProblem(new Dictionary<string, string[]> { [field] = [message] });
 }
 
@@ -604,6 +800,58 @@ public sealed record PayerMixResponse(
 
 /// <summary>A payer group: <c>Key</c> is stable, <c>Name</c> is for display, <c>Current</c> and <c>Prior</c> are transport counts.</summary>
 public sealed record PayerMixShareResponse(string Key, string Name, int Current, int Prior);
+
+/// <summary>
+/// Net cash by payer group, posting month and payment age for <c>Period</c> and the twelve months before it. <c>Group</c> is set when the figures are
+/// for one aircraft type or level of service.
+/// </summary>
+public sealed record PaymentAgeResponse(
+    MetricResponse Metric,
+    string ProviderId,
+    string? Period,
+    string ServiceLine,
+    string? Group,
+    IReadOnlyList<PaymentAgeCellResponse> Cells);
+
+/// <summary>
+/// Cash (<c>Cash</c>, USD) posted in <c>PostingPeriod</c> for <c>Transports</c> transports of payer group <c>PayerKey</c> that were <c>AgeMonths</c> months old
+/// when paid. <c>PayerKey</c> is stable, <c>PayerName</c> is for display.
+/// </summary>
+public sealed record PaymentAgeCellResponse(string PayerKey, string PayerName, string PostingPeriod, int AgeMonths, decimal Cash, int Transports);
+
+/// <summary>
+/// Matured net cash per transport by payer group for <c>Period</c>. The cohorts are the transports flown from <c>CohortFrom</c> to <c>CohortThrough</c>.
+/// <c>Group</c> is set when the figures are for one aircraft type or level of service.
+/// </summary>
+public sealed record CashPerTransportResponse(
+    MetricResponse Metric,
+    string ProviderId,
+    string? Period,
+    string? CohortFrom,
+    string? CohortThrough,
+    string ServiceLine,
+    string? Group,
+    IReadOnlyList<PayerCashPerTransportResponse> Payers);
+
+/// <summary>A payer group: <c>Key</c> is stable, <c>Name</c> is for display. <c>CashPerTransport</c> (USD) is null when there are no transports.</summary>
+public sealed record PayerCashPerTransportResponse(string Key, string Name, int Transports, decimal Cash, decimal? CashPerTransport);
+
+/// <summary>Net cash by posting month for each group, for <c>Period</c> and the twelve months before it.</summary>
+public sealed record NetCashByGroupResponse(
+    MetricResponse Metric,
+    string ProviderId,
+    string? Period,
+    string ServiceLine,
+    IReadOnlyList<NetCashByGroupPointResponse> Points);
+
+/// <summary>Cash (USD) posted in <c>Period</c> for one group, from <c>Transports</c> encounters. <c>GroupKey</c> is stable, <c>GroupName</c> is for display.</summary>
+public sealed record NetCashByGroupPointResponse(string GroupKey, string GroupName, string ServiceLine, string Period, decimal Cash, int Transports);
+
+/// <summary>Route and query values of the net cash by group route.</summary>
+internal readonly record struct ByGroupRequest(
+    string ProviderId,
+    string? Period,
+    string? ServiceLine);
 
 /// <summary>Route and query values of the net cash series route.</summary>
 internal readonly record struct SeriesRequest(

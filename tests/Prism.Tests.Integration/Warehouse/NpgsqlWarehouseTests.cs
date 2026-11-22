@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using Npgsql;
 using Prism.Application.Warehouse;
 using Prism.Infrastructure.Warehouse;
@@ -10,7 +11,7 @@ public sealed class NpgsqlWarehouseTests(PostgresFixture postgres) : IClassFixtu
 {
     private static readonly SemaphoreSlim SeedLock = new(1, 1);
 
-    private async Task<NpgsqlWarehouse> NewWarehouseAsync(int timeoutSeconds = 30, int maxRows = 100)
+    private async Task<NpgsqlWarehouse> NewWarehouseAsync(int timeoutSeconds = 30, int maxRows = 100, ILogger<NpgsqlWarehouse>? logger = null)
     {
         CancellationToken ct = TestContext.Current.CancellationToken;
         await SeedLock.WaitAsync(ct);
@@ -33,7 +34,7 @@ public sealed class NpgsqlWarehouseTests(PostgresFixture postgres) : IClassFixtu
         }
 
         var options = new PrismWarehouseOptions { ConnectionString = postgres.ConnectionString, CommandTimeoutSeconds = timeoutSeconds, MaxRows = maxRows };
-        return new NpgsqlWarehouse(WarehouseDataSourceFactory.Create(options), Microsoft.Extensions.Options.Options.Create(options), Microsoft.Extensions.Logging.Abstractions.NullLogger<NpgsqlWarehouse>.Instance);
+        return new NpgsqlWarehouse(WarehouseDataSourceFactory.Create(options), Microsoft.Extensions.Options.Options.Create(options), logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<NpgsqlWarehouse>.Instance);
     }
 
     private static WarehouseQuery Provider(string sql, int providerId, params (string, object?)[] more) =>
@@ -98,6 +99,65 @@ public sealed class NpgsqlWarehouseTests(PostgresFixture postgres) : IClassFixtu
 
         await Assert.ThrowsAsync<WarehouseResultTooLargeException>(() => warehouse.QueryAsync(
             Provider("SELECT amount FROM dw_payment WHERE provider_id = @provider_id", 526), r => r.GetDecimal(0), TestContext.Current.CancellationToken));
+    }
+
+    private sealed class CapturingLogger : ILogger<NpgsqlWarehouse>
+    {
+        public List<(LogLevel Level, string Message)> Lines { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter) =>
+            Lines.Add((logLevel, formatter(state, exception)));
+    }
+
+    [Fact]
+    public async Task A_finished_query_logs_its_name_rows_and_time_and_never_the_sql_or_a_parameter_value()
+    {
+        var logger = new CapturingLogger();
+        NpgsqlWarehouse warehouse = await NewWarehouseAsync(logger: logger);
+        WarehouseQuery query = Provider("SELECT paid_month FROM dw_payment WHERE provider_id = @provider_id AND paid_month <> @marker", 526, ("marker", "PHI-MARKER-DOE-JOHN")) with { Name = "DemoQuery" };
+
+        await warehouse.QueryAsync(query, r => r.GetString(0), TestContext.Current.CancellationToken);
+
+        (LogLevel level, string message) = Assert.Single(logger.Lines);
+        Assert.Equal(LogLevel.Information, level);
+        Assert.Matches(@"^Warehouse query DemoQuery returned 2 rows in \d+ ms$", message);
+        Assert.DoesNotContain("PHI-MARKER", message, StringComparison.Ordinal);
+        Assert.DoesNotContain("dw_payment", message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_timeout_logs_which_query_ran_how_long_and_the_sql_state()
+    {
+        var logger = new CapturingLogger();
+        NpgsqlWarehouse warehouse = await NewWarehouseAsync(timeoutSeconds: 1, logger: logger);
+
+        await Assert.ThrowsAsync<WarehouseUnavailableException>(() => warehouse.QueryAsync(
+            Provider("SELECT pg_sleep(5), @provider_id::int", 526) with { Name = "SlowQuery" }, r => r.GetInt32(1), TestContext.Current.CancellationToken));
+
+        (LogLevel level, string message) = Assert.Single(logger.Lines);
+        Assert.Equal(LogLevel.Warning, level);
+        Assert.Matches(@"^The data warehouse is unavailable for query SlowQuery after \d+ ms \(SQL state (57014|none)\)$", message);
+    }
+
+    [Fact]
+    public async Task A_database_error_in_a_query_logs_only_its_name_time_and_sql_state_never_the_message()
+    {
+        var logger = new CapturingLogger();
+        NpgsqlWarehouse warehouse = await NewWarehouseAsync(logger: logger);
+
+        await Assert.ThrowsAsync<PostgresException>(() => warehouse.QueryAsync(
+            Provider("SELECT 1 / (@provider_id::int - 526) + length(@marker)", 526, ("marker", "PHI-MARKER-DOE-JOHN")) with { Name = "BrokenQuery" }, r => r.GetInt32(0), TestContext.Current.CancellationToken));
+
+        (LogLevel level, string message) = Assert.Single(logger.Lines);
+        Assert.Equal(LogLevel.Error, level);
+        Assert.Matches(@"^The data warehouse refused query BrokenQuery after \d+ ms \(SQL state 22012\)$", message);
+        Assert.DoesNotContain("division", message, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("PHI-MARKER", message, StringComparison.Ordinal);
     }
 
     [Fact]

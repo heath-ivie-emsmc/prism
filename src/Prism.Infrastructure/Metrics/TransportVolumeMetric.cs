@@ -36,7 +36,7 @@ public sealed class TransportVolumeMetric(IWarehouse warehouse, IWarehouseProvid
                 ["to_date"] = new DateOnly(next.Year, next.Month, 1),
                 ["include_air"] = serviceLine is ServiceLineFilter.Both or ServiceLineFilter.Air,
                 ["include_ground"] = serviceLine is ServiceLineFilter.Both or ServiceLineFilter.Ground,
-            });
+            }) { Name = "TransportVolumeMetric" };
 
         IReadOnlyList<Row> rows = await warehouse.QueryAsync(
             query,
@@ -60,7 +60,7 @@ public sealed class TransportVolumeMetric(IWarehouse warehouse, IWarehouseProvid
 
         var openQuery = new WarehouseQuery(
             NetCashBreakdownMetric.PeriodOpenSql,
-            new Dictionary<string, object?> { [WarehouseQuery.ProviderParameter] = warehouseId, ["period"] = last });
+            new Dictionary<string, object?> { [WarehouseQuery.ProviderParameter] = warehouseId, ["period"] = last }) { Name = "TransportVolumeMetric#2" };
         IReadOnlyList<bool> open = await warehouse.QueryAsync(openQuery, reader => reader.GetBoolean(0), cancellationToken);
 
         return new TransportVolume(ITransportVolumeMetric.Definition, endPeriod, count, serviceLine, open.Count > 0 && open[0], points, groups);

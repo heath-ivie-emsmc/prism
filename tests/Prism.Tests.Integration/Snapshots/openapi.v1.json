@@ -477,6 +477,308 @@
         }
       }
     },
+    "/api/v1/providers/{providerId}/metrics/net-collections/payment-age": {
+      "get": {
+        "tags": [
+          "Metrics"
+        ],
+        "summary": "Net cash by payer and payment age",
+        "description": "Net cash for \u0060period\u0060 (\u0060yyyyMM\u0060, default the newest period with net cash data) and the twelve months before it, by payer group, posting month and payment age. Payment age is the number of months between the transport\u0027s date of service and the month the cash posted, so 0 is cash for a transport flown that month, and ages above 24 are counted at 24. Net cash is payments less refunds by posting month, without the Old AR import, as in the breakdown. Cash for transports with no date of service is left out, so the cells can add up to less than the breakdown. \u0060serviceLine\u0060 is \u0060all\u0060, \u0060air\u0060 (default) or \u0060ground\u0060. \u0060group\u0060 narrows it to one aircraft type or level of service, using the \u0060key\u0060 the breakdown route returns (for example \u0060fixed-wing\u0060). Aggregates only: no patient, claim or payer names. Returns 404 when the Provider is not one the caller may read in full.",
+        "operationId": "GetPaymentAge",
+        "parameters": [
+          {
+            "name": "providerId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Period",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "ServiceLine",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Group",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaymentAgeResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service Unavailable",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/providers/{providerId}/metrics/net-collections/cash-per-transport": {
+      "get": {
+        "tags": [
+          "Metrics"
+        ],
+        "summary": "Matured net cash per transport by payer",
+        "description": "What a transport earns by primary payer group, for transports old enough to have been paid. The cohorts are the twelve date-of-service months that ended at least six months before \u0060period\u0060 (\u0060yyyyMM\u0060, default the newest period with net cash data), returned as \u0060cohortFrom\u0060 and \u0060cohortThrough\u0060. For each payer group: the \u0060transports\u0060 in the cohorts (paid or not), the net \u0060cash\u0060 posted for them up to and including \u0060period\u0060 (payments less refunds, without the Old AR import), and \u0060cashPerTransport\u0060, which is null when the group has no transports. \u0060serviceLine\u0060 is \u0060all\u0060, \u0060air\u0060 (default) or \u0060ground\u0060. \u0060group\u0060 narrows it to one aircraft type or level of service, using the \u0060key\u0060 the breakdown route returns (for example \u0060fixed-wing\u0060). Every payer group is listed in a fixed order, with zeros. Aggregates only: no patient, claim or payer names. Returns 404 when the Provider is not one the caller may read in full.",
+        "operationId": "GetCashPerTransport",
+        "parameters": [
+          {
+            "name": "providerId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Period",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "ServiceLine",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Group",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CashPerTransportResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service Unavailable",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/providers/{providerId}/metrics/net-collections/by-group": {
+      "get": {
+        "tags": [
+          "Metrics"
+        ],
+        "summary": "Net cash by month and aircraft type or level of service",
+        "description": "Net cash collected by posting month for each aircraft type (air) or level of service (ground), for \u0060period\u0060 (\u0060yyyyMM\u0060, default the newest period with net cash data) and the twelve months before it. Net cash is payments less refunds by the accounting period they posted in, without the Old AR import, so a group\u0027s month matches the same group in the breakdown. \u0060transports\u0060 are the encounters with cash posted in the month. Months with no cash are left out, not returned as zero. Cash for an encounter with no trip record has no group and is left out. \u0060serviceLine\u0060 is \u0060all\u0060, \u0060air\u0060 (default) or \u0060ground\u0060. Aggregates only: no patient or claim detail. Returns 404 when the Provider is not one the caller may read in full.",
+        "operationId": "GetNetCashByGroup",
+        "parameters": [
+          {
+            "name": "providerId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Period",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "ServiceLine",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCashByGroupResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service Unavailable",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/providers/{providerId}/metrics/net-collections/transports": {
       "get": {
         "tags": [
@@ -757,6 +1059,112 @@
           }
         }
       }
+    },
+    "/api/v1/providers/{providerId}/insights/what-changed": {
+      "get": {
+        "tags": [
+          "Insights"
+        ],
+        "summary": "What changed in net cash against the month before",
+        "description": "Explains the change in posted net cash for \u0060period\u0060 (\u0060yyyyMM\u0060, default the newest period with net cash data) against the month before, for one aircraft type or level of service (\u0060group\u0060, a \u0060key\u0060 from the breakdown route such as \u0060fixed-wing\u0060) or the whole Service Line (\u0060serviceLine\u0060 is \u0060all\u0060, \u0060air\u0060 (default) or \u0060ground\u0060). \u0060drivers\u0060 are the findings that explain part of the posted change, largest first, and with \u0060remainder\u0060 they add up to \u0060delta\u0060. \u0060expected\u0060 are findings on another basis, such as what a shift in payer mix is expected to do to cash as claims are paid, and are not part of \u0060delta\u0060. \u0060remainder.judgment\u0060 is \u0060withinNormalRange\u0060 only when the unexplained part is inside the usual month-to-month range of the last twelve months, \u0060outsideNormalRange\u0060 when it is not, and \u0060notEnoughHistory\u0060 when there are not twelve months to judge by. \u0060normalizedDeltaRatio\u0060 is the change with unusually high aged payments taken out of both months, or null when there were none. Every figure in the text comes from a finding. Aggregates only: no patient, claim or payer names. Returns 204 when neither month has cash to explain, and 404 when the Provider is not one the caller may read in full.",
+        "operationId": "GetWhatChanged",
+        "parameters": [
+          {
+            "name": "providerId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Period",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "ServiceLine",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Group",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WhatChangedResponse"
+                }
+              }
+            }
+          },
+          "204": {
+            "description": "No Content"
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service Unavailable",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -881,6 +1289,61 @@
         },
         "description": "A vehicle (tail number or unit) at a base or station. \u0060Base\u0060 is null when the warehouse has none."
       },
+      "CashPerTransportResponse": {
+        "required": [
+          "metric",
+          "providerId",
+          "period",
+          "cohortFrom",
+          "cohortThrough",
+          "serviceLine",
+          "group",
+          "payers"
+        ],
+        "type": "object",
+        "properties": {
+          "metric": {
+            "$ref": "#/components/schemas/MetricResponse"
+          },
+          "providerId": {
+            "type": "string"
+          },
+          "period": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "cohortFrom": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "cohortThrough": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "serviceLine": {
+            "type": "string"
+          },
+          "group": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "payers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PayerCashPerTransportResponse"
+            }
+          }
+        },
+        "description": "Matured net cash per transport by payer group for \u0060Period\u0060. The cohorts are the transports flown from \u0060CohortFrom\u0060 to \u0060CohortThrough\u0060.\n\u0060Group\u0060 is set when the figures are for one aircraft type or level of service."
+      },
       "CleanClaimPointResponse": {
         "required": [
           "period",
@@ -989,6 +1452,39 @@
         },
         "description": "The clean claim rate by month of service up to \u0060EndPeriod\u0060. \u0060Points\u0060 only has months the warehouse has a figure for, so the newest can be older than\n\u0060EndPeriod\u0060. \u0060SnapshotDate\u0060 is the warehouse load the figures came from."
       },
+      "InsightCardResponse": {
+        "required": [
+          "kind",
+          "label",
+          "title",
+          "body",
+          "impact"
+        ],
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "body": {
+            "type": "string"
+          },
+          "impact": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?$",
+            "type": [
+              "number",
+              "string"
+            ],
+            "format": "double"
+          }
+        },
+        "description": "One finding. \u0060Kind\u0060 is a stable key (\u0060aged-payments\u0060, \u0060volume\u0060, \u0060payer-mix\u0060). \u0060Label\u0060 is \u0060temporary\u0060, \u0060structural\u0060, \u0060watch\u0060 or \u0060info\u0060.\n\u0060Impact\u0060 is USD and signed: negative lowered cash, or is expected to."
+      },
       "MeResponse": {
         "required": [
           "userName",
@@ -1094,6 +1590,82 @@
           }
         },
         "description": "Net cash for \u0060Period\u0060 and the month before it (\u0060PriorPeriod\u0060), by \u0060Groups\u0060 (aircraft type or level of service) and \u0060Rows\u0060 (base and vehicle).\n\u0060PeriodOpen\u0060 is true while the accounting period is still open: cash is still posting into it, so the figures are not final."
+      },
+      "NetCashByGroupPointResponse": {
+        "required": [
+          "groupKey",
+          "groupName",
+          "serviceLine",
+          "period",
+          "cash",
+          "transports"
+        ],
+        "type": "object",
+        "properties": {
+          "groupKey": {
+            "type": "string"
+          },
+          "groupName": {
+            "type": "string"
+          },
+          "serviceLine": {
+            "type": "string"
+          },
+          "period": {
+            "type": "string"
+          },
+          "cash": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?$",
+            "type": [
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "transports": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          }
+        },
+        "description": "Cash (USD) posted in \u0060Period\u0060 for one group, from \u0060Transports\u0060 encounters. \u0060GroupKey\u0060 is stable, \u0060GroupName\u0060 is for display."
+      },
+      "NetCashByGroupResponse": {
+        "required": [
+          "metric",
+          "providerId",
+          "period",
+          "serviceLine",
+          "points"
+        ],
+        "type": "object",
+        "properties": {
+          "metric": {
+            "$ref": "#/components/schemas/MetricResponse"
+          },
+          "providerId": {
+            "type": "string"
+          },
+          "period": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "serviceLine": {
+            "type": "string"
+          },
+          "points": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NetCashByGroupPointResponse"
+            }
+          }
+        },
+        "description": "Net cash by posting month for each group, for \u0060Period\u0060 and the twelve months before it."
       },
       "NetCashProjectionMonthResponse": {
         "required": [
@@ -1313,6 +1885,50 @@
         },
         "description": "Net cash collected for a Provider, by accounting period."
       },
+      "PayerCashPerTransportResponse": {
+        "required": [
+          "key",
+          "name",
+          "transports",
+          "cash",
+          "cashPerTransport"
+        ],
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "transports": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "cash": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?$",
+            "type": [
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "cashPerTransport": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ],
+            "format": "double"
+          }
+        },
+        "description": "A payer group: \u0060Key\u0060 is stable, \u0060Name\u0060 is for display. \u0060CashPerTransport\u0060 (USD) is null when there are no transports."
+      },
       "PayerMixResponse": {
         "required": [
           "metric",
@@ -1402,6 +2018,94 @@
         },
         "description": "A payer group: \u0060Key\u0060 is stable, \u0060Name\u0060 is for display, \u0060Current\u0060 and \u0060Prior\u0060 are transport counts."
       },
+      "PaymentAgeCellResponse": {
+        "required": [
+          "payerKey",
+          "payerName",
+          "postingPeriod",
+          "ageMonths",
+          "cash",
+          "transports"
+        ],
+        "type": "object",
+        "properties": {
+          "payerKey": {
+            "type": "string"
+          },
+          "payerName": {
+            "type": "string"
+          },
+          "postingPeriod": {
+            "type": "string"
+          },
+          "ageMonths": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "cash": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?$",
+            "type": [
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "transports": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          }
+        },
+        "description": "Cash (\u0060Cash\u0060, USD) posted in \u0060PostingPeriod\u0060 for \u0060Transports\u0060 transports of payer group \u0060PayerKey\u0060 that were \u0060AgeMonths\u0060 months old\nwhen paid. \u0060PayerKey\u0060 is stable, \u0060PayerName\u0060 is for display."
+      },
+      "PaymentAgeResponse": {
+        "required": [
+          "metric",
+          "providerId",
+          "period",
+          "serviceLine",
+          "group",
+          "cells"
+        ],
+        "type": "object",
+        "properties": {
+          "metric": {
+            "$ref": "#/components/schemas/MetricResponse"
+          },
+          "providerId": {
+            "type": "string"
+          },
+          "period": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "serviceLine": {
+            "type": "string"
+          },
+          "group": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "cells": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PaymentAgeCellResponse"
+            }
+          }
+        },
+        "description": "Net cash by payer group, posting month and payment age for \u0060Period\u0060 and the twelve months before it. \u0060Group\u0060 is set when the figures are\nfor one aircraft type or level of service."
+      },
       "PeriodResponse": {
         "required": [
           "period",
@@ -1479,6 +2183,31 @@
           }
         },
         "description": "A Provider the user may see. FacilityCount is how many Facilities they are limited to, and 0 means all of them. The Facility ids stay on the server."
+      },
+      "RemainderResponse": {
+        "required": [
+          "amount",
+          "judgment",
+          "text"
+        ],
+        "type": "object",
+        "properties": {
+          "amount": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?$",
+            "type": [
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "judgment": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "description": "The part of the change no driver explains (USD), how it compares with the usual month-to-month range, and the sentence for it."
       },
       "TransportVolumeGroupResponse": {
         "required": [
@@ -1605,6 +2334,117 @@
           }
         },
         "description": "Transports and loaded miles by month of service, ending at \u0060EndPeriod\u0060. \u0060Groups\u0060 splits the last month by aircraft type or level of service.\n\u0060PeriodOpen\u0060 is true while the accounting period of the last month is open, so transports for it may still be added."
+      },
+      "WhatChangedResponse": {
+        "required": [
+          "providerId",
+          "period",
+          "priorPeriod",
+          "serviceLine",
+          "group",
+          "groupName",
+          "dataThrough",
+          "headline",
+          "cashNow",
+          "cashPrior",
+          "delta",
+          "deltaRatio",
+          "normalizedDeltaRatio",
+          "drivers",
+          "expected",
+          "remainder"
+        ],
+        "type": "object",
+        "properties": {
+          "providerId": {
+            "type": "string"
+          },
+          "period": {
+            "type": "string"
+          },
+          "priorPeriod": {
+            "type": "string"
+          },
+          "serviceLine": {
+            "type": "string"
+          },
+          "group": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "groupName": {
+            "type": "string"
+          },
+          "dataThrough": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "headline": {
+            "type": "string"
+          },
+          "cashNow": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?$",
+            "type": [
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "cashPrior": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?$",
+            "type": [
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "delta": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?$",
+            "type": [
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "deltaRatio": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "normalizedDeltaRatio": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "drivers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/InsightCardResponse"
+            }
+          },
+          "expected": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/InsightCardResponse"
+            }
+          },
+          "remainder": {
+            "$ref": "#/components/schemas/RemainderResponse"
+          }
+        },
+        "description": "What changed in posted net cash (USD) for \u0060Period\u0060 against \u0060PriorPeriod\u0060. \u0060DeltaRatio\u0060 is the change as a share of last month\u0027s cash (-0.22 is a 22% fall),\nnull when last month had none. \u0060Headline\u0060 is the one-sentence summary. \u0060DataThrough\u0060 is the date of the warehouse load, \u0060yyyy-MM-dd\u0060."
       }
     }
   },
@@ -1614,6 +2454,9 @@
     },
     {
       "name": "Identity"
+    },
+    {
+      "name": "Insights"
     },
     {
       "name": "Metrics"

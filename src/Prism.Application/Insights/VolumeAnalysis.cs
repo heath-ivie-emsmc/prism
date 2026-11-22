@@ -1,0 +1,32 @@
+namespace Prism.Application.Insights;
+
+/// <summary>
+/// How much of the change is more or fewer transports having cash posted, priced at last month's cash per transport. Any unusually high aged payments
+/// found first are taken out of both months before this runs, so a one-off batch is not counted as a change in volume as well.
+/// </summary>
+public sealed class VolumeAnalysis : IInsightAnalysis
+{
+    public int Order => 20;
+
+    public Task<Finding?> RunAsync(InsightInput input, CancellationToken cancellationToken) => Task.FromResult<Finding?>(Run(input));
+
+    private static VolumeFinding? Run(InsightInput input)
+    {
+        if (input.Current is not { } now || input.Prior is not { } before)
+        {
+            return null;
+        }
+
+        AgedPaymentsFinding? aged = input.Earlier.OfType<AgedPaymentsFinding>().FirstOrDefault();
+        decimal cashBefore = before.Cash - (aged?.ExcessPriorMonth ?? 0m);
+        decimal transportsBefore = before.Transports - (aged?.ExcessTransportsPriorMonth ?? 0m);
+        decimal transportsNow = now.Transports - (aged?.ExcessTransportsThisMonth ?? 0m);
+        if (transportsBefore <= 0m || transportsNow < 0m || transportsNow == transportsBefore)
+        {
+            return null;
+        }
+
+        decimal impact = (transportsNow - transportsBefore) * (cashBefore / transportsBefore);
+        return new VolumeFinding(impact < 0m ? FindingLabel.Watch : FindingLabel.Info, impact, transportsBefore, transportsNow);
+    }
+}

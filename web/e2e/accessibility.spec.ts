@@ -151,7 +151,7 @@ test.describe('accessibility', () => {
   });
 
   test('no page shows raw template text, even when a part of it fails to load', async ({ page }) => {
-    await page.route(/net-collections\/(projection|transports|clean-claims|breakdown|payer-mix)/, (route) => route.fulfill({ status: 503, json: { title: 'x' } }));
+    await page.route(/(net-collections\/(projection|transports|clean-claims|breakdown|payer-mix)|insights\/what-changed)/, (route) => route.fulfill({ status: 503, json: { title: 'x' } }));
     for (const path of ['/dashboard', '/dashboard/net-cash?period=202610&line=air', '/dashboard/net-cash/fixed-wing?period=202610&line=air']) {
       await page.goto(path);
       await page.locator('main').first().waitFor();

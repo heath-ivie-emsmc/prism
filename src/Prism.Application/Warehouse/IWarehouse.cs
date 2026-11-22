@@ -9,6 +9,11 @@ namespace Prism.Application.Warehouse;
 /// </summary>
 public sealed record WarehouseQuery(string Sql, IReadOnlyDictionary<string, object?> Parameters)
 {
+    /// <summary>
+    /// A short fixed name for the query, written in the Catalog, that logs and timings use instead of the SQL. Never built from request values.
+    /// </summary>
+    public string Name { get; init; } = "unnamed";
+
     /// <summary>The one parameter name every query uses for the Provider.</summary>
     public const string ProviderParameter = "provider_id";
 }

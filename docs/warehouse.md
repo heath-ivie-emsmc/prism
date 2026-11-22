@@ -116,6 +116,27 @@ It uses the rule behind `kpi_net_collections_ap__prov`, so the groups add up to 
 - **Data is behind:** on 2026-11-21 the table held a single load (2026-04-07) with January to March 2026 only, and an empty `rolling_12m_avg`. The tile shows the newest month the warehouse has and says which month it is ("Latest in the data: March 2026."), or says there is no data. It never shows an older month as the month on screen.
 - **Goal:** the 95% mark on the tile is a placeholder from the mockup. It is not in the warehouse and becomes a Provider setting later.
 
+## Payment age, cash per transport and net cash by group
+
+Three Metrics feed the "What changed" panel. Each is also a public API Metric under `/api/v1/providers/{providerId}/metrics/net-collections/`.
+
+- **`/payment-age`:** net cash by payer group, posting month and age, for the chosen period and the 12 months before it. Age is the posting month minus the transport's date-of-service month (capped at 24). Cash for a transport with no date of service is left out, so the cells can add up to less than the breakdown.
+- **`/cash-per-transport`:** matured net cash per transport by payer group. The cohorts are the 12 date-of-service months that ended at least **6 months** before the chosen period. Every transport counts, paid or not, and cash is everything posted up to and including the chosen period.
+- **`/by-group`:** net cash by posting month for each aircraft type or level of service, for the chosen period and the 12 months before it. A group's month equals the same group in the breakdown.
+- **One rule for cash and payers:** the net cash rule (payment and refund credits, by posting period, without the Old AR import) is `NetCashSql`, and the payer grouping is `PayerGroupSql`. Every Metric that adds up the ledger or groups payers uses them.
+
+## What changed (insights)
+
+`GET /api/v1/providers/{providerId}/insights/what-changed` explains the change in posted net cash for a group against the month before. It is for the dashboard and is not a public API contract. It answers 204 when neither month has cash.
+
+- **Analyses read Metrics, never the warehouse.** Aged payments (payment age), volume, and payer mix (payer mix and cash per transport) run in a fixed order so their effects do not overlap.
+- **Drivers and the remainder add up to the change.** A payer mix shift is shown beside them as an expected effect, because payer mix is by date of service and cash is by posting month.
+- **Aged payments:** a payment is aged when it is older than the age by which 90% of that payer group's transports are normally paid. The excess over the average of the six months before the two compared is the finding. A batch needs at least 3 transports. It says "unusually high payments on older transports", not "one-time", because the warehouse has no payment date or one-time flag.
+- **Remainder:** called normal only when it is within one standard deviation of the last 12 months' changes, and only when all 12 months have cash.
+- **Thresholds:** a finding is shown at 10% of the size of the change or more, at most 5. They are constants in `InsightThresholds` and are meant to be tuned against real months.
+- **Cache:** results are kept for 10 minutes, keyed on Provider, period, Service Line, group and the Data Through date, with a size cap of 500 and at most 4 computed at once.
+- **Not built:** denied claims and timely filing (needs the claim-level table), an LLM, and "Ask about this view".
+
 ## Not yet done
 
 - Caching results by Provider, query and the Data Through watermark.
