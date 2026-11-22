@@ -72,3 +72,16 @@ html {
   -webkit-backdrop-filter: var(--ems-fx-frosted);
   backdrop-filter: var(--ems-fx-frosted);
 }
+
+/* Text for screen readers only. The Angular CDK class name is used across the app and the layout checks know it. */
+.cdk-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

@@ -92,7 +92,8 @@ test.describe('accessibility', () => {
 
     await page.getByRole('switch', { name: 'Show 3-month projection' }).click();
 
-    await expect(page.getByText("We can't load the projection right now.")).toBeVisible();
+    await expect(page.getByText("We can't load the projection right now. Try again in a moment.", { exact: true })).toBeVisible();
+    await expect(page.getByText('{{')).toHaveCount(0);
     expect(asked[0]).toBe('?endPeriod=202610&serviceLine=air');
     await expect(page.getByText('Expected, next 3 months')).toBeHidden();
     expect(await axeViolations(page)).toEqual([]);
@@ -147,6 +148,20 @@ test.describe('accessibility', () => {
 
     expect((await layoutErrors(page)).errors).toEqual([]);
     expect(await axeViolations(page, undefined, ['color-contrast'])).toEqual([]);
+  });
+
+  test('no page shows raw template text, even when a part of it fails to load', async ({ page }) => {
+    await page.route(/net-collections\/(projection|transports|clean-claims|breakdown|payer-mix)/, (route) => route.fulfill({ status: 503, json: { title: 'x' } }));
+    for (const path of ['/dashboard', '/dashboard/net-cash?period=202610&line=air', '/dashboard/net-cash/fixed-wing?period=202610&line=air']) {
+      await page.goto(path);
+      await page.locator('main').first().waitFor();
+      if (path === '/dashboard') await page.getByRole('switch', { name: 'Show 3-month projection' }).click();
+      await page.waitForTimeout(500);
+
+      const text = await page.locator('body').innerText();
+      expect(text, path).not.toContain('{{');
+      expect(text, path).not.toContain('}}');
+    }
   });
 
   test('Last 12 months shows twelve months in the table', async ({ page }) => {

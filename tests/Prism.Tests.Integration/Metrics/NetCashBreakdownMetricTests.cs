@@ -96,6 +96,28 @@ public sealed class NetCashBreakdownMetricTests(PostgresFixture postgres) : ICla
     }
 
     [Fact]
+    public async Task The_net_cash_series_for_air_or_ground_alone_adds_up_to_the_whole_and_matches_the_breakdown()
+    {
+        NetCashBreakdownMetric breakdown = await NewMetricAsync();
+        var options = new PrismWarehouseOptions { ConnectionString = postgres.ConnectionString };
+        var warehouse = new NpgsqlWarehouse(WarehouseDataSourceFactory.Create(options), Options.Create(options), NullLogger<NpgsqlWarehouse>.Instance);
+        var series = new NetCollectionsMetric(warehouse, new FakeProviderResolver(null));
+        CancellationToken ct = TestContext.Current.CancellationToken;
+
+        NetCollectionsSeries air = await series.GetSeriesAsync(2026, new ApPeriod(2026, 10), 2, ServiceLineFilter.Air, ct);
+        NetCollectionsSeries ground = await series.GetSeriesAsync(2026, new ApPeriod(2026, 10), 2, ServiceLineFilter.Ground, ct);
+
+        // Air: Oct 1000 - 50 + 100 + 200 + 3000 = 4250, Sep 600 + 250 = 850. Ground: Oct 400 + 70 (no trip row) = 470, nothing in Sep.
+        Assert.Equal([(new ApPeriod(2026, 9), 850m), (new ApPeriod(2026, 10), 4250m)], air.Points.Select(p => (p.Period, p.Value)));
+        Assert.Equal([(new ApPeriod(2026, 10), 470m)], ground.Points.Select(p => (p.Period, p.Value)));
+        Assert.Equal(ServiceLineFilter.Air, air.ServiceLine);
+        NetCashBreakdown air2 = await breakdown.GetBreakdownAsync(2026, new ApPeriod(2026, 10), ServiceLineFilter.Air, ct);
+        Assert.Equal(air.Points[^1].Value, air2.Groups.Sum(g => g.Current.Cash));
+        // Another Provider's 5,550 never leaks in.
+        Assert.DoesNotContain(air.Points.Concat(ground.Points), p => p.Value > 5000m);
+    }
+
+    [Fact]
     public async Task Air_is_grouped_by_aircraft_type_with_transports_counted_by_encounter_and_the_mix()
     {
         NetCashBreakdownMetric metric = await NewMetricAsync();

@@ -80,6 +80,38 @@ function payerMixFor(): { key: string; name: string; prior: number; current: num
   return rows.map(([key, name, prior, current]) => ({ key, name, prior, current }));
 }
 
+/** Six months of transports and loaded miles ending at the asked-for period: the last two are 146 then 140, 19,000 then 18,420 miles, as in the mockup. */
+function transportsFor(end: string, line: 'all' | 'air' | 'ground') {
+  const endIndex = Number(end.slice(0, 4)) * 12 + Number(end.slice(4, 6)) - 1;
+  const counts = [112, 131, 128, 150, 146, 140];
+  const miles = [15_200, 17_900, 17_100, 19_800, 19_000, 18_420];
+  const points = counts.map((transports, i) => {
+    const index = endIndex - (counts.length - 1 - i);
+    const year = Math.floor(index / 12);
+    const month = (index % 12) + 1;
+    return { period: `${year}${String(month).padStart(2, '0')}`, label: MONTH_NAMES[month - 1]!, year, transports, loadedMiles: miles[i]! };
+  });
+  const air = [
+    { key: 'rotor-wing', name: 'Rotor wing', serviceLine: 'air', transports: 92 },
+    { key: 'fixed-wing', name: 'Fixed wing', serviceLine: 'air', transports: 48 },
+  ];
+  const ground = [{ key: 'als', name: 'Advanced life support', serviceLine: 'ground', transports: 140 }];
+  return { points, groups: line === 'ground' ? ground : air };
+}
+
+/** The clean claim rate for the months up to the asked-for period: 96.2% then 94.5%, so the tile shows a drop of 1.7 points, as in the mockup. */
+function cleanClaimsFor(end: string) {
+  const index = Number(end.slice(0, 4)) * 12 + Number(end.slice(4, 6)) - 1;
+  const rates = [0.981, 0.975, 0.97, 0.968, 0.962, 0.945];
+  return rates.map((rate, i) => {
+    const at = index - (rates.length - 1 - i);
+    const year = Math.floor(at / 12);
+    const month = (at % 12) + 1;
+    const total = 1000;
+    return { period: `${year}${String(month).padStart(2, '0')}`, label: MONTH_NAMES[month - 1]!, year, cleanClaims: Math.round(total * rate), rejectedClaims: total - Math.round(total * rate), totalClaims: total, rate };
+  });
+}
+
 /** Answers the net cash routes the way the API does, for the provider the mocked user has. */
 async function mockNetCollections(page: import('@playwright/test').Page): Promise<void> {
   await page.route('**/api/v1/providers/*/metrics/net-collections/periods', (route) =>
@@ -122,6 +154,36 @@ async function mockNetCollections(page: import('@playwright/test').Page): Promis
       },
     });
   });
+  await page.route(/\/api\/v1\/providers\/[^/]+\/metrics\/net-collections\/transports(\?.*)?$/, (route) => {
+    const url = new URL(route.request().url());
+    const end = url.searchParams.get('endPeriod') ?? '202610';
+    const requested = url.searchParams.get('serviceLine');
+    const line = requested === 'ground' || requested === 'air' ? requested : 'all';
+    return route.fulfill({
+      json: {
+        metric: { key: 'transport_volume', name: 'Transports and loaded miles', description: 'd', unit: 'transports' },
+        providerId: '526',
+        endPeriod: end,
+        months: 6,
+        serviceLine: line,
+        periodOpen: end >= '202609',
+        ...transportsFor(end, line),
+      },
+    });
+  });
+  await page.route(/\/api\/v1\/providers\/[^/]+\/metrics\/net-collections\/clean-claims(\?.*)?$/, (route) => {
+    const end = new URL(route.request().url()).searchParams.get('endPeriod') ?? '202610';
+    return route.fulfill({
+      json: {
+        metric: { key: 'clean_claim_rate', name: 'Clean claim rate', description: 'd', unit: 'percent' },
+        providerId: '526',
+        endPeriod: end,
+        months: 6,
+        snapshotDate: '2026-04-07',
+        points: cleanClaimsFor(end),
+      },
+    });
+  });
   await page.route(/\/api\/v1\/providers\/[^/]+\/metrics\/net-collections\/payer-mix(\?.*)?$/, (route) => {
     const url = new URL(route.request().url());
     const period = url.searchParams.get('period') ?? '202610';
@@ -144,7 +206,9 @@ async function mockNetCollections(page: import('@playwright/test').Page): Promis
     const end = url.searchParams.get('endPeriod') ?? '202610';
     const months = Number(url.searchParams.get('months') ?? '6');
     const endIndex = MONTHS.findIndex((m) => m.period === end);
-    const points = endIndex < 0 ? [] : MONTHS.slice(Math.max(0, endIndex - months + 1), endIndex + 1);
+    // Air is the page's starting line and keeps the mockup figures. Ground is a fifth of that and both together add up, so changing the Service Line visibly changes the figures.
+    const share = { air: 1, ground: 0.2, all: 1.2 }[url.searchParams.get('serviceLine') ?? ''] ?? 1;
+    const points = (endIndex < 0 ? [] : MONTHS.slice(Math.max(0, endIndex - months + 1), endIndex + 1)).map((m) => ({ ...m, value: Math.round(m.value * share) }));
     return route.fulfill({
       json: {
         metric: { key: 'net_collections', name: 'Net cash collected', description: 'Cash collected in the accounting period.', unit: 'USD' },

@@ -17,7 +17,7 @@ export interface SegmentOption<T extends string> {
   imports: [EmsIconComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    <div class="segments" role="radiogroup" [attr.aria-label]="label()">
+    <div class="segments" [class.segments--compact]="compact()" role="radiogroup" [attr.aria-label]="label()">
       @for (option of options(); track option.value) {
         <button
           type="button"
@@ -53,6 +53,16 @@ export interface SegmentOption<T extends string> {
       border-radius: 0.75rem;
       background: var(--ems-surface-neutral-subtle);
     }
+    /* Smaller, for a switch that sits beside a figure. Still over the 24px minimum target size. */
+    .segments--compact {
+      gap: 0.125rem;
+      padding: 0.125rem;
+    }
+    .segments--compact .segments__option {
+      padding: 0.25rem 0.5rem;
+      font-size: var(--ems-font-size-small);
+      line-height: var(--ems-line-height-small);
+    }
     .segments__option {
       display: inline-flex;
       align-items: center;
@@ -87,6 +97,8 @@ export class SegmentedControlComponent<T extends string> {
   readonly value = model.required<T>();
   readonly label = input.required<string>();
   readonly iconOnly = input(false);
+  /** A smaller control, for beside a figure rather than in a toolbar. */
+  readonly compact = input(false);
   /** The choice is shown but cannot be changed, for a filter the data does not support yet. */
   readonly disabled = input(false);
 

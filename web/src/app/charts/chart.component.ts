@@ -77,7 +77,7 @@ export class ChartComponent {
     afterNextRender(() => void this.start());
     this.destroyRef.onDestroy(() => {
       this.destroyed = true;
-      this.chart?.dispose();
+      this.safely(() => this.chart?.dispose());
     });
     // Redraw when the data or the theme changes. The chart handle is not a signal, so nothing is written back here.
     effect(() => {
@@ -97,7 +97,11 @@ export class ChartComponent {
     }
     const element = this.host().nativeElement;
     const sized = element.clientWidth > 0 && element.clientHeight > 0;
-    this.chart = echarts.init(element, null, { renderer: this.renderer(), ...(sized ? {} : FALLBACK_SIZE) });
+    try {
+      this.chart = echarts.init(element, null, { renderer: this.renderer(), ...(sized ? {} : FALLBACK_SIZE) });
+    } catch {
+      return;
+    }
     if (typeof ResizeObserver !== 'undefined') {
       const observer = new ResizeObserver(() => {
         this.chart?.resize();
@@ -121,7 +125,20 @@ export class ChartComponent {
     // Motion is off for people who ask for it (WCAG 2.3.3), and so screenshots and tests see the finished chart.
     const reduceMotion = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
     const option = build(this.colors());
-    this.chart.setOption(reduceMotion ? { ...option, animation: false } : option, true);
+    const chart = this.chart;
+    this.safely(() => chart.setOption(reduceMotion ? { ...option, animation: false } : option, true));
+  }
+
+  /**
+   * A canvas that cannot draw (no 2D context, as in a test DOM or a locked-down browser) must not take the page down with it:
+   * the owner of the chart always offers the same numbers as text and as a table, so a chart that stays blank loses nothing.
+   */
+  private safely(action: () => void): void {
+    try {
+      action();
+    } catch {
+      /* the text alternative stands in */
+    }
   }
 
   private colors(): ChartColors {

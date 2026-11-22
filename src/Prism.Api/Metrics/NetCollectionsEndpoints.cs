@@ -23,6 +23,8 @@ internal static partial class NetCollectionsEndpoints
             .WithDescription(
                 "Net cash collected for the Provider in each of the last `months` accounting periods ending with `endPeriod`, from the latest warehouse load. "
                 + "`endPeriod` is `yyyyMM` and defaults to the newest period that has data. `months` defaults to 6 and is at most 24. "
+                + "`serviceLine` is `all` (default, the Provider's whole figure), `air` or `ground`: air or ground alone is added up from the payments ledger by the transport's level of service, "
+                + "because the warehouse's summary table has no such split. "
                 + "Months with no data are left out, not returned as zero. The figures are aggregates: no patient or claim detail. "
                 + "Returns 404 when the Provider is not one the caller may read in full (not assigned, or limited to some Facilities).")
             .Produces<NetCollectionsResponse>()
@@ -79,6 +81,35 @@ internal static partial class NetCollectionsEndpoints
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
 
+        group.MapGet("/transports", TransportsRoute)
+            .WithName("GetTransportVolume")
+            .WithSummary("Transports and loaded miles by month")
+            .WithDescription(
+                "Transports and loaded miles (statute miles, billed with the patient on board) for each of the last `months` months ending with `endPeriod` (`yyyyMM`, default the newest period with net cash data), "
+                + "by date of service. `months` defaults to 6 and is at most 24. `serviceLine` is `all` (default), `air` or `ground`. Months with no transports are left out. `groups` splits the last month by aircraft type or level of service. "
+                + "`periodOpen` is true while the accounting period of the last month is open, so transports for it may still be added. A transport belongs to the month it happened, so these counts differ from the net cash breakdown, "
+                + "which counts encounters with cash posted in the month. Aggregates only. Returns 404 when the Provider is not one the caller may read in full.")
+            .Produces<TransportVolumeResponse>()
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
+
+        group.MapGet("/clean-claims", CleanClaimsRoute)
+            .WithName("GetCleanClaimRate")
+            .WithSummary("Clean claim rate by month")
+            .WithDescription(
+                "The share of claims accepted first time, by month of service, for each of the last `months` months up to `endPeriod` (`yyyyMM`, default the newest period with net cash data) that the warehouse has a figure for. "
+                + "`months` defaults to 6 and is at most 24. `rate` is 0 to 1, or null when there were no claims. Months the warehouse has no figure for are left out, so the newest point can be older than `endPeriod`: "
+                + "the warehouse table is refreshed on its own schedule. The figure covers all of the Provider's claims, not one Service Line. Aggregates only. Returns 404 when the Provider is not one the caller may read in full.")
+            .Produces<CleanClaimRateResponse>()
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
+
         group.MapGet("/periods", Periods)
             .WithName("GetNetCollectionsPeriods")
             .WithSummary("Accounting periods with net cash data")
@@ -103,14 +134,13 @@ internal static partial class NetCollectionsEndpoints
     }
 
     public static async Task<IResult> Series(
-        string providerId,
-        string? endPeriod,
-        int? months,
+        [AsParameters] SeriesRequest request,
         ClaimsPrincipal user,
         ProviderAccess access,
         INetCollectionsMetric metric,
         CancellationToken cancellationToken)
     {
+        (string providerId, string? endPeriod, int? months, string? serviceLine) = (request.ProviderId, request.EndPeriod, request.Months, request.ServiceLine);
         if (await access.ResolveAsync(user, providerId, cancellationToken) is not { } id)
         {
             return Results.NotFound();
@@ -120,6 +150,11 @@ internal static partial class NetCollectionsEndpoints
         if (count is < 1 or > INetCollectionsMetric.MaxMonths)
         {
             return Invalid("months", $"months must be between 1 and {INetCollectionsMetric.MaxMonths}.");
+        }
+
+        if (!TryParseServiceLine(serviceLine, out ServiceLineFilter filter))
+        {
+            return Invalid("serviceLine", "serviceLine must be all, air or ground.");
         }
 
         ApPeriod end;
@@ -138,7 +173,7 @@ internal static partial class NetCollectionsEndpoints
             return Invalid("endPeriod", "endPeriod must be a month written yyyyMM, for example 202610.");
         }
 
-        NetCollectionsSeries series = await metric.GetSeriesAsync(id, end, count, cancellationToken);
+        NetCollectionsSeries series = await metric.GetSeriesAsync(id, end, count, filter, cancellationToken);
         return Results.Ok(new NetCollectionsResponse(
             new MetricResponse(series.Metric.Key, series.Metric.Name, series.Metric.Description, series.Metric.Unit),
             providerId,
@@ -287,6 +322,106 @@ internal static partial class NetCollectionsEndpoints
             mix.GroupKey,
             mix.GroupName,
             mix.Shares.Select(s => new PayerMixShareResponse(s.Key, s.Name, s.Current, s.Prior)).ToArray()));
+    }
+
+    public static async Task<IResult> TransportsRoute(
+        [AsParameters] TransportsRequest request,
+        ClaimsPrincipal user,
+        ProviderAccess access,
+        INetCollectionsMetric periods,
+        ITransportVolumeMetric metric,
+        CancellationToken cancellationToken)
+    {
+        (string providerId, string? endPeriod, int? months, string? serviceLine) = (request.ProviderId, request.EndPeriod, request.Months, request.ServiceLine);
+        if (await access.ResolveAsync(user, providerId, cancellationToken) is not { } id)
+        {
+            return Results.NotFound();
+        }
+
+        int count = months ?? INetCollectionsMetric.DefaultMonths;
+        if (count is < 1 or > ITransportVolumeMetric.MaxMonths)
+        {
+            return Invalid("months", $"months must be between 1 and {ITransportVolumeMetric.MaxMonths}.");
+        }
+
+        ServiceLineFilter filter = ServiceLineFilter.Both;
+        if (serviceLine is not null && !TryParseServiceLine(serviceLine, out filter))
+        {
+            return Invalid("serviceLine", "serviceLine must be all, air or ground.");
+        }
+
+        ApPeriod end;
+        if (endPeriod is null)
+        {
+            IReadOnlyList<ApPeriod> available = await periods.GetPeriodsAsync(id, cancellationToken);
+            if (available.Count == 0)
+            {
+                return Results.Ok(new TransportVolumeResponse(MetricOf(ITransportVolumeMetric.Definition), providerId, null, count, ServiceLineName(filter), false, [], []));
+            }
+
+            end = available.OrderDescending(Comparer<ApPeriod>.Create(ComparePeriods)).First();
+        }
+        else if (!ApPeriod.TryParse(endPeriod, out end))
+        {
+            return Invalid("endPeriod", "endPeriod must be a month written yyyyMM, for example 202610.");
+        }
+
+        TransportVolume volume = await metric.GetVolumeAsync(id, end, count, filter, cancellationToken);
+        return Results.Ok(new TransportVolumeResponse(
+            MetricOf(volume.Metric),
+            providerId,
+            volume.EndPeriod.ToString(),
+            volume.Months,
+            ServiceLineName(volume.ServiceLine),
+            volume.PeriodOpen,
+            volume.Points.Select(p => new TransportVolumePointResponse(p.Period.ToString(), Months[p.Period.Month - 1], p.Period.Year, p.Transports, p.LoadedMiles)).ToArray(),
+            volume.Groups.Select(g => new TransportVolumeGroupResponse(g.Key, g.Name, g.IsAir ? "air" : "ground", g.Transports)).ToArray()));
+    }
+
+    public static async Task<IResult> CleanClaimsRoute(
+        [AsParameters] CleanClaimsRequest request,
+        ClaimsPrincipal user,
+        ProviderAccess access,
+        INetCollectionsMetric periods,
+        ICleanClaimRateMetric metric,
+        CancellationToken cancellationToken)
+    {
+        (string providerId, string? endPeriod, int? months) = (request.ProviderId, request.EndPeriod, request.Months);
+        if (await access.ResolveAsync(user, providerId, cancellationToken) is not { } id)
+        {
+            return Results.NotFound();
+        }
+
+        int count = months ?? INetCollectionsMetric.DefaultMonths;
+        if (count is < 1 or > ICleanClaimRateMetric.MaxMonths)
+        {
+            return Invalid("months", $"months must be between 1 and {ICleanClaimRateMetric.MaxMonths}.");
+        }
+
+        ApPeriod end;
+        if (endPeriod is null)
+        {
+            IReadOnlyList<ApPeriod> available = await periods.GetPeriodsAsync(id, cancellationToken);
+            if (available.Count == 0)
+            {
+                return Results.Ok(new CleanClaimRateResponse(MetricOf(ICleanClaimRateMetric.Definition), providerId, null, count, null, []));
+            }
+
+            end = available.OrderDescending(Comparer<ApPeriod>.Create(ComparePeriods)).First();
+        }
+        else if (!ApPeriod.TryParse(endPeriod, out end))
+        {
+            return Invalid("endPeriod", "endPeriod must be a month written yyyyMM, for example 202610.");
+        }
+
+        CleanClaimRate rate = await metric.GetRateAsync(id, end, count, cancellationToken);
+        return Results.Ok(new CleanClaimRateResponse(
+            MetricOf(rate.Metric),
+            providerId,
+            rate.EndPeriod.ToString(),
+            rate.Months,
+            rate.SnapshotDate?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+            rate.Points.Select(p => new CleanClaimPointResponse(p.Period.ToString(), Months[p.Period.Month - 1], p.Period.Year, p.CleanClaims, p.RejectedClaims, p.TotalClaims, p.Rate)).ToArray()));
     }
 
     private static MetricResponse MetricOf(MetricDefinition d) => new(d.Key, d.Name, d.Description, d.Unit);
@@ -469,3 +604,58 @@ public sealed record PayerMixResponse(
 
 /// <summary>A payer group: <c>Key</c> is stable, <c>Name</c> is for display, <c>Current</c> and <c>Prior</c> are transport counts.</summary>
 public sealed record PayerMixShareResponse(string Key, string Name, int Current, int Prior);
+
+/// <summary>Route and query values of the net cash series route.</summary>
+internal readonly record struct SeriesRequest(
+    string ProviderId,
+    string? EndPeriod,
+    int? Months,
+    string? ServiceLine);
+
+/// <summary>Route and query values of the transports route.</summary>
+internal readonly record struct TransportsRequest(
+    string ProviderId,
+    string? EndPeriod,
+    int? Months,
+    string? ServiceLine);
+
+/// <summary>
+/// Transports and loaded miles by month of service, ending at <c>EndPeriod</c>. <c>Groups</c> splits the last month by aircraft type or level of service.
+/// <c>PeriodOpen</c> is true while the accounting period of the last month is open, so transports for it may still be added.
+/// </summary>
+public sealed record TransportVolumeResponse(
+    MetricResponse Metric,
+    string ProviderId,
+    string? EndPeriod,
+    int Months,
+    string ServiceLine,
+    bool PeriodOpen,
+    IReadOnlyList<TransportVolumePointResponse> Points,
+    IReadOnlyList<TransportVolumeGroupResponse> Groups);
+
+/// <summary>One month: <c>Period</c> is <c>yyyyMM</c>, <c>Transports</c> the count and <c>LoadedMiles</c> the statute miles billed with the patient on board.</summary>
+public sealed record TransportVolumePointResponse(string Period, string Label, int Year, int Transports, decimal LoadedMiles);
+
+/// <summary>An aircraft type or level of service: <c>Key</c> is stable, <c>Name</c> is for display, <c>ServiceLine</c> is <c>air</c> or <c>ground</c>.</summary>
+public sealed record TransportVolumeGroupResponse(string Key, string Name, string ServiceLine, int Transports);
+
+/// <summary>Route and query values of the clean claims route.</summary>
+internal readonly record struct CleanClaimsRequest(
+    string ProviderId,
+    string? EndPeriod,
+    int? Months);
+
+/// <summary>
+/// The clean claim rate by month of service up to <c>EndPeriod</c>. <c>Points</c> only has months the warehouse has a figure for, so the newest can be older than
+/// <c>EndPeriod</c>. <c>SnapshotDate</c> is the warehouse load the figures came from.
+/// </summary>
+public sealed record CleanClaimRateResponse(
+    MetricResponse Metric,
+    string ProviderId,
+    string? EndPeriod,
+    int Months,
+    string? SnapshotDate,
+    IReadOnlyList<CleanClaimPointResponse> Points);
+
+/// <summary>One month of service: claims accepted first time, rejected, the total, and <c>Rate</c> (0 to 1, null when there were no claims).</summary>
+public sealed record CleanClaimPointResponse(string Period, string Label, int Year, int CleanClaims, int RejectedClaims, int TotalClaims, decimal? Rate);

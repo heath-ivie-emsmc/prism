@@ -6,6 +6,7 @@ import { map, of } from 'rxjs';
 import { EmsBreadcrumb, EmsBreadcrumbsComponent, EmsChipComponent, EmsIconComponent, EmsMessageComponent, EmsPickerOption, EmsSelectComponent } from '@ems-management-consultants/ui';
 import { AuthService } from '../auth/auth.service';
 import { LoadProblemComponent } from '../shared/load-problem.component';
+import { SkeletonComponent } from '../shared/skeleton.component';
 import { formatExact } from '../charts/net-cash';
 import { NetCashBreakdownDto, NetCollectionsPeriodsDto, NetCollectionsService } from '../metrics/net-collections.service';
 import { apPeriodEnd, apPeriodLabel, formatDate } from '../dashboard/dashboard-format';
@@ -59,7 +60,7 @@ const percent = (value: number | null): string => (value === null ? '' : `${Math
  */
 @Component({
   selector: 'app-net-cash-breakdown',
-  imports: [LoadProblemComponent, EmsBreadcrumbsComponent, EmsChipComponent, EmsIconComponent, EmsMessageComponent, EmsSelectComponent, ReactiveFormsModule, RouterLink],
+  imports: [SkeletonComponent, LoadProblemComponent, EmsBreadcrumbsComponent, EmsChipComponent, EmsIconComponent, EmsMessageComponent, EmsSelectComponent, ReactiveFormsModule, RouterLink],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <main class="page">
@@ -80,6 +81,18 @@ const percent = (value: number | null): string => (value === null ? '' : `${Math
         <h2 id="groups-title">{{ data().terms.title }}</h2>
         @if (loadError() !== undefined) {
           <app-load-problem [error]="loadError()" subject="the breakdown" (retry)="retry()" />
+        } @else if (loading()) {
+          <p class="cdk-visually-hidden" role="status">Loading the breakdown</p>
+          <div class="groups" aria-hidden="true">
+            @for (n of placeholders; track n) {
+              <div class="group group--loading">
+                <app-skeleton width="55%" height="1.5rem" />
+                <app-skeleton height="1rem" />
+                <app-skeleton height="1rem" />
+                <app-skeleton width="80%" height="2.5rem" />
+              </div>
+            }
+          </div>
         } @else if (empty()) {
           <ems-message state="neutral">There is no net cash for {{ periodLabel() }}.</ems-message>
         }
@@ -251,6 +264,11 @@ const percent = (value: number | null): string => (value === null ? '' : `${Math
       box-shadow:
         inset 0 0 0 var(--ems-border-width-default) var(--ems-border-neutral-default),
         var(--ems-fx-neutral-default-frosted-raised-glowing);
+    }
+    .group--loading {
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
     }
     .group__header {
       display: flex;
@@ -441,6 +459,9 @@ export class NetCashBreakdownComponent {
       this.breakdown.reload();
     }
   }
+  /** Waiting for the months, then for the groups. */
+  protected readonly loading = computed(() => this.periodsResource.isLoading() || this.breakdown.isLoading());
+  protected readonly placeholders = [1, 2, 3];
   protected readonly empty = computed(() => this.breakdown.hasValue() && !this.failed() && this.data().groups.length === 0 && this.breakdown.value() !== null);
   protected readonly locationLabel = computed(() => this.data().terms.locationHeading);
   protected readonly summary = computed(() => summarizeBreakdown(this.data().groups));

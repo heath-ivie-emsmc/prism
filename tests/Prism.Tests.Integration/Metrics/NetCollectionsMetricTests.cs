@@ -71,7 +71,7 @@ public sealed class NetCollectionsMetricTests(PostgresFixture postgres) : IClass
     {
         NetCollectionsMetric metric = await NewMetricAsync();
 
-        NetCollectionsSeries series = await metric.GetSeriesAsync(2026, new ApPeriod(2025, 7), 4, TestContext.Current.CancellationToken);
+        NetCollectionsSeries series = await metric.GetSeriesAsync(2026, new ApPeriod(2025, 7), 4, ServiceLineFilter.Both, TestContext.Current.CancellationToken);
 
         // 202504..202507. Two rows in 202506 add up. The old load's rows are never read.
         Assert.Equal([("202504", 400m), ("202505", 500m), ("202506", 650m), ("202507", 700m)], series.Points.Select(p => (p.Period.ToString(), p.Value)));
@@ -84,7 +84,7 @@ public sealed class NetCollectionsMetricTests(PostgresFixture postgres) : IClass
     {
         NetCollectionsMetric metric = await NewMetricAsync();
 
-        NetCollectionsSeries series = await metric.GetSeriesAsync(2026, new ApPeriod(2025, 10), 3, TestContext.Current.CancellationToken);
+        NetCollectionsSeries series = await metric.GetSeriesAsync(2026, new ApPeriod(2025, 10), 3, ServiceLineFilter.Both, TestContext.Current.CancellationToken);
 
         Assert.Equal([("202509", 900m)], series.Points.Select(p => (p.Period.ToString(), p.Value)));
     }
@@ -94,10 +94,10 @@ public sealed class NetCollectionsMetricTests(PostgresFixture postgres) : IClass
     {
         NetCollectionsMetric metric = await NewMetricAsync();
 
-        NetCollectionsSeries series = await metric.GetSeriesAsync(2026, new ApPeriod(2025, 11), 24, TestContext.Current.CancellationToken);
+        NetCollectionsSeries series = await metric.GetSeriesAsync(2026, new ApPeriod(2025, 11), 24, ServiceLineFilter.Both, TestContext.Current.CancellationToken);
 
         Assert.DoesNotContain(series.Points, p => p.Value is 99999m or 88888m);
-        Assert.Empty((await metric.GetSeriesAsync(31337, new ApPeriod(2025, 11), 24, TestContext.Current.CancellationToken)).Points);
+        Assert.Empty((await metric.GetSeriesAsync(31337, new ApPeriod(2025, 11), 24, ServiceLineFilter.Both, TestContext.Current.CancellationToken)).Points);
         Assert.Empty(await metric.GetPeriodsAsync(31337, TestContext.Current.CancellationToken));
     }
 
@@ -106,7 +106,7 @@ public sealed class NetCollectionsMetricTests(PostgresFixture postgres) : IClass
     {
         NetCollectionsMetric standIn = await NewMetricAsync(new Dictionary<int, int> { [526] = 2026 });
 
-        NetCollectionsSeries series = await standIn.GetSeriesAsync(526, new ApPeriod(2025, 7), 1, TestContext.Current.CancellationToken);
+        NetCollectionsSeries series = await standIn.GetSeriesAsync(526, new ApPeriod(2025, 7), 1, ServiceLineFilter.Both, TestContext.Current.CancellationToken);
 
         Assert.Equal(700m, Assert.Single(series.Points).Value);
     }
@@ -116,7 +116,7 @@ public sealed class NetCollectionsMetricTests(PostgresFixture postgres) : IClass
     {
         NetCollectionsMetric metric = await NewMetricAsync();
 
-        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => metric.GetSeriesAsync(2026, new ApPeriod(2025, 7), 0, TestContext.Current.CancellationToken));
-        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => metric.GetSeriesAsync(2026, new ApPeriod(2025, 7), INetCollectionsMetric.MaxMonths + 1, TestContext.Current.CancellationToken));
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => metric.GetSeriesAsync(2026, new ApPeriod(2025, 7), 0, ServiceLineFilter.Both, TestContext.Current.CancellationToken));
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => metric.GetSeriesAsync(2026, new ApPeriod(2025, 7), INetCollectionsMetric.MaxMonths + 1, ServiceLineFilter.Both, TestContext.Current.CancellationToken));
     }
 }

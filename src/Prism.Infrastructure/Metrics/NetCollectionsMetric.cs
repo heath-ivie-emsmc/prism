@@ -31,6 +31,42 @@ public sealed class NetCollectionsMetric(IWarehouse warehouse, IWarehouseProvide
         ORDER BY 1
         """;
 
+    // The same cash rule as NetCashBreakdownMetric.BreakdownSql (payments and refunds, by posting month, adjustment periods folded in, no old import,
+    // one transaction counted once), for every month in the range, kept to air or ground by the encounter's level of service.
+    internal const string LedgerSeriesSql =
+        """
+        WITH periods AS (
+            SELECT id, replace(name, '-', '') AS ym
+            FROM ods.accounting_period
+            WHERE provider_id = @provider_id AND replace(name, '-', '') BETWEEN @from_period AND @to_period
+        ),
+        cash AS (
+            SELECT et.encounter_id, p.ym, SUM(et.balance_amount) / 100.0 AS amount
+            FROM ods.encounter_transaction et
+            JOIN periods p ON p.id = et.accounting_period_id
+            WHERE et.type = 'Credit' AND et.user_source IS DISTINCT FROM 'Old AR Import'
+              AND EXISTS (
+                  SELECT 1
+                  FROM ods.encounter_transaction_credit_attribute a
+                  JOIN ods.credit c ON c.id = a.credit_id
+                  WHERE a.encounter_transaction_id = et.id AND c.credit_type_id IN (2, 5))
+            GROUP BY et.encounter_id, p.ym
+        ),
+        trips AS (
+            SELECT encounter_id, level_of_service, snapshot_date
+            FROM reporting.trip_detail_snapshot
+            WHERE provider_id = @provider_id
+              AND snapshot_date = (SELECT MAX(snapshot_date) FROM reporting.trip_detail_snapshot WHERE provider_id = @provider_id)
+        )
+        SELECT cash.ym, SUM(cash.amount) AS net_collections, (SELECT MAX(snapshot_date) FROM trips) AS snapshot_date
+        FROM cash
+        LEFT JOIN trips t ON t.encounter_id = cash.encounter_id
+        WHERE (@include_air AND COALESCE(t.level_of_service, '') IN ('Rotor Wing', 'Fixed Wing'))
+           OR (@include_ground AND COALESCE(t.level_of_service, '') NOT IN ('Rotor Wing', 'Fixed Wing'))
+        GROUP BY cash.ym
+        ORDER BY 1
+        """;
+
     public async Task<IReadOnlyList<ApPeriod>> GetPeriodsAsync(int providerId, CancellationToken cancellationToken)
     {
         var query = new WarehouseQuery(PeriodsSql, new Dictionary<string, object?> { [WarehouseQuery.ProviderParameter] = await providers.ResolveAsync(providerId, cancellationToken) });
@@ -41,20 +77,27 @@ public sealed class NetCollectionsMetric(IWarehouse warehouse, IWarehouseProvide
         return rows.Select(row => ApPeriod.TryParse(row, out ApPeriod period) ? (ApPeriod?)period : null).OfType<ApPeriod>().ToList();
     }
 
-    public async Task<NetCollectionsSeries> GetSeriesAsync(int providerId, ApPeriod endPeriod, int months, CancellationToken cancellationToken)
+    public async Task<NetCollectionsSeries> GetSeriesAsync(int providerId, ApPeriod endPeriod, int months, ServiceLineFilter serviceLine, CancellationToken cancellationToken)
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(months, 1);
         ArgumentOutOfRangeException.ThrowIfGreaterThan(months, INetCollectionsMetric.MaxMonths);
 
         ApPeriod start = endPeriod.AddMonths(-(months - 1));
-        var query = new WarehouseQuery(
-            SeriesSql,
-            new Dictionary<string, object?>
-            {
-                [WarehouseQuery.ProviderParameter] = await providers.ResolveAsync(providerId, cancellationToken),
-                ["from_period"] = start.ToString(),
-                ["to_period"] = endPeriod.ToString(),
-            });
+        var parameters = new Dictionary<string, object?>
+        {
+            [WarehouseQuery.ProviderParameter] = await providers.ResolveAsync(providerId, cancellationToken),
+            ["from_period"] = start.ToString(),
+            ["to_period"] = endPeriod.ToString(),
+        };
+        string sql = SeriesSql;
+        if (serviceLine is not ServiceLineFilter.Both)
+        {
+            sql = LedgerSeriesSql;
+            parameters["include_air"] = serviceLine is ServiceLineFilter.Air;
+            parameters["include_ground"] = serviceLine is ServiceLineFilter.Ground;
+        }
+
+        var query = new WarehouseQuery(sql, parameters);
 
         IReadOnlyList<(string Period, decimal Value, DateOnly? Snapshot)> rows = await warehouse.QueryAsync(
             query,
@@ -69,6 +112,6 @@ public sealed class NetCollectionsMetric(IWarehouse warehouse, IWarehouseProvide
             .OfType<NetCollectionsPoint>()
             .ToList();
         DateOnly? snapshot = rows.Max(row => row.Snapshot);
-        return new NetCollectionsSeries(INetCollectionsMetric.Definition, endPeriod, months, snapshot, points);
+        return new NetCollectionsSeries(INetCollectionsMetric.Definition, endPeriod, months, snapshot, points, serviceLine);
     }
 }

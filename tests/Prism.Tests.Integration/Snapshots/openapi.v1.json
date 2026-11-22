@@ -80,7 +80,7 @@
           "Metrics"
         ],
         "summary": "Net cash collected by month",
-        "description": "Net cash collected for the Provider in each of the last \u0060months\u0060 accounting periods ending with \u0060endPeriod\u0060, from the latest warehouse load. \u0060endPeriod\u0060 is \u0060yyyyMM\u0060 and defaults to the newest period that has data. \u0060months\u0060 defaults to 6 and is at most 24. Months with no data are left out, not returned as zero. The figures are aggregates: no patient or claim detail. Returns 404 when the Provider is not one the caller may read in full (not assigned, or limited to some Facilities).",
+        "description": "Net cash collected for the Provider in each of the last \u0060months\u0060 accounting periods ending with \u0060endPeriod\u0060, from the latest warehouse load. \u0060endPeriod\u0060 is \u0060yyyyMM\u0060 and defaults to the newest period that has data. \u0060months\u0060 defaults to 6 and is at most 24. \u0060serviceLine\u0060 is \u0060all\u0060 (default, the Provider\u0027s whole figure), \u0060air\u0060 or \u0060ground\u0060: air or ground alone is added up from the payments ledger by the transport\u0027s level of service, because the warehouse\u0027s summary table has no such split. Months with no data are left out, not returned as zero. The figures are aggregates: no patient or claim detail. Returns 404 when the Provider is not one the caller may read in full (not assigned, or limited to some Facilities).",
         "operationId": "GetNetCollections",
         "parameters": [
           {
@@ -92,14 +92,14 @@
             }
           },
           {
-            "name": "endPeriod",
+            "name": "EndPeriod",
             "in": "query",
             "schema": {
               "type": "string"
             }
           },
           {
-            "name": "months",
+            "name": "Months",
             "in": "query",
             "schema": {
               "pattern": "^-?(?:0|[1-9]\\d*)$",
@@ -108,6 +108,13 @@
                 "string"
               ],
               "format": "int32"
+            }
+          },
+          {
+            "name": "ServiceLine",
+            "in": "query",
+            "schema": {
+              "type": "string"
             }
           }
         ],
@@ -470,6 +477,215 @@
         }
       }
     },
+    "/api/v1/providers/{providerId}/metrics/net-collections/transports": {
+      "get": {
+        "tags": [
+          "Metrics"
+        ],
+        "summary": "Transports and loaded miles by month",
+        "description": "Transports and loaded miles (statute miles, billed with the patient on board) for each of the last \u0060months\u0060 months ending with \u0060endPeriod\u0060 (\u0060yyyyMM\u0060, default the newest period with net cash data), by date of service. \u0060months\u0060 defaults to 6 and is at most 24. \u0060serviceLine\u0060 is \u0060all\u0060 (default), \u0060air\u0060 or \u0060ground\u0060. Months with no transports are left out. \u0060groups\u0060 splits the last month by aircraft type or level of service. \u0060periodOpen\u0060 is true while the accounting period of the last month is open, so transports for it may still be added. A transport belongs to the month it happened, so these counts differ from the net cash breakdown, which counts encounters with cash posted in the month. Aggregates only. Returns 404 when the Provider is not one the caller may read in full.",
+        "operationId": "GetTransportVolume",
+        "parameters": [
+          {
+            "name": "providerId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "EndPeriod",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Months",
+            "in": "query",
+            "schema": {
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": [
+                "integer",
+                "string"
+              ],
+              "format": "int32"
+            }
+          },
+          {
+            "name": "ServiceLine",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TransportVolumeResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service Unavailable",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/providers/{providerId}/metrics/net-collections/clean-claims": {
+      "get": {
+        "tags": [
+          "Metrics"
+        ],
+        "summary": "Clean claim rate by month",
+        "description": "The share of claims accepted first time, by month of service, for each of the last \u0060months\u0060 months up to \u0060endPeriod\u0060 (\u0060yyyyMM\u0060, default the newest period with net cash data) that the warehouse has a figure for. \u0060months\u0060 defaults to 6 and is at most 24. \u0060rate\u0060 is 0 to 1, or null when there were no claims. Months the warehouse has no figure for are left out, so the newest point can be older than \u0060endPeriod\u0060: the warehouse table is refreshed on its own schedule. The figure covers all of the Provider\u0027s claims, not one Service Line. Aggregates only. Returns 404 when the Provider is not one the caller may read in full.",
+        "operationId": "GetCleanClaimRate",
+        "parameters": [
+          {
+            "name": "providerId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "EndPeriod",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Months",
+            "in": "query",
+            "schema": {
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": [
+                "integer",
+                "string"
+              ],
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CleanClaimRateResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service Unavailable",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/providers/{providerId}/metrics/net-collections/periods": {
       "get": {
         "tags": [
@@ -664,6 +880,114 @@
           }
         },
         "description": "A vehicle (tail number or unit) at a base or station. \u0060Base\u0060 is null when the warehouse has none."
+      },
+      "CleanClaimPointResponse": {
+        "required": [
+          "period",
+          "label",
+          "year",
+          "cleanClaims",
+          "rejectedClaims",
+          "totalClaims",
+          "rate"
+        ],
+        "type": "object",
+        "properties": {
+          "period": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "year": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "cleanClaims": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "rejectedClaims": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "totalClaims": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "rate": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ],
+            "format": "double"
+          }
+        },
+        "description": "One month of service: claims accepted first time, rejected, the total, and \u0060Rate\u0060 (0 to 1, null when there were no claims)."
+      },
+      "CleanClaimRateResponse": {
+        "required": [
+          "metric",
+          "providerId",
+          "endPeriod",
+          "months",
+          "snapshotDate",
+          "points"
+        ],
+        "type": "object",
+        "properties": {
+          "metric": {
+            "$ref": "#/components/schemas/MetricResponse"
+          },
+          "providerId": {
+            "type": "string"
+          },
+          "endPeriod": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "months": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "snapshotDate": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "points": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CleanClaimPointResponse"
+            }
+          }
+        },
+        "description": "The clean claim rate by month of service up to \u0060EndPeriod\u0060. \u0060Points\u0060 only has months the warehouse has a figure for, so the newest can be older than\n\u0060EndPeriod\u0060. \u0060SnapshotDate\u0060 is the warehouse load the figures came from."
       },
       "MeResponse": {
         "required": [
@@ -1155,6 +1479,132 @@
           }
         },
         "description": "A Provider the user may see. FacilityCount is how many Facilities they are limited to, and 0 means all of them. The Facility ids stay on the server."
+      },
+      "TransportVolumeGroupResponse": {
+        "required": [
+          "key",
+          "name",
+          "serviceLine",
+          "transports"
+        ],
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "serviceLine": {
+            "type": "string"
+          },
+          "transports": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          }
+        },
+        "description": "An aircraft type or level of service: \u0060Key\u0060 is stable, \u0060Name\u0060 is for display, \u0060ServiceLine\u0060 is \u0060air\u0060 or \u0060ground\u0060."
+      },
+      "TransportVolumePointResponse": {
+        "required": [
+          "period",
+          "label",
+          "year",
+          "transports",
+          "loadedMiles"
+        ],
+        "type": "object",
+        "properties": {
+          "period": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "year": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "transports": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "loadedMiles": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?$",
+            "type": [
+              "number",
+              "string"
+            ],
+            "format": "double"
+          }
+        },
+        "description": "One month: \u0060Period\u0060 is \u0060yyyyMM\u0060, \u0060Transports\u0060 the count and \u0060LoadedMiles\u0060 the statute miles billed with the patient on board."
+      },
+      "TransportVolumeResponse": {
+        "required": [
+          "metric",
+          "providerId",
+          "endPeriod",
+          "months",
+          "serviceLine",
+          "periodOpen",
+          "points",
+          "groups"
+        ],
+        "type": "object",
+        "properties": {
+          "metric": {
+            "$ref": "#/components/schemas/MetricResponse"
+          },
+          "providerId": {
+            "type": "string"
+          },
+          "endPeriod": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "months": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "serviceLine": {
+            "type": "string"
+          },
+          "periodOpen": {
+            "type": "boolean"
+          },
+          "points": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TransportVolumePointResponse"
+            }
+          },
+          "groups": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TransportVolumeGroupResponse"
+            }
+          }
+        },
+        "description": "Transports and loaded miles by month of service, ending at \u0060EndPeriod\u0060. \u0060Groups\u0060 splits the last month by aircraft type or level of service.\n\u0060PeriodOpen\u0060 is true while the accounting period of the last month is open, so transports for it may still be added."
       }
     }
   },

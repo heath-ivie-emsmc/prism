@@ -47,7 +47,7 @@ An id with no match, or more than one, is "unmapped": the queries return nothing
 a fixed-width `yyyyMM`). Only the current load (`is_current`) is read, and `net_collections` is summed per period. Rows where `net_collections` is NULL (no figure yet) are skipped, so an empty month is never shown as zero and never becomes the newest period. Routes, under `/api/v1/providers/{providerId}/metrics/net-collections`:
 
 - `GET /periods`: accounting periods with data, newest first. Fills the Period drop-down.
-- `GET /?endPeriod=yyyyMM&months=6`: the months ending at `endPeriod` (default the newest). `months` is 1 to 24.
+- `GET /?endPeriod=yyyyMM&months=6&serviceLine=all|air|ground`: the months ending at `endPeriod` (default the newest). `months` is 1 to 24. `all` (default) is the Provider's figure from the KPI table. The KPI table has no air or ground column, so `air` or `ground` is added up from the same payments ledger the breakdown uses (see Net cash breakdown), by the encounter's level of service, and an encounter with no trip row counts as ground. For one month, air plus ground equals the breakdown's groups. Any other `serviceLine` is a 400.
 
 The Provider in the route is checked against the user's portal assignments on every call. A Provider the user is not assigned to, or is limited to some Facilities of, is a 404:
 the view is Provider-level and would show Facilities they were not given.
@@ -95,6 +95,26 @@ It uses the rule behind `kpi_net_collections_ap__prov`, so the groups add up to 
 - **VA:** the warehouse has no VA category. A payer whose name contains the word VA, CHAMPVA (any `CHAMP...`) or TRICARE is VA, whatever financial class it has. For Mercy that is mostly `IV-VA COMMUNITY CLAIMS`, filed under Insurance. The match is on whole words, so a name that only contains the letters (AVA HEALTH) is not VA.
 - **Open months:** the newest months have few transports until billing catches up on payers, so their shares move.
 - Only counts leave the query. Payer names are used inside it and never returned.
+
+## Transports and loaded miles
+
+`GET /api/v1/providers/{providerId}/metrics/net-collections/transports` feeds the Transports and Loaded miles tiles on the dashboard. It takes `endPeriod`, `months` (default 6, at most 24) and `serviceLine`, and returns transports and loaded miles per month plus the split of the last month by aircraft type or level of service.
+
+- **Source:** `reporting.trip_detail_snapshot`, latest load only, one row per encounter.
+- **Month:** the date of service (`dos`). A transport counts in the month it happened. This differs from the net cash breakdown, which counts the encounters that had cash posted in the month, so the two counts will not match.
+- **Transports:** every encounter row in the month. The snapshot has no cancelled status to exclude. `status` is a billing status (New, Pending, Submitted, Approved, Closed, On_Hold).
+- **Loaded miles:** the sum of `loaded_miles`, treated as statute miles. The Nautical switch converts at 0.868976 nautical miles per statute mile. A missing mileage counts as no miles. **Confirm with the warehouse owners that `loaded_miles` is statute.**
+- **Open months:** `periodOpen` is true while the last month's accounting period (or its adjustment period) is open. New trips can still arrive, so the tiles say the count may rise.
+
+## Clean claim rate
+
+`GET /api/v1/providers/{providerId}/metrics/net-collections/clean-claims` feeds the Clean claim rate tile. It takes `endPeriod` and `months` (default 6, at most 24) and returns, per month of service, claims accepted first time, rejected, the total and the `rate` (clean divided by total, 0 to 1, null when there were no claims).
+
+- **Source:** `reporting.kpi_clean_claim_rate__prov`, latest `snapshot_date` for the Provider. The `vw_snap_...` view keeps only `is_current` rows, and no rows are flagged current, so Prism does not use it.
+- **Pods:** the table can split a month by pod. If a month has a row without a pod, that row is the whole Provider and is used alone. Otherwise the pods are added up. Mercy has no pods.
+- **Not split by Service Line:** the tile says so when air or ground is chosen.
+- **Data is behind:** on 2026-11-21 the table held a single load (2026-04-07) with January to March 2026 only, and an empty `rolling_12m_avg`. The tile shows the newest month the warehouse has and says which month it is ("Latest in the data: March 2026."), or says there is no data. It never shows an older month as the month on screen.
+- **Goal:** the 95% mark on the tile is a placeholder from the mockup. It is not in the warehouse and becomes a Provider setting later.
 
 ## Not yet done
 

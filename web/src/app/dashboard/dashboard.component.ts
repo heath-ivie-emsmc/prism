@@ -4,6 +4,7 @@ import { of } from 'rxjs';
 import { FormControl, ReactiveFormsModule } from '@angular/forms';
 import {
   EmsBreadcrumbsComponent,
+  EmsButtonDirective,
   EmsSelectComponent,
   EmsBreadcrumb,
   EmsPickerOption,
@@ -11,15 +12,16 @@ import {
 import { AuthService } from '../auth/auth.service';
 import { DashboardContext, MOCK_CONTEXT, divisionsFor } from './dashboard-context';
 import { apPeriodEnd, apPeriodLabel, formatDate } from './dashboard-format';
-import { NetCollectionsPeriodsDto, NetCollectionsService } from '../metrics/net-collections.service';
+import { CleanClaimRateDto, NetCollectionsPeriodsDto, NetCollectionsService, TransportVolumeDto } from '../metrics/net-collections.service';
 import { KpiCardComponent } from './kpi-card.component';
 import { NetCashPanelComponent } from './net-cash-panel.component';
 import { ProjectionPanelComponent } from './projection-panel.component';
 import { SegmentOption, SegmentedControlComponent } from './segmented-control.component';
 import { SERVICE_LINE_OPTIONS, ServiceLineSelection, defaultLabels } from './service-line';
+import { SkeletonComponent } from '../shared/skeleton.component';
 import { ServiceLineToggleComponent } from './service-line-toggle.component';
-
-type MileUnit = 'statute' | 'nautical';
+import { CLEAN_CLAIM_GOAL, toCleanClaimCard } from './clean-claims';
+import { MileUnit, toMilesCard, toTransportsCard } from './transport-volume';
 
 const ALL_DIVISIONS = 'all';
 const CRUMBS: EmsBreadcrumb[] = [{ label: 'Dashboard' }];
@@ -27,7 +29,7 @@ const CRUMBS: EmsBreadcrumb[] = [{ label: 'Dashboard' }];
 /** The top of the dashboard: Provider, Data Through, and the filters. The metrics below it arrive with the first Metric Catalog slice. */
 @Component({
   selector: 'app-dashboard',
-  imports: [EmsBreadcrumbsComponent, EmsSelectComponent, KpiCardComponent, NetCashPanelComponent, ProjectionPanelComponent, ReactiveFormsModule, SegmentedControlComponent, ServiceLineToggleComponent],
+  imports: [EmsBreadcrumbsComponent, EmsButtonDirective, EmsSelectComponent, KpiCardComponent, NetCashPanelComponent, ProjectionPanelComponent, ReactiveFormsModule, SegmentedControlComponent, ServiceLineToggleComponent, SkeletonComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <main class="dashboard">
@@ -56,30 +58,68 @@ const CRUMBS: EmsBreadcrumb[] = [{ label: 'Dashboard' }];
         </form>
       </header>
 
-      <!-- Layout only: every figure below is placeholder content until the Metric Catalog serves real values. -->
+      <!-- Net cash, transports and loaded miles are real. The other tiles and the projection panel below are layout only: placeholder content until the Metric Catalog serves them. -->
       <section class="dashboard__overview" aria-label="Key metrics">
-        <app-net-cash-panel class="dashboard__cash" [providerId]="providerId()" [endPeriod]="endPeriod()" [serviceLine]="serviceLine()" [periodsError]="periodsError()" (retryPeriods)="retryPeriods()" />
+        <app-net-cash-panel class="dashboard__cash" [periodsLoading]="periodsLoading()" [providerId]="providerId()" [endPeriod]="endPeriod()" [serviceLine]="serviceLine()" [periodsError]="periodsError()" (retryPeriods)="retryPeriods()" />
 
-        <app-kpi-card title="Transports" value="140" [delta]="{ direction: 'down', text: '6 fewer than Sep' }" footnote="Rotor wing 92 · Fixed wing 48">
-          <div class="bars" role="img" aria-label="Transports by month, last six months">
-            @for (height of transportBars; track $index) {
-              <span class="bars__bar" [class.bars__bar--current]="$last" [style.height.%]="height"></span>
-            }
-          </div>
+        <div class="dashboard__tiles">
+        <app-kpi-card title="Transports" [value]="transportsCard().value" [delta]="transportsCard().delta" [footnote]="transportsCard().footnote" [caveat]="volumeCaveat()" [loading]="volumeLoading()">
+          @if (volumeLoading()) {
+            <app-skeleton height="4.75rem" />
+          } @else if (volumeFailed()) {
+            <p class="card-problem" role="status">
+              We can't load this right now.
+              <button emsButton="flat" type="button" (click)="retryVolume()">Try again</button>
+            </p>
+          } @else if (transportsCard().bars.length) {
+            <div class="bars" role="img" [attr.aria-label]="transportsCard().description">
+              @for (height of transportsCard().bars; track $index) {
+                <span class="bars__col" [title]="transportsCard().titles[$index]!">
+                  <span class="chart-label" [class.chart-label--current]="$last">{{ transportsCard().labels[$index] }}</span>
+                  <span class="bars__track"><span class="bars__bar" [class.bars__bar--current]="$last" [style.height.%]="height"></span></span>
+                </span>
+              }
+            </div>
+          }
         </app-kpi-card>
 
-        <app-kpi-card title="Loaded miles" value="18,420" unit="statute mi" [delta]="{ direction: 'down', text: '3% fewer than Sep' }" footnote="Billed miles, patient on board">
-          <svg class="spark" viewBox="0 0 100 30" preserveAspectRatio="none" role="img" aria-label="Loaded miles, last three months">
-            <polyline points="2,12 50,16 98,6" fill="none" stroke="currentColor" stroke-width="2" vector-effect="non-scaling-stroke" />
-          </svg>
-          <app-segmented-control label="Mileage unit" [options]="mileUnits" [(value)]="mileUnit" />
+        <app-kpi-card title="Loaded miles" [value]="milesCard().value" [unit]="milesCard().unit" [unitHidden]="true" [delta]="milesCard().delta" footnote="Billed miles, patient on board" [caveat]="volumeCaveat()" [loading]="volumeLoading()">
+          @if (volumeLoading()) {
+            <app-skeleton height="4.75rem" />
+          } @else if (volumeFailed()) {
+            <p class="card-problem" role="status">
+              We can't load this right now.
+              <button emsButton="flat" type="button" (click)="retryVolume()">Try again</button>
+            </p>
+          } @else if (milesCard().line) {
+            <div class="spark" role="img" [attr.aria-label]="milesCard().description">
+              <svg class="spark__line" viewBox="0 0 100 30" preserveAspectRatio="none" aria-hidden="true">
+                <polyline [attr.points]="milesCard().line" fill="none" stroke="currentColor" stroke-width="2" vector-effect="non-scaling-stroke" />
+              </svg>
+              @for (mark of milesCard().marks; track $index) {
+                <span class="chart-label spark__label" [class.chart-label--current]="$last" [style.left.%]="mark.x" [style.--y]="mark.y">{{ mark.label }}</span>
+              }
+            </div>
+          }
+          @if (serviceLine() !== 'ground') {
+            <app-segmented-control kpiAction [compact]="true" label="Mileage unit" [options]="mileUnits" [(value)]="mileUnit" />
+          }
         </app-kpi-card>
 
-        <app-kpi-card title="Clean claim rate" value="91.4%" [delta]="{ direction: 'down', text: '1.7 pts lower than Sep' }" footnote="First-pass resolution">
-          <div class="goal" role="img" aria-label="91.4 percent, goal 95 percent">
-            <div class="goal__track"><span class="goal__fill" style="width: 91.4%"></span><span class="goal__mark" style="left: 95%"></span></div>
-            <div class="goal__scale"><span>0%</span><span>Goal 95%</span></div>
-          </div>
+        <app-kpi-card title="Clean claim rate" [value]="cleanCard().value" [delta]="cleanCard().delta" footnote="First-pass resolution" [caveat]="cleanCaveat()" [loading]="cleanLoading()">
+          @if (cleanLoading()) {
+            <app-skeleton height="1.5rem" />
+          } @else if (cleanFailed()) {
+            <p class="card-problem" role="status">
+              We can't load this right now.
+              <button emsButton="flat" type="button" (click)="retryClean()">Try again</button>
+            </p>
+          } @else if (cleanCard().percent !== null) {
+            <div class="goal" role="img" [attr.aria-label]="cleanCard().description">
+              <div class="goal__track"><span class="goal__fill" [style.width.%]="cleanCard().percent"></span><span class="goal__mark" [style.left.%]="goal"></span></div>
+              <div class="goal__scale"><span>0%</span><span>Goal {{ goal }}%</span></div>
+            </div>
+          }
         </app-kpi-card>
 
         <app-kpi-card
@@ -94,6 +134,7 @@ const CRUMBS: EmsBreadcrumb[] = [{ label: 'Dashboard' }];
             }
           </div>
         </app-kpi-card>
+        </div>
       </section>
 
       <app-projection-panel />
@@ -142,47 +183,99 @@ const CRUMBS: EmsBreadcrumb[] = [{ label: 'Dashboard' }];
       align-items: center;
       gap: 1rem;
     }
+    /* Net cash on the left, the four tiles on the right. The tiles take the height they need and the net cash panel stretches to match, so the spare height goes to its chart. */
     .dashboard__overview {
-      display: grid;
-      grid-template-columns: minmax(0, 2fr) repeat(2, minmax(0, 1fr));
-      grid-template-rows: repeat(2, auto);
+      display: flex;
+      align-items: stretch;
       gap: 1rem;
     }
     .dashboard__cash {
-      grid-row: span 2;
+      flex: 1 1 0;
+      min-width: 0;
+    }
+    .dashboard__tiles {
+      flex: 1 1 0;
+      min-width: 0;
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      align-content: start;
+      gap: 1rem;
     }
     @media (max-width: 70rem) {
       .dashboard__overview {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-      }
-      .dashboard__cash {
-        grid-column: 1 / -1;
-        grid-row: auto;
+        flex-direction: column;
       }
     }
     @media (max-width: 40rem) {
-      .dashboard__overview {
+      .dashboard__tiles {
         grid-template-columns: minmax(0, 1fr);
       }
     }
+    :host {
+      --chart-height: 4.75rem;
+    }
     .bars {
       display: flex;
-      align-items: flex-end;
       gap: 0.5rem;
-      height: 3rem;
+      height: var(--chart-height);
+    }
+    .bars__col {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+    }
+    .bars__track {
+      flex: 1;
+      display: flex;
+      align-items: flex-end;
+    }
+    .chart-label {
+      font-size: var(--ems-font-size-small);
+      line-height: var(--ems-line-height-small);
+      color: var(--ems-text-muted);
+      text-align: center;
+      white-space: nowrap;
+    }
+    .chart-label--current {
+      color: var(--ems-text-default);
+      font-weight: 600;
     }
     .bars__bar {
-      flex: 1;
+      width: 100%;
       border-radius: 2px;
       background: var(--ems-surface-neutral-strong);
     }
     .bars__bar--current {
       background: var(--ems-surface-accent-emerald);
     }
+    .card-problem {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.25rem 0.75rem;
+      margin: 0;
+      color: var(--ems-text-muted);
+      line-height: var(--ems-line-height-body);
+    }
     .spark {
-      width: 100%;
-      height: 3rem;
+      position: relative;
+      height: var(--chart-height);
       color: var(--ems-surface-accent-emerald);
+    }
+    /* The line sits below a strip kept for the figures. The box is stretched, so the figures are plain text laid over it at the same percentages. */
+    .spark__line {
+      position: absolute;
+      inset: 1.25rem 0 0.25rem;
+      width: 100%;
+      height: calc(100% - 1.5rem);
+    }
+    .spark__label {
+      position: absolute;
+      top: calc(1.25rem + var(--y) / 30 * (100% - 1.5rem));
+      transform: translate(-50%, -100%);
+      /* A halo in the card colour keeps the line from running through the figure. */
+      text-shadow: 0 0 3px var(--ems-surface-neutral-elevated), 0 0 3px var(--ems-surface-neutral-elevated), 0 0 2px var(--ems-surface-neutral-elevated);
     }
     .goal__track {
       position: relative;
@@ -240,12 +333,12 @@ export class DashboardComponent {
   protected readonly crumbs = CRUMBS;
 
   // Placeholder visuals, replaced with Metric Catalog data.
-  protected readonly transportBars = [70, 85, 72, 95, 90, 80];
   protected readonly negotiations = [true, true, false, false, false, false, false];
   protected readonly mileUnits: readonly SegmentOption<MileUnit>[] = [
     { value: 'statute', label: 'Statute' },
     { value: 'nautical', label: 'Nautical' },
   ];
+  /** Nautical miles are an aviation unit. Ground transports are always in statute miles, so the switch is not offered for them. */
   protected readonly mileUnit = signal<MileUnit>('statute');
 
   protected readonly serviceLine = signal<ServiceLineSelection>('air');
@@ -265,6 +358,8 @@ export class DashboardComponent {
   });
 
   protected readonly periodsError = computed<unknown>(() => this.periodsResource.error());
+  /** Nothing can be asked for until the list of months is here, so every figure waits on it too. */
+  protected readonly periodsLoading = computed(() => this.periodsResource.isLoading());
 
   protected retryPeriods(): void {
     this.periodsResource.reload();
@@ -287,6 +382,49 @@ export class DashboardComponent {
     ((this.periodsResource.hasValue() ? this.periodsResource.value() : undefined)?.periods ?? []).map((p) => ({ value: p.period, label: apPeriodLabel(p.period) })),
   );
   protected readonly endPeriod = toSignal(this.period.valueChanges, { initialValue: this.period.value });
+
+  /** Transports and loaded miles for the six months ending at the chosen period, for the Service Line on screen. One request feeds both tiles. */
+  private readonly volume = rxResource<TransportVolumeDto | null, { providerId: string; endPeriod: string; line: 'all' | 'air' | 'ground' } | null>({
+    params: () => {
+      const providerId = this.providerId();
+      const endPeriod = this.endPeriod();
+      const line = this.serviceLine();
+      return providerId && endPeriod ? { providerId, endPeriod, line: line === 'both' ? 'all' : line } : null;
+    },
+    stream: ({ params }) => (params ? this.netCollections.transports(params.providerId, params.endPeriod, 6, params.line) : of(null)),
+  });
+  private readonly volumeValue = computed(() => (this.volume.hasValue() ? this.volume.value() : null));
+  protected readonly volumeLoading = computed(() => this.periodsLoading() || this.volume.isLoading());
+  protected readonly volumeFailed = computed(() => this.volume.error() !== undefined);
+  protected readonly transportsCard = computed(() => toTransportsCard(this.volumeValue()));
+  protected readonly milesCard = computed(() => toMilesCard(this.volumeValue(), this.serviceLine() === 'ground' ? 'statute' : this.mileUnit()));
+  protected readonly volumeCaveat = computed(() => (this.volumeValue()?.periodOpen ? 'This month is still open, so counts may rise.' : ''));
+
+  protected readonly goal = CLEAN_CLAIM_GOAL;
+
+  /** The clean claim rate for the six months up to the chosen period. The warehouse table is not split by Service Line, so the toggle does not change it. */
+  private readonly clean = rxResource<CleanClaimRateDto | null, { providerId: string; endPeriod: string } | null>({
+    params: () => {
+      const providerId = this.providerId();
+      const endPeriod = this.endPeriod();
+      return providerId && endPeriod ? { providerId, endPeriod } : null;
+    },
+    stream: ({ params }) => (params ? this.netCollections.cleanClaims(params.providerId, params.endPeriod, 6) : of(null)),
+  });
+  protected readonly cleanLoading = computed(() => this.periodsLoading() || this.clean.isLoading());
+  protected readonly cleanFailed = computed(() => this.clean.error() !== undefined);
+  protected readonly cleanCard = computed(() => toCleanClaimCard(this.clean.hasValue() ? this.clean.value() : null, this.endPeriod()));
+  protected readonly cleanCaveat = computed(() =>
+    [this.cleanCard().latestNote, this.serviceLine() === 'both' ? '' : 'Covers all service lines: the data is not split by air or ground.'].filter(Boolean).join(' '),
+  );
+
+  protected retryClean(): void {
+    this.clean.reload();
+  }
+
+  protected retryVolume(): void {
+    this.volume.reload();
+  }
   protected readonly divisionOptions = computed<EmsPickerOption<string>[]>(() => [
     { value: ALL_DIVISIONS, label: this.labels().allReportingDivisions },
     ...divisionsFor(this.context().reportingDivisions, this.serviceLine()).map((division) => ({

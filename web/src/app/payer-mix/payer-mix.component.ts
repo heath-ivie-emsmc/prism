@@ -6,6 +6,7 @@ import { map, of } from 'rxjs';
 import { EmsBreadcrumb, EmsBreadcrumbsComponent, EmsIconComponent, EmsMessageComponent, EmsPickerOption, EmsSelectComponent } from '@ems-management-consultants/ui';
 import { AuthService } from '../auth/auth.service';
 import { LoadProblemComponent } from '../shared/load-problem.component';
+import { SkeletonComponent } from '../shared/skeleton.component';
 import { ChartComponent } from '../charts/chart.component';
 import { monthName, priorMonthName, priorPeriod } from '../breakdown/net-cash-breakdown';
 import { BreakdownLine } from '../breakdown/net-cash-breakdown.model';
@@ -46,7 +47,7 @@ interface TableRow {
  */
 @Component({
   selector: 'app-payer-mix',
-  imports: [LoadProblemComponent, PayerDonutsComponent, PayerLegendComponent, PayerStackedComponent, ChartComponent, EmsBreadcrumbsComponent, EmsIconComponent, EmsMessageComponent, EmsSelectComponent, ReactiveFormsModule, SegmentedControlComponent],
+  imports: [SkeletonComponent, LoadProblemComponent, PayerDonutsComponent, PayerLegendComponent, PayerStackedComponent, ChartComponent, EmsBreadcrumbsComponent, EmsIconComponent, EmsMessageComponent, EmsSelectComponent, ReactiveFormsModule, SegmentedControlComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <main class="page">
@@ -80,6 +81,12 @@ interface TableRow {
 
           @if (loadError() !== undefined) {
             <app-load-problem [error]="loadError()" subject="the payer mix" (retry)="retry()" />
+          } @else if (loading()) {
+            <p class="cdk-visually-hidden" role="status">Loading the payer mix</p>
+            <div class="mix__skeleton" aria-hidden="true">
+              <app-skeleton width="70%" height="1rem" />
+              <app-skeleton height="16rem" />
+            </div>
           } @else if (empty()) {
             <ems-message state="neutral">There are no {{ groupLower() }} transports for {{ periodLabel() }}.</ems-message>
           } @else if (loaded()) {
@@ -232,6 +239,11 @@ interface TableRow {
       color: var(--ems-text-muted);
       font-size: var(--ems-font-size-small);
     }
+    .mix__skeleton {
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
     .legend {
       display: flex;
       gap: 1.25rem;
@@ -349,6 +361,8 @@ export class PayerMixComponent {
       this.mix.reload();
     }
   }
+  /** Waiting for the months, then for the mix. */
+  protected readonly loading = computed(() => this.periodsResource.isLoading() || this.mix.isLoading());
   protected readonly loaded = computed(() => this.mix.hasValue() && this.mix.value() !== null);
   private readonly figures = computed(() => toPayerMix(this.mix.hasValue() ? this.mix.value() : null));
   protected readonly empty = computed(() => this.loaded() && this.loadError() === undefined && this.figures().total + this.figures().priorTotal === 0);

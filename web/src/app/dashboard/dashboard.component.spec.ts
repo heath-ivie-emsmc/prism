@@ -42,13 +42,62 @@ describe('DashboardComponent header', () => {
   };
   const PROVIDER = { providers: [{ id: '526', name: 'Seminole County Fire Department', facilityCount: 0 }] };
 
+  const VOLUME = {
+    metric: { key: 'transport_volume', name: 'Transports and loaded miles', description: 'd', unit: 'transports' },
+    providerId: '526',
+    endPeriod: '202610',
+    months: 6,
+    serviceLine: 'air',
+    periodOpen: false,
+    points: [
+      { period: '202609', label: 'Sep', year: 2026, transports: 146, loadedMiles: 19_000 },
+      { period: '202610', label: 'Oct', year: 2026, transports: 140, loadedMiles: 18_420 },
+    ],
+    groups: [
+      { key: 'rotor-wing', name: 'Rotor wing', serviceLine: 'air', transports: 92 },
+      { key: 'fixed-wing', name: 'Fixed wing', serviceLine: 'air', transports: 48 },
+    ],
+  };
+
+  const CLEAN = {
+    metric: { key: 'clean_claim_rate', name: 'Clean claim rate', description: 'd', unit: 'percent' },
+    providerId: '526',
+    endPeriod: '202610',
+    months: 6,
+    snapshotDate: '2026-04-07',
+    points: [
+      { period: '202609', label: 'Sep', year: 2026, cleanClaims: 962, rejectedClaims: 38, totalClaims: 1000, rate: 0.962 },
+      { period: '202610', label: 'Oct', year: 2026, cleanClaims: 945, rejectedClaims: 55, totalClaims: 1000, rate: 0.945 },
+    ],
+  };
+
+  /** What the transports route answers in a test: the sample, a body the test chose, or a 503. Reset for every test. */
+  let volumeAnswer: { body?: object; fails?: boolean; hold?: boolean; clean?: object; cleanFails?: boolean } = {};
+  beforeEach(() => (volumeAnswer = {}));
+
+  /** Answers any transports request the page has made. The two tiles share one request, and most tests are about something else. */
+  function answerVolume(): void {
+    if (volumeAnswer.hold) return;
+    for (const request of TestBed.inject(HttpTestingController).match((r) => r.url === `${BASE}/transports`)) {
+      if (volumeAnswer.fails) request.flush({ title: 'x' }, { status: 503, statusText: 'Service Unavailable' });
+      else request.flush(volumeAnswer.body ?? VOLUME);
+    }
+    for (const request of TestBed.inject(HttpTestingController).match((r) => r.url === `${BASE}/clean-claims`)) {
+      if (volumeAnswer.cleanFails) request.flush({ title: 'x' }, { status: 503, statusText: 'Service Unavailable' });
+      else request.flush(volumeAnswer.clean ?? CLEAN);
+    }
+  }
+
   /** Runs the effects and change detection until the page has reacted to what the test just flushed (the default period is set by an effect). */
   async function settle(fixture: ComponentFixture<DashboardComponent>): Promise<void> {
     for (let i = 0; i < 4; i++) {
       await Promise.resolve();
       fixture.detectChanges();
       TestBed.tick();
+      answerVolume();
     }
+    await Promise.resolve();
+    fixture.detectChanges();
   }
 
   /** The Provider's periods arrive first, then the series for the newest one. */
@@ -59,7 +108,7 @@ describe('DashboardComponent header', () => {
     await settle(result.fixture);
     http.expectOne((r) => r.url === BASE && r.params.get('endPeriod') === '202610').flush(series);
     await result.fixture.whenStable();
-    result.fixture.detectChanges();
+    await settle(result.fixture);
     return { ...result, http };
   }
 
@@ -88,6 +137,28 @@ describe('DashboardComponent header', () => {
     fixture.detectChanges();
 
     http.expectOne((r) => r.url === BASE && r.params.get('months') === '12' && r.params.get('endPeriod') === '202610').flush(SERIES);
+  });
+
+  it('asks for net cash again for the new Service Line when the toggle changes, so the headline and chart change with it', async () => {
+    const { fixture, root, http } = await createWithData();
+    http.match(() => true);
+
+    radios(root).find((r) => r.textContent?.includes('Ground only'))!.click();
+    fixture.detectChanges();
+
+    const request = http.expectOne((r) => r.url === BASE && r.params.get('serviceLine') === 'ground');
+    expect(request.request.params.get('endPeriod')).toBe('202610');
+    request.flush(SERIES);
+  });
+
+  it('asks for net cash for the Service Line the page starts on', async () => {
+    const result = await create(PROVIDER);
+    const http = TestBed.inject(HttpTestingController);
+    http.expectOne(`${BASE}/periods`).flush(PERIODS);
+    await settle(result.fixture);
+
+    http.expectOne((r) => r.url === BASE).flush(SERIES);
+    http.match(() => true);
   });
 
   it('does not ask for anything when the user has no Provider', async () => {
@@ -154,6 +225,120 @@ describe('DashboardComponent header', () => {
     [...result.root.querySelectorAll<HTMLButtonElement>('app-net-cash-panel button')].find((b) => b.textContent?.includes('Try again'))!.click();
     await settle(result.fixture);
     http.expectOne(`${BASE}/periods`).flush(PERIODS);
+  });
+
+  it('shows grey placeholders, not "no data" or blanks, while the months are still loading', async () => {
+    const { root } = await create(PROVIDER);
+
+    expect(root.querySelectorAll('app-kpi-card app-skeleton').length).toBeGreaterThan(8);
+    expect([...root.querySelectorAll('app-kpi-card')].slice(0, 3).every((c) => c.querySelector('[role="status"]')?.textContent?.startsWith('Loading'))).toBe(true);
+    expect(root.querySelector('app-net-cash-panel app-skeleton')).not.toBeNull();
+    expect(root.querySelector('app-net-cash-panel')!.textContent).not.toContain('No net cash data');
+    TestBed.inject(HttpTestingController).match(() => true);
+  });
+
+  it('shows real transports and loaded miles: the latest month, the change from the month before and the split of the last month', async () => {
+    const { root } = await createWithData();
+
+    const [transports, miles] = [...root.querySelectorAll('app-kpi-card')].slice(0, 2).map((c) => c.textContent!.replace(/\s+/g, ' '));
+    expect(transports).toContain('140');
+    expect(transports).toContain('6 fewer than Sep');
+    expect(transports).toContain('Rotor wing 92 · Fixed wing 48');
+    expect(miles).toContain('18,420');
+    expect(miles).toContain('statute mi');
+    expect(miles).toContain('3% fewer than Sep');
+    expect(root.querySelectorAll('.bars__bar')).toHaveLength(6);
+    expect(root.querySelector('.bars')!.getAttribute('aria-label')).toContain('Oct 140');
+  });
+
+  it('asks for six months of transports ending at the chosen period, for the Service Line on screen', async () => {
+    volumeAnswer = { hold: true };
+    const result = await create(PROVIDER);
+    const http = TestBed.inject(HttpTestingController);
+    http.expectOne(`${BASE}/periods`).flush(PERIODS);
+    await settle(result.fixture);
+
+    const request = http.expectOne((r) => r.url === `${BASE}/transports`);
+    expect(request.request.params.get('endPeriod')).toBe('202610');
+    expect(request.request.params.get('months')).toBe('6');
+    expect(request.request.params.get('serviceLine')).toBe('air');
+    request.flush(VOLUME);
+    http.match(() => true).forEach((r) => r.flush(SERIES));
+  });
+
+  it('shows loaded miles in nautical miles when asked', async () => {
+    const { root, fixture } = await createWithData();
+
+    [...root.querySelectorAll<HTMLButtonElement>('app-kpi-card [role="radio"]')].find((r) => r.textContent?.includes('Nautical'))!.click();
+    await settle(fixture);
+
+    const miles = root.querySelectorAll('app-kpi-card')[1]!.textContent!.replace(/\s+/g, ' ');
+    expect(miles).toContain('16,007');
+    expect(miles).toContain('nautical mi');
+  });
+
+  it('warns on both tiles that an open month is not final', async () => {
+    volumeAnswer = { body: { ...VOLUME, periodOpen: true } };
+    const { root } = await createWithData();
+
+    expect([...root.querySelectorAll('app-kpi-card')].slice(0, 2).every((c) => c.textContent!.includes('still open, so counts may rise'))).toBe(true);
+  });
+
+  it('says the tiles cannot load, with a retry that asks again, when transports fail', async () => {
+    volumeAnswer = { fails: true };
+    const { root, fixture, http } = await createWithData();
+
+    const text = root.querySelector('app-kpi-card')!.textContent!.replace(/\s+/g, ' ');
+    expect(text).toContain("We can't load this right now");
+    expect(text).toContain('—');
+    volumeAnswer = {};
+    [...root.querySelectorAll<HTMLButtonElement>('app-kpi-card button')].find((b) => b.textContent?.includes('Try again'))!.click();
+    await settle(fixture);
+    expect(http.match(() => false)).toEqual([]);
+    expect(root.querySelector('app-kpi-card')!.textContent).toContain('140');
+  });
+
+  it('shows the real clean claim rate, the change in points from the month before and the goal', async () => {
+    const { root } = await createWithData();
+
+    const text = root.querySelectorAll('app-kpi-card')[2]!.textContent!.replace(/\s+/g, ' ');
+    expect(text).toContain('94.5%');
+    expect(text).toContain('1.7 pts lower than Sep');
+    expect(text).toContain('Goal 95%');
+    expect(root.querySelector('.goal')!.getAttribute('aria-label')).toBe('94.5% for October 2026, goal 95 percent');
+    expect(root.querySelector<HTMLElement>('.goal__fill')!.style.width).toBe('94.5%');
+  });
+
+  it('says which month the clean claim rate is for when the data is behind the month on screen', async () => {
+    volumeAnswer = { clean: { ...CLEAN, points: [{ period: '202603', label: 'Mar', year: 2026, cleanClaims: 969, rejectedClaims: 31, totalClaims: 1000, rate: 0.969 }] } };
+    const { root } = await createWithData();
+
+    const text = root.querySelectorAll('app-kpi-card')[2]!.textContent!.replace(/\s+/g, ' ');
+    expect(text).toContain('96.9%');
+    expect(text).toContain('Latest in the data: March 2026.');
+  });
+
+  it('says there is no clean claim data, with a dash, when the warehouse has none', async () => {
+    volumeAnswer = { clean: { ...CLEAN, points: [] } };
+    const { root } = await createWithData();
+
+    const text = root.querySelectorAll('app-kpi-card')[2]!.textContent!.replace(/\s+/g, ' ');
+    expect(text).toContain('—');
+    expect(text).toContain('No clean claim data for October 2026 yet.');
+    expect(root.querySelector('.goal')).toBeNull();
+  });
+
+  it('notes that clean claims are not split by Service Line when one is chosen, and retries when the load fails', async () => {
+    volumeAnswer = { cleanFails: true };
+    const { root, fixture } = await createWithData();
+
+    const text = () => root.querySelectorAll('app-kpi-card')[2]!.textContent!.replace(/\s+/g, ' ');
+    expect(text()).toContain("We can't load this right now");
+    expect(text()).toContain('Covers all service lines');
+    volumeAnswer = {};
+    [...root.querySelectorAll<HTMLButtonElement>('app-kpi-card button')].filter((b) => b.textContent?.includes('Try again')).at(-1)!.click();
+    await settle(fixture);
+    expect(text()).toContain('94.5%');
   });
 
   it('lays out the net cash panel, four metric tiles and the projection panel', async () => {

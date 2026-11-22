@@ -125,6 +125,57 @@ export interface PayerMixDto {
   readonly shares: readonly PayerMixShareDto[];
 }
 
+/** Transports and loaded miles (statute) in one month of service. */
+export interface TransportVolumePointDto {
+  readonly period: string;
+  readonly label: string;
+  readonly year: number;
+  readonly transports: number;
+  readonly loadedMiles: number;
+}
+
+/** The last month's transports for one aircraft type or level of service. */
+export interface TransportVolumeGroupDto {
+  readonly key: string;
+  readonly name: string;
+  readonly serviceLine: 'air' | 'ground';
+  readonly transports: number;
+}
+
+/** Response of GET /api/v1/providers/{providerId}/metrics/net-collections/transports. */
+export interface TransportVolumeDto {
+  readonly metric: MetricDto;
+  readonly providerId: string;
+  readonly endPeriod: string | null;
+  readonly months: number;
+  readonly serviceLine: 'all' | 'air' | 'ground';
+  /** True while the last month's accounting period is open, so transports for it may still be added. */
+  readonly periodOpen: boolean;
+  readonly points: readonly TransportVolumePointDto[];
+  readonly groups: readonly TransportVolumeGroupDto[];
+}
+
+/** Claims accepted first time, rejected and in total for one month of service, and the rate (0 to 1, null when there were no claims). */
+export interface CleanClaimPointDto {
+  readonly period: string;
+  readonly label: string;
+  readonly year: number;
+  readonly cleanClaims: number;
+  readonly rejectedClaims: number;
+  readonly totalClaims: number;
+  readonly rate: number | null;
+}
+
+/** Response of GET /api/v1/providers/{providerId}/metrics/net-collections/clean-claims. The newest point can be older than `endPeriod`. */
+export interface CleanClaimRateDto {
+  readonly metric: MetricDto;
+  readonly providerId: string;
+  readonly endPeriod: string | null;
+  readonly months: number;
+  readonly snapshotDate: string | null;
+  readonly points: readonly CleanClaimPointDto[];
+}
+
 /** Reads net cash for a Provider. The Provider is in the path, and the API checks it against the user's assignments on every call. */
 @Injectable({ providedIn: 'root' })
 export class NetCollectionsService {
@@ -134,8 +185,8 @@ export class NetCollectionsService {
     return this.http.get<NetCollectionsPeriodsDto>(`${this.base(providerId)}/periods`);
   }
 
-  series(providerId: string, endPeriod: string, months: number): Observable<NetCollectionsDto> {
-    const params = new HttpParams().set('endPeriod', endPeriod).set('months', months);
+  series(providerId: string, endPeriod: string, months: number, serviceLine: 'all' | 'air' | 'ground' = 'all'): Observable<NetCollectionsDto> {
+    const params = new HttpParams().set('endPeriod', endPeriod).set('months', months).set('serviceLine', serviceLine);
     return this.http.get<NetCollectionsDto>(this.base(providerId), { params });
   }
 
@@ -152,6 +203,16 @@ export class NetCollectionsService {
   payerMix(providerId: string, period: string, serviceLine: 'air' | 'ground', group: string): Observable<PayerMixDto> {
     const params = new HttpParams().set('period', period).set('serviceLine', serviceLine).set('group', group);
     return this.http.get<PayerMixDto>(`${this.base(providerId)}/payer-mix`, { params });
+  }
+
+  transports(providerId: string, endPeriod: string, months: number, serviceLine: 'all' | 'air' | 'ground'): Observable<TransportVolumeDto> {
+    const params = new HttpParams().set('endPeriod', endPeriod).set('months', months).set('serviceLine', serviceLine);
+    return this.http.get<TransportVolumeDto>(`${this.base(providerId)}/transports`, { params });
+  }
+
+  cleanClaims(providerId: string, endPeriod: string, months: number): Observable<CleanClaimRateDto> {
+    const params = new HttpParams().set('endPeriod', endPeriod).set('months', months);
+    return this.http.get<CleanClaimRateDto>(`${this.base(providerId)}/clean-claims`, { params });
   }
 
   private base(providerId: string): string {

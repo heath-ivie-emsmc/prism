@@ -8,6 +8,7 @@ import { ChartComponent, ChartOptionBuilder } from '../charts/chart.component';
 import { NetCashMonth, boundedMonths, changeFromPrior, formatExact, formatLabel, summarizeNetCash } from '../charts/net-cash';
 import { NetCashProjectionDto, NetCollectionsDto, NetCollectionsService } from '../metrics/net-collections.service';
 import { LoadProblemComponent } from '../shared/load-problem.component';
+import { SkeletonComponent } from '../shared/skeleton.component';
 import { apPeriodLabel } from './dashboard-format';
 import { SwitchComponent } from './switch.component';
 import { buildNetCashOption } from '../charts/net-cash-chart.options';
@@ -47,7 +48,7 @@ interface TableRow {
 /** The large net cash panel: filters, the headline for the latest month, and the line, bar or table view of the months. */
 @Component({
   selector: 'app-net-cash-panel',
-  imports: [ChartComponent, EmsButtonDirective, LoadProblemComponent, EmsChipComponent, EmsIconComponent, EmsMessageComponent, EmsSelectComponent, ReactiveFormsModule, RouterLink, SegmentedControlComponent, SwitchComponent],
+  imports: [SkeletonComponent, ChartComponent, EmsButtonDirective, LoadProblemComponent, EmsChipComponent, EmsIconComponent, EmsMessageComponent, EmsSelectComponent, ReactiveFormsModule, RouterLink, SegmentedControlComponent, SwitchComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <section class="panel" aria-labelledby="net-cash-title" [attr.aria-busy]="series.isLoading()">
@@ -64,13 +65,21 @@ interface TableRow {
       </div>
 
       @if (projectionMissing()) {
-        <ems-message state="warn">{{ projection.error() ? 'We can\'t load the projection right now. Try again in a moment.' : 'There is no forecast for the months after this period.' }}</ems-message>
+        <ems-message state="warn">{{ projectionMessage() }}</ems-message>
       }
 
       @if (loadError() !== undefined) {
         <app-load-problem [error]="loadError()" subject="net cash" (retry)="retry()" />
-      } @else if (series.isLoading() && !series.hasValue()) {
-        <p class="panel__state" role="status">Loading net cash…</p>
+      } @else if (waiting()) {
+        <p class="cdk-visually-hidden" role="status">Loading net cash</p>
+        <div class="panel__skeleton" aria-hidden="true">
+          <div class="panel__skeleton-headline">
+            <app-skeleton width="9rem" height="2.5rem" />
+            <app-skeleton width="5rem" height="1.75rem" radius="999px" />
+            <app-skeleton width="12rem" height="0.875rem" />
+          </div>
+          <app-skeleton class="panel__skeleton-chart" width="100%" height="100%" />
+        </div>
       } @else if (months().length === 0) {
         <p class="panel__state" role="status">No net cash data for this period.</p>
       } @else {
@@ -137,6 +146,8 @@ interface TableRow {
       display: block;
     }
     .panel {
+      height: 100%;
+      box-sizing: border-box;
       display: flex;
       flex-direction: column;
       gap: 1rem;
@@ -149,6 +160,12 @@ interface TableRow {
         var(--ems-fx-neutral-default-frosted-raised-glowing);
       -webkit-backdrop-filter: var(--ems-fx-frosted);
       backdrop-filter: var(--ems-fx-frosted);
+    }
+    /* The chart takes whatever height the panel has left, never less than a readable chart. */
+    app-chart {
+      flex: 1 1 0;
+      min-height: 12rem;
+      --chart-height: 100%;
     }
     .panel__header {
       display: flex;
@@ -233,6 +250,23 @@ interface TableRow {
     .panel__note {
       margin: 0;
     }
+    .panel__skeleton {
+      display: flex;
+      flex: 1 1 0;
+      flex-direction: column;
+      gap: 1rem;
+      min-height: 14rem;
+    }
+    .panel__skeleton-headline {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.75rem 1rem;
+    }
+    .panel__skeleton-chart {
+      flex: 1 1 0;
+      min-height: 12rem;
+    }
     .panel__state {
       display: flex;
       align-items: center;
@@ -309,6 +343,9 @@ export class NetCashPanelComponent {
   /** The error from loading the list of periods, when it failed: without it there is no month to ask for, so the panel has nothing to show. */
   readonly periodsError = input<unknown>(undefined);
 
+  /** The list of months is still loading, so there is no month to ask for yet. */
+  readonly periodsLoading = input(false);
+
   /** The person asked to try again after the periods failed to load. */
   readonly retryPeriods = output<void>();
 
@@ -323,13 +360,25 @@ export class NetCashPanelComponent {
   protected readonly callType = signal<CallType>('all');
   protected readonly pickup = new FormControl<string>({ value: 'all', disabled: true }, { nonNullable: true });
 
-  protected readonly series = rxResource<NetCollectionsDto | null, { providerId: string; endPeriod: string; months: number } | null>({
-    params: () => (this.providerId() && this.endPeriod() ? { providerId: this.providerId()!, endPeriod: this.endPeriod(), months: Number(this.range()) } : null),
-    stream: ({ params }) => (params ? this.netCollections.series(params.providerId, params.endPeriod, params.months) : of(null)),
+  private readonly apiServiceLine = computed<'all' | 'air' | 'ground'>(() => {
+    const line = this.serviceLine();
+    return line === 'both' ? 'all' : line;
+  });
+
+  /** The figures follow the Service Line toggle: air or ground alone, or both added together. */
+  protected readonly series = rxResource<NetCollectionsDto | null, { providerId: string; endPeriod: string; months: number; serviceLine: 'all' | 'air' | 'ground' } | null>({
+    params: () =>
+      this.providerId() && this.endPeriod()
+        ? { providerId: this.providerId()!, endPeriod: this.endPeriod(), months: Number(this.range()), serviceLine: this.apiServiceLine() }
+        : null,
+    stream: ({ params }) => (params ? this.netCollections.series(params.providerId, params.endPeriod, params.months, params.serviceLine) : of(null)),
   });
 
   /** Why nothing can be shown, if something failed: the periods first, since the figures cannot be asked for without one. */
   protected readonly loadError = computed<unknown>(() => this.periodsError() ?? this.series.error());
+
+  /** Waiting for figures: the months first, then the series. Without this the panel would say "no data" in the moment before it asks. */
+  protected readonly waiting = computed(() => this.periodsLoading() || (this.series.isLoading() && !this.series.hasValue()));
 
   protected retry(): void {
     if (this.periodsError() !== undefined) {
@@ -348,11 +397,6 @@ export class NetCashPanelComponent {
   protected readonly breakdownLabel = computed(() => (this.serviceLine() === 'ground' ? 'level of service' : 'aircraft type'));
 
   protected readonly showProjection = signal(false);
-
-  private readonly apiServiceLine = computed<'all' | 'air' | 'ground'>(() => {
-    const line = this.serviceLine();
-    return line === 'both' ? 'all' : line;
-  });
 
   /** Asked for only while the switch is on and a chart (not the table) is showing. */
   protected readonly projection = rxResource<NetCashProjectionDto | null, { providerId: string; endPeriod: string; serviceLine: 'all' | 'air' | 'ground' } | null>({
@@ -375,6 +419,11 @@ export class NetCashPanelComponent {
     };
   });
   /** The switch is on but there is nothing to draw. */
+  /** Why the projection is not drawn: it failed to load, or the forecast does not reach the months after this period. */
+  protected readonly projectionMessage = computed(() =>
+    this.projection.error() ? "We can't load the projection right now. Try again in a moment." : 'There is no forecast for the months after this period.',
+  );
+
   protected readonly projectionMissing = computed(() => this.showProjection() && this.chartKind() !== 'table' && !this.projection.isLoading() && (this.projection.error() !== undefined || (this.projection.hasValue() && this.projected() === null)));
   protected readonly expectedTotal = computed(() => formatLabel(this.projected()?.total ?? 3_000_000));
   protected readonly expectedRange = computed(() => `${formatLabel(this.projected()?.low ?? 0)} to ${formatLabel(this.projected()?.high ?? 0)}`);

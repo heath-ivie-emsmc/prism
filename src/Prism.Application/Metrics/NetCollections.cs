@@ -15,7 +15,8 @@ public sealed record NetCollectionsSeries(
     ApPeriod EndPeriod,
     int Months,
     DateOnly? SnapshotDate,
-    IReadOnlyList<NetCollectionsPoint> Points);
+    IReadOnlyList<NetCollectionsPoint> Points,
+    ServiceLineFilter ServiceLine = ServiceLineFilter.Both);
 
 /// <summary>The first Metric: net cash collected by accounting period. The Provider is always the one the caller was already allowed to see.</summary>
 public interface INetCollectionsMetric
@@ -32,6 +33,10 @@ public interface INetCollectionsMetric
     /// <summary>The accounting periods that have data, newest first. Fills the Period drop-down.</summary>
     Task<IReadOnlyList<ApPeriod>> GetPeriodsAsync(int providerId, CancellationToken cancellationToken);
 
-    /// <summary>The <paramref name="months"/> months that end with <paramref name="endPeriod"/>. Months with no data are left out, never shown as zero.</summary>
-    Task<NetCollectionsSeries> GetSeriesAsync(int providerId, ApPeriod endPeriod, int months, CancellationToken cancellationToken);
+    /// <summary>
+    /// The <paramref name="months"/> months that end with <paramref name="endPeriod"/>. Months with no data are left out, never shown as zero.
+    /// <see cref="ServiceLineFilter.Both"/> is the Provider's whole figure from the KPI table. The KPI table has no air or ground column, so air or ground alone
+    /// is added up from the transaction ledger by the encounter's level of service, which is the rule that makes the breakdown groups add up to the headline.
+    /// </summary>
+    Task<NetCollectionsSeries> GetSeriesAsync(int providerId, ApPeriod endPeriod, int months, ServiceLineFilter serviceLine, CancellationToken cancellationToken);
 }
