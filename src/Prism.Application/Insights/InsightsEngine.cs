@@ -35,20 +35,34 @@ public sealed class InsightsEngine(INetCashByGroupMetric netCash, IEnumerable<II
         return new Insight(headline, drivers, expected, new Remainder(remaining, Judge(remaining, history, period)), Normalized(all, cashNow, cashPrior));
     }
 
+    /// <summary>
+    /// Starts every analysis at once, in order, each given the ones before it. Analyses that read different Metrics overlap, and one that needs an
+    /// earlier result awaits it. If one fails the rest are cancelled and its failure is what the caller sees.
+    /// </summary>
     private async Task<List<Finding>> RunAnalysesAsync(InsightInput start, CancellationToken cancellationToken)
     {
-        InsightInput input = start;
-        var found = new List<Finding>();
+        using var cancel = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var started = new List<Task<Finding?>>();
         foreach (IInsightAnalysis analysis in analyses.OrderBy(a => a.Order))
         {
-            if (await analysis.RunAsync(input, cancellationToken) is { } finding)
-            {
-                found.Add(finding);
-                input = input.After(finding);
-            }
+            started.Add(RunOneAsync(analysis, start with { Earlier = [.. started] }, cancel));
         }
 
-        return found;
+        Finding?[] results = await Task.WhenAll(started);
+        return [.. results.OfType<Finding>()];
+    }
+
+    private static async Task<Finding?> RunOneAsync(IInsightAnalysis analysis, InsightInput input, CancellationTokenSource cancel)
+    {
+        try
+        {
+            return await analysis.RunAsync(input, cancel.Token);
+        }
+        catch
+        {
+            await cancel.CancelAsync();
+            throw;
+        }
     }
 
     /// <summary>A group's own months, or every group's added up when no group is chosen.</summary>

@@ -8,16 +8,19 @@ public sealed class VolumeAnalysis : IInsightAnalysis
 {
     public int Order => 20;
 
-    public Task<Finding?> RunAsync(InsightInput input, CancellationToken cancellationToken) => Task.FromResult<Finding?>(Run(input));
-
-    private static VolumeFinding? Run(InsightInput input)
+    public async Task<Finding?> RunAsync(InsightInput input, CancellationToken cancellationToken)
     {
         if (input.Current is not { } now || input.Prior is not { } before)
         {
             return null;
         }
 
-        AgedPaymentsFinding? aged = input.Earlier.OfType<AgedPaymentsFinding>().FirstOrDefault();
+        AgedPaymentsFinding? aged = (await input.FindingsBeforeAsync()).OfType<AgedPaymentsFinding>().FirstOrDefault();
+        return Run(now, before, aged);
+    }
+
+    private static VolumeFinding? Run(MonthlyCash now, MonthlyCash before, AgedPaymentsFinding? aged)
+    {
         decimal cashBefore = before.Cash - (aged?.ExcessPriorMonth ?? 0m);
         decimal transportsBefore = before.Transports - (aged?.ExcessTransportsPriorMonth ?? 0m);
         decimal transportsNow = now.Transports - (aged?.ExcessTransportsThisMonth ?? 0m);

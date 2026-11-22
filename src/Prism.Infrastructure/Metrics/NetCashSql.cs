@@ -8,17 +8,17 @@ namespace Prism.Infrastructure.Metrics;
 /// </summary>
 internal static class NetCashSql
 {
-    /// <summary>
-    /// A <c>cash</c> CTE of (<c>encounter_id</c>, <c>ym</c>, <c>amount</c>). The query defines a <c>periods</c> CTE of the Provider's accounting
-    /// periods (<c>id</c>, <c>ym</c>) before it, and that is where the Provider filter and the months come from.
-    /// </summary>
-    internal const string CashCte =
+    private const string CashHead =
         """
         cash AS (
             SELECT et.encounter_id, p.ym, SUM(et.balance_amount) / 100.0 AS amount
             FROM ods.encounter_transaction et
             JOIN periods p ON p.id = et.accounting_period_id
             WHERE et.type = 'Credit' AND et.user_source IS DISTINCT FROM 'Old AR Import'
+        """;
+
+    private const string CashTail =
+        """
               AND EXISTS (
                   SELECT 1
                   FROM ods.encounter_transaction_credit_attribute a
@@ -27,4 +27,16 @@ internal static class NetCashSql
             GROUP BY et.encounter_id, p.ym
         )
         """;
+
+    /// <summary>
+    /// A <c>cash</c> CTE of (<c>encounter_id</c>, <c>ym</c>, <c>amount</c>). The query defines a <c>periods</c> CTE of the Provider's accounting
+    /// periods (<c>id</c>, <c>ym</c>) before it, and that is where the Provider filter and the months come from.
+    /// </summary>
+    internal const string CashCte = CashHead + "\n" + CashTail;
+
+    /// <summary>
+    /// The same rule as <see cref="CashCte"/>, but only for the encounters in a <c>trips</c> CTE (with an <c>encounter_id</c>) defined before it.
+    /// Use it when the periods reach far back, so the database reads the transactions of those encounters and not the Provider's whole ledger.
+    /// </summary>
+    internal const string CashCteForTrips = CashHead + "\n      AND et.encounter_id IN (SELECT encounter_id FROM trips)\n" + CashTail;
 }

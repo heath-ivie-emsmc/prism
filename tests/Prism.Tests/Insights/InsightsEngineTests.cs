@@ -23,10 +23,52 @@ public sealed class InsightsEngineTests
 
         public IReadOnlyList<Finding> Seen { get; private set; } = [];
 
-        public Task<Finding?> RunAsync(InsightInput input, CancellationToken cancellationToken)
+        public async Task<Finding?> RunAsync(InsightInput input, CancellationToken cancellationToken)
         {
-            Seen = input.Earlier;
-            return Task.FromResult(finding);
+            Seen = await input.FindingsBeforeAsync();
+            return finding;
+        }
+    }
+
+    /// <summary>Waits until the other analysis has started, which only happens if the engine starts them together.</summary>
+    private sealed class Rendezvous(int order, TaskCompletionSource mine, TaskCompletionSource theirs) : IInsightAnalysis
+    {
+        public int Order => order;
+
+        public async Task<Finding?> RunAsync(InsightInput input, CancellationToken cancellationToken)
+        {
+            mine.SetResult();
+            await theirs.Task.WaitAsync(TimeSpan.FromSeconds(5), cancellationToken);
+            return null;
+        }
+    }
+
+    private sealed class Failing(int order) : IInsightAnalysis
+    {
+        public int Order => order;
+
+        public Task<Finding?> RunAsync(InsightInput input, CancellationToken cancellationToken) => Task.FromException<Finding?>(new InvalidOperationException("boom"));
+    }
+
+    private sealed class WaitsForCancellation(int order) : IInsightAnalysis
+    {
+        public bool Cancelled { get; private set; }
+
+        public int Order => order;
+
+        public async Task<Finding?> RunAsync(InsightInput input, CancellationToken cancellationToken)
+        {
+            try
+            {
+                await Task.Delay(TimeSpan.FromSeconds(5), cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                Cancelled = true;
+                throw;
+            }
+
+            return null;
         }
     }
 
@@ -108,6 +150,28 @@ public sealed class InsightsEngineTests
         Assert.Empty(first.Seen);
         Assert.Equal([-300m], second.Seen.Select(f => f.Impact));
         Assert.Equal([-300m, -200m], none.Seen.Select(f => f.Impact));
+    }
+
+    [Fact]
+    public async Task Analyses_that_do_not_depend_on_each_other_run_at_the_same_time()
+    {
+        var a = new TaskCompletionSource();
+        var b = new TaskCompletionSource();
+
+        // Each waits for the other to have started, so this only finishes if neither waits for the other to finish.
+        Insight? insight = await ExplainAsync(Engine(Months("fixed-wing", 1_000m, 400m), new Rendezvous(1, a, b), new Rendezvous(2, b, a)));
+
+        Assert.NotNull(insight);
+    }
+
+    [Fact]
+    public async Task A_failing_analysis_cancels_the_rest_and_its_failure_is_what_the_caller_sees()
+    {
+        var slow = new WaitsForCancellation(2);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => ExplainAsync(Engine(Months("fixed-wing", 1_000m, 400m), new Failing(1), slow)));
+
+        Assert.True(slow.Cancelled);
     }
 
     [Fact]

@@ -7,8 +7,8 @@ public sealed record MonthlyCash(ApPeriod Period, decimal Cash, int Transports);
 
 /// <summary>
 /// What one analysis needs to know about the change being explained. <paramref name="History"/> is the group's net cash by posting month for the
-/// twelve months before <paramref name="Period"/> and the month itself. <paramref name="Earlier"/> holds the Findings of the analyses that ran before this
-/// one, so a later analysis can work on what an earlier one left.
+/// twelve months before <paramref name="Period"/> and the month itself. <paramref name="Earlier"/> holds the analyses that come before this one, already
+/// started, so a later analysis can await what an earlier one left. Analyses all start at once, so the Metric reads of independent analyses overlap.
 /// </summary>
 public sealed record InsightInput(
     int ProviderId,
@@ -16,7 +16,7 @@ public sealed record InsightInput(
     ServiceLineFilter ServiceLine,
     string? GroupKey,
     IReadOnlyList<MonthlyCash> History,
-    IReadOnlyList<Finding> Earlier)
+    IReadOnlyList<Task<Finding?>> Earlier)
 {
     public ApPeriod PriorPeriod => Period.AddMonths(-1);
 
@@ -24,11 +24,17 @@ public sealed record InsightInput(
 
     public MonthlyCash? Prior => History.FirstOrDefault(m => m.Period == PriorPeriod);
 
-    public InsightInput After(Finding finding) => this with { Earlier = [.. Earlier, finding] };
+    /// <summary>The Findings of the earlier analyses, once they have all finished. An analysis that does not need them never calls this and never waits.</summary>
+    public async Task<IReadOnlyList<Finding>> FindingsBeforeAsync()
+    {
+        Finding?[] done = await Task.WhenAll(Earlier);
+        return [.. done.OfType<Finding>()];
+    }
 }
 
 /// <summary>
-/// One way of explaining a change. Analyses run in <see cref="Order"/> so their effects do not overlap: each works on what the ones before it left.
+/// One way of explaining a change. Analyses are ordered by <see cref="Order"/> so their effects do not overlap: each works on what the ones before it left.
+/// They all start at once, so one that needs an earlier analysis awaits it with <see cref="InsightInput.FindingsBeforeAsync"/> and the rest do not wait for it.
 /// An analysis returns null when it does not apply or finds nothing worth saying. It reads Metrics only, never the warehouse.
 /// </summary>
 public interface IInsightAnalysis

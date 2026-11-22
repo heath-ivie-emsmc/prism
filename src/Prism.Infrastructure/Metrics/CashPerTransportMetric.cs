@@ -5,7 +5,7 @@ namespace Prism.Infrastructure.Metrics;
 
 /// <summary>
 /// Matured net cash per transport by payer group. The cash rule is shared with the breakdown (<see cref="NetCashSql"/>) and the payer group with payer mix
-/// (<see cref="PayerGroupSql"/>). Every transport in the cohorts counts, paid or not, so the average is not flattered by leaving unpaid claims out.
+/// (<see cref="PayerGroupSql"/>). The ledger is read only for the cohorts' encounters, because the periods reach back to the beginning and the whole ledger is too much to add up. Every transport in the cohorts counts, paid or not, so the average is not flattered by leaving unpaid claims out.
 /// The Provider filter is in the Catalog: the accounting periods and the trip rows are both the Provider's. Only aggregates leave the query.
 /// </summary>
 public sealed class CashPerTransportMetric(IWarehouse warehouse, IWarehouseProviderResolver providers) : ICashPerTransportMetric
@@ -18,10 +18,6 @@ public sealed class CashPerTransportMetric(IWarehouse warehouse, IWarehouseProvi
             FROM ods.accounting_period
             WHERE provider_id = @provider_id AND replace(name, '-', '') <= @period
         ),
-        {{NetCashSql.CashCte}},
-        paid AS (
-            SELECT encounter_id, SUM(amount) AS amount FROM cash GROUP BY encounter_id
-        ),
         trips AS (
             SELECT encounter_id, level_of_service, prim_pay, prim_pay_category
             FROM reporting.trip_detail_snapshot
@@ -31,6 +27,10 @@ public sealed class CashPerTransportMetric(IWarehouse warehouse, IWarehouseProvi
               AND ((@include_air AND level_of_service IN ('Rotor Wing', 'Fixed Wing'))
                    OR (@include_ground AND COALESCE(level_of_service, '') NOT IN ('Rotor Wing', 'Fixed Wing')))
               AND (@group_key = '' OR lower(replace(trim(COALESCE(level_of_service, '')), ' ', '-')) = @group_key)
+        ),
+        {{NetCashSql.CashCteForTrips}},
+        paid AS (
+            SELECT encounter_id, SUM(amount) AS amount FROM cash GROUP BY encounter_id
         )
         SELECT {{PayerGroupSql.CaseExpression}} AS payer,
                COUNT(*) AS transports,

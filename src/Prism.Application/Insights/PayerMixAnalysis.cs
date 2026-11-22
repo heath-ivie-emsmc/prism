@@ -14,7 +14,11 @@ public sealed class PayerMixAnalysis(IPayerMixMetric payerMix, ICashPerTransport
 
     public async Task<Finding?> RunAsync(InsightInput input, CancellationToken cancellationToken)
     {
-        PayerMix mix = await payerMix.GetPayerMixAsync(input.ProviderId, input.Period, input.ServiceLine, input.GroupKey, cancellationToken);
+        // The two reads do not depend on each other, so they run together.
+        Task<PayerMix> mixTask = payerMix.GetPayerMixAsync(input.ProviderId, input.Period, input.ServiceLine, input.GroupKey, cancellationToken);
+        Task<CashPerTransport> ratesTask = cashPerTransport.GetCashPerTransportAsync(input.ProviderId, input.Period, input.ServiceLine, input.GroupKey, cancellationToken);
+        await Task.WhenAll(mixTask, ratesTask);
+        PayerMix mix = await mixTask;
         decimal now = mix.Shares.Sum(s => s.Current);
         decimal before = mix.Shares.Sum(s => s.Prior);
         if (now == 0m || before == 0m)
@@ -22,7 +26,7 @@ public sealed class PayerMixAnalysis(IPayerMixMetric payerMix, ICashPerTransport
             return null;
         }
 
-        CashPerTransport rates = await cashPerTransport.GetCashPerTransportAsync(input.ProviderId, input.Period, input.ServiceLine, input.GroupKey, cancellationToken);
+        CashPerTransport rates = await ratesTask;
         var moves = mix.Shares
             .Select(s => (Share: s, From: s.Prior / before, To: s.Current / now, Rate: rates.Payers.FirstOrDefault(p => p.Key == s.Key)?.CashPerTransport))
             .Where(m => m.Rate is not null)

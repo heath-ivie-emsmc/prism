@@ -8,7 +8,7 @@ public sealed class VolumeAnalysisTests
     private static readonly ApPeriod Oct = new(2026, 10);
     private static readonly ApPeriod Sep = new(2026, 9);
 
-    private static InsightInput Input(MonthlyCash[] history, params Finding[] earlier) => new(1, Oct, ServiceLineFilter.Air, "fixed-wing", history, earlier);
+    private static InsightInput Input(MonthlyCash[] history, params Finding[] earlier) => new(1, Oct, ServiceLineFilter.Air, "fixed-wing", history, [.. earlier.Select(f => Task.FromResult<Finding?>(f))]);
 
     private static Task<Finding?> RunAsync(InsightInput input) => new VolumeAnalysis().RunAsync(input, TestContext.Current.CancellationToken);
 
