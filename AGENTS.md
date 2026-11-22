@@ -12,6 +12,7 @@ These rules are adapted from the M6 (Nemsis) project, where each one came from a
 - **State:** Prism's own Postgres holds durable state (Provider settings, saved views, audit log, session revocation). Redis holds short-lived security state (rate-limit counters, login replay protection, pending SSO state). The warehouse connection is read-only.
 - **Auth:** the Account Portal signed login-token flow, then an HttpOnly cookie session issued by the API. Browser code never stores tokens. SAML and other federation are deferred and must plug in behind the auth provider seam.
 - **One container** serves the SPA and the API. Customer API traffic uses bearer tokens on separate routes.
+- **Saved Views are layouts, not data.** A view stores Metric keys, presentations and grid positions as JSON validated against the Metric Catalog. It never stores figures, Labels, filters, an owner or a Provider taken from a request. Sharing is by emailed single-use invitation. See `docs/adr/0004-saved-views.md`.
 - **Personalization is renaming only.** A Label never changes an API key. Defaults come from Service Line.
 
 ## Security rules

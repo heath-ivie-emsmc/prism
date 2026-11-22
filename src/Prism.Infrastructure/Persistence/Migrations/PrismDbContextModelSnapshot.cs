@@ -16,7 +16,7 @@ partial class PrismDbContextModelSnapshot : ModelSnapshot
     // If you encounter a merge conflict in the line below, it means you need to
     // discard one of the migration branches and recreate its migrations on top of
     // the other branch. See https://aka.ms/efcore-docs-migrations-conflicts for more info.
-    public override string LastMigrationId => "20261121034408_CreateRevokedSession";
+    public override string LastMigrationId => "20261122194742_CreateSavedViews";
 
     protected override void BuildModel(ModelBuilder modelBuilder)
     {
@@ -79,6 +79,250 @@ partial class PrismDbContextModelSnapshot : ModelSnapshot
                 b.ToTable("revoked_session");
 
                 b.HasAnnotation("Npgsql:StorageParameter:fillfactor", 90);
+            });
+
+        modelBuilder.Entity("Prism.Infrastructure.Persistence.Entities.SavedView", b =>
+            {
+                var id = b.Property<int>("Id")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("integer")
+                    .HasColumnName("id");
+
+                NpgsqlPropertyBuilderExtensions.UseIdentityAlwaysColumn(id);
+
+                b.Property<DateTimeOffset>("CreatedAtTimestamp")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("timestamp with time zone")
+                    .HasColumnName("created_at_timestamp")
+                    .HasDefaultValueSql("now()");
+
+                b.Property<string>("CreatedByUserName")
+                    .HasMaxLength(200)
+                    .HasColumnType("character varying(200)")
+                    .HasColumnName("created_by_user_name");
+
+                b.Property<string>("Description")
+                    .HasMaxLength(300)
+                    .HasColumnType("character varying(300)")
+                    .HasColumnName("description");
+
+                b.Property<string>("Layout")
+                    .IsRequired()
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("jsonb")
+                    .HasColumnName("layout")
+                    .HasDefaultValueSql("'{}'::jsonb");
+
+                b.Property<int>("LayoutSchemaVersion")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("integer")
+                    .HasDefaultValue(1)
+                    .HasColumnName("layout_schema_version");
+
+                b.Property<string>("Name")
+                    .IsRequired()
+                    .HasMaxLength(80)
+                    .HasColumnType("character varying(80)")
+                    .HasColumnName("name");
+
+                b.Property<long>("OwnerPortalUserId")
+                    .HasColumnType("bigint")
+                    .HasColumnName("owner_portal_user_id");
+
+                b.Property<int>("ProviderId")
+                    .HasColumnType("integer")
+                    .HasColumnName("provider_id");
+
+                b.Property<uint>("RowVersion")
+                    .IsConcurrencyToken()
+                    .ValueGeneratedOnAddOrUpdate()
+                    .HasColumnType("xid")
+                    .HasColumnName("xmin");
+
+                b.Property<DateTimeOffset>("UpdatedAtTimestamp")
+                    .ValueGeneratedOnAddOrUpdate()
+                    .HasColumnType("timestamp with time zone")
+                    .HasColumnName("updated_at_timestamp")
+                    .HasDefaultValueSql("now()");
+
+                b.Property<string>("UpdatedByUserName")
+                    .HasMaxLength(200)
+                    .HasColumnType("character varying(200)")
+                    .HasColumnName("updated_by_user_name");
+
+                b.HasKey("Id")
+                    .HasName("pk_saved_view");
+
+                b.HasIndex("ProviderId", "OwnerPortalUserId", "Name")
+                    .IsUnique()
+                    .HasDatabaseName("uk_saved_view__provider_id__owner_portal_user_id__name")
+                    .HasAnnotation("Npgsql:StorageParameter:fillfactor", 90);
+
+                b.ToTable("saved_view");
+
+                b.HasAnnotation("Npgsql:StorageParameter:fillfactor", 90);
+            });
+
+        modelBuilder.Entity("Prism.Infrastructure.Persistence.Entities.SavedViewInvitation", b =>
+            {
+                var id = b.Property<int>("Id")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("integer")
+                    .HasColumnName("id");
+
+                NpgsqlPropertyBuilderExtensions.UseIdentityAlwaysColumn(id);
+
+                b.Property<DateTimeOffset>("CreatedAtTimestamp")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("timestamp with time zone")
+                    .HasColumnName("created_at_timestamp")
+                    .HasDefaultValueSql("now()");
+
+                b.Property<long>("CreatedByPortalUserId")
+                    .HasColumnType("bigint")
+                    .HasColumnName("created_by_portal_user_id");
+
+                b.Property<DateTimeOffset>("ExpiresAtTimestamp")
+                    .HasColumnType("timestamp with time zone")
+                    .HasColumnName("expires_at_timestamp");
+
+                b.Property<string>("InvitedEmail")
+                    .IsRequired()
+                    .HasMaxLength(320)
+                    .HasColumnType("character varying(320)")
+                    .HasColumnName("invited_email");
+
+                b.Property<int>("ProviderId")
+                    .HasColumnType("integer")
+                    .HasColumnName("provider_id");
+
+                b.Property<DateTimeOffset?>("RedeemedAtTimestamp")
+                    .HasColumnType("timestamp with time zone")
+                    .HasColumnName("redeemed_at_timestamp");
+
+                b.Property<long?>("RedeemedByPortalUserId")
+                    .HasColumnType("bigint")
+                    .HasColumnName("redeemed_by_portal_user_id");
+
+                b.Property<DateTimeOffset?>("RevokedAtTimestamp")
+                    .HasColumnType("timestamp with time zone")
+                    .HasColumnName("revoked_at_timestamp");
+
+                b.Property<int>("SavedViewId")
+                    .HasColumnType("integer")
+                    .HasColumnName("saved_view_id");
+
+                b.Property<string>("TokenHash")
+                    .IsRequired()
+                    .HasMaxLength(64)
+                    .HasColumnType("character varying(64)")
+                    .HasColumnName("token_hash");
+
+                b.Property<DateTimeOffset>("UpdatedAtTimestamp")
+                    .ValueGeneratedOnAddOrUpdate()
+                    .HasColumnType("timestamp with time zone")
+                    .HasColumnName("updated_at_timestamp")
+                    .HasDefaultValueSql("now()");
+
+                b.HasKey("Id")
+                    .HasName("pk_saved_view_invitation");
+
+                b.HasIndex("ExpiresAtTimestamp")
+                    .HasDatabaseName("ix_saved_view_invitation__expires_at_timestamp")
+                    .HasAnnotation("Npgsql:StorageParameter:fillfactor", 90);
+
+                b.HasIndex("SavedViewId")
+                    .HasDatabaseName("ix_saved_view_invitation__saved_view_id")
+                    .HasAnnotation("Npgsql:StorageParameter:fillfactor", 90);
+
+                b.HasIndex("TokenHash")
+                    .IsUnique()
+                    .HasDatabaseName("uk_saved_view_invitation__token_hash")
+                    .HasAnnotation("Npgsql:StorageParameter:fillfactor", 90);
+
+                b.ToTable("saved_view_invitation");
+
+                b.HasAnnotation("Npgsql:StorageParameter:fillfactor", 90);
+            });
+
+        modelBuilder.Entity("Prism.Infrastructure.Persistence.Entities.SavedViewShare", b =>
+            {
+                var id = b.Property<int>("Id")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("integer")
+                    .HasColumnName("id");
+
+                NpgsqlPropertyBuilderExtensions.UseIdentityAlwaysColumn(id);
+
+                b.Property<DateTimeOffset>("CreatedAtTimestamp")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("timestamp with time zone")
+                    .HasColumnName("created_at_timestamp")
+                    .HasDefaultValueSql("now()");
+
+                b.Property<int>("SavedViewId")
+                    .HasColumnType("integer")
+                    .HasColumnName("saved_view_id");
+
+                b.Property<int?>("SavedViewInvitationId")
+                    .HasColumnType("integer")
+                    .HasColumnName("saved_view_invitation_id");
+
+                b.Property<long>("SharedWithPortalUserId")
+                    .HasColumnType("bigint")
+                    .HasColumnName("shared_with_portal_user_id");
+
+                b.Property<DateTimeOffset>("UpdatedAtTimestamp")
+                    .ValueGeneratedOnAddOrUpdate()
+                    .HasColumnType("timestamp with time zone")
+                    .HasColumnName("updated_at_timestamp")
+                    .HasDefaultValueSql("now()");
+
+                b.HasKey("Id")
+                    .HasName("pk_saved_view_share");
+
+                b.HasIndex("SavedViewInvitationId")
+                    .HasDatabaseName("ix_saved_view_share__saved_view_invitation_id")
+                    .HasAnnotation("Npgsql:StorageParameter:fillfactor", 90);
+
+                b.HasIndex("SharedWithPortalUserId")
+                    .HasDatabaseName("ix_saved_view_share__shared_with_portal_user_id")
+                    .HasAnnotation("Npgsql:StorageParameter:fillfactor", 90);
+
+                b.HasIndex("SavedViewId", "SharedWithPortalUserId")
+                    .IsUnique()
+                    .HasDatabaseName("uk_saved_view_share__saved_view_id__shared_with_portal_user_id")
+                    .HasAnnotation("Npgsql:StorageParameter:fillfactor", 90);
+
+                b.ToTable("saved_view_share");
+
+                b.HasAnnotation("Npgsql:StorageParameter:fillfactor", 90);
+            });
+
+        modelBuilder.Entity("Prism.Infrastructure.Persistence.Entities.SavedViewInvitation", b =>
+            {
+                b.HasOne("Prism.Infrastructure.Persistence.Entities.SavedView", null)
+                    .WithMany()
+                    .HasForeignKey("SavedViewId")
+                    .OnDelete(DeleteBehavior.Restrict)
+                    .IsRequired()
+                    .HasConstraintName("fk_saved_view_invitation__saved_view_id__saved_view");
+            });
+
+        modelBuilder.Entity("Prism.Infrastructure.Persistence.Entities.SavedViewShare", b =>
+            {
+                b.HasOne("Prism.Infrastructure.Persistence.Entities.SavedView", null)
+                    .WithMany()
+                    .HasForeignKey("SavedViewId")
+                    .OnDelete(DeleteBehavior.Restrict)
+                    .IsRequired()
+                    .HasConstraintName("fk_saved_view_share__saved_view_id__saved_view");
+
+                b.HasOne("Prism.Infrastructure.Persistence.Entities.SavedViewInvitation", null)
+                    .WithMany()
+                    .HasForeignKey("SavedViewInvitationId")
+                    .OnDelete(DeleteBehavior.Restrict)
+                    .HasConstraintName("fk_saved_view_share__saved_view_invitation_id");
             });
 #pragma warning restore 612, 618
     }

@@ -1,5 +1,5 @@
 import { expect, test } from './fixtures';
-import { axeViolations, chooseNetCashView, layoutErrors, openDashboard } from './support';
+import { axeViolations, chooseNetCashView, layoutErrors, openDashboard, openSavedViews, openView } from './support';
 
 /** WCAG 2.2 AA beyond the static page: other states, other pages, user settings. Every test also gates on axe. */
 test.describe('accessibility', () => {
@@ -233,5 +233,128 @@ test.describe('accessibility', () => {
 
     const running = await page.evaluate(() => document.getAnimations().filter((a) => a.playState === 'running' && a.effect?.getTiming().iterations === Infinity).length);
     expect(running).toBe(0);
+  });
+
+  test.describe('saved views', () => {
+    test('each page has a title, one h1, one main, and headings that do not skip', async ({ page }) => {
+      for (const [open, title] of [
+        [() => openSavedViews(page), /^Saved views · Prism$/],
+        [() => openView(page, 5), /^Cash overview · Saved views · Prism$/],
+        [() => openView(page, 5, { edit: true }), /Cash overview · Saved views · Prism$/],
+      ] as const) {
+        await open();
+        await expect(page).toHaveTitle(title);
+        await expect(page.locator('h1')).toHaveCount(1);
+        await expect(page.locator('main')).toHaveCount(1);
+        const levels = await page.evaluate(() => [...document.querySelectorAll('h1, h2, h3, h4, h5, h6')].map((h) => Number(h.tagName[1])));
+        expect(levels.filter((level, i) => i > 0 && level - levels[i - 1]! > 1), `heading levels: ${levels.join(',')}`).toEqual([]);
+        const outside = await page.evaluate(() =>
+          [...document.querySelectorAll('h1, h2, button, a[href], input, textarea, [role="radio"]')]
+            .filter((el) => !el.closest('main, nav, header, footer, .skip-link, [role="main"], [role="navigation"], .cdk-overlay-container'))
+            .map((el) => el.tagName.toLowerCase() + ':' + (el.textContent ?? '').trim().slice(0, 20)),
+        );
+        expect(outside).toEqual([]);
+      }
+    });
+
+    test('an unsaved view shows in the page title', async ({ page }) => {
+      await openView(page, 5, { edit: true });
+
+      await page.getByRole('button', { name: 'Remove Clean claim rate' }).click();
+
+      await expect(page).toHaveTitle(/^• Cash overview/);
+    });
+
+    test('the widget settings pane passes axe in light and dark', async ({ page }) => {
+      for (const scheme of ['light', 'dark'] as const) {
+        await page.emulateMedia({ colorScheme: scheme });
+        await openView(page, 5, { edit: true });
+        await page.getByRole('button', { name: 'Settings for Net cash collected' }).click();
+        await page.getByRole('complementary', { name: 'Widget settings' }).waitFor();
+
+        expect(await axeViolations(page), scheme).toEqual([]);
+        expect((await layoutErrors(page)).errors, scheme).toEqual([]);
+      }
+    });
+
+    test('every icon-only button has a name and every chart has a text description and a table', async ({ page }) => {
+      await openView(page, 5, { edit: true });
+
+      const nameless = await page.evaluate(() => [...document.querySelectorAll('button')].filter((b) => !(b.getAttribute('aria-label') || b.textContent || '').replace(/[a-z_]+$/u, '').trim()).map((b) => b.className));
+      expect(nameless).toEqual([]);
+      const label = (await page.locator('app-metric-widget app-chart [role="img"]').first().getAttribute('aria-label')) ?? '';
+      expect(label.length).toBeGreaterThan(20);
+      expect(label.length).toBeLessThanOrEqual(250);
+      await page.getByRole('button', { name: 'Table', exact: true }).first().click();
+      await expect(page.locator('app-metric-widget table caption')).toHaveText('Net cash collected by month');
+    });
+
+    test('forced colors (Windows high contrast) keeps the grid, the toolbar and the palette usable', async ({ page }) => {
+      await page.emulateMedia({ forcedColors: 'active' });
+      await openView(page, 5, { edit: true });
+
+      await expect(page.getByRole('toolbar', { name: 'Net cash collected actions' })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Add Payer mix to view' })).toBeVisible();
+      const border = await page.locator('li.item').first().evaluate((el) => getComputedStyle(el.querySelector('ems-card') ?? el).borderTopWidth);
+      expect(border).not.toBe('');
+      expect((await layoutErrors(page)).errors).toEqual([]);
+      await page.screenshot({ path: 'e2e-report/saved-views-forced-colors.png', fullPage: true });
+    });
+
+    test('at 200% text nothing is cut off or covered', async ({ page }) => {
+      await openView(page, 5, { edit: true });
+      await page.addStyleTag({ content: 'html { font-size: 200% !important; }' });
+      await page.waitForTimeout(300);
+
+      expect((await layoutErrors(page)).errors).toEqual([]);
+      expect(await axeViolations(page)).toEqual([]);
+    });
+
+    test('at 400% zoom (a 320 by 256 window) the page reflows with no sideways scroll', async ({ page }) => {
+      await page.setViewportSize({ width: 320, height: 256 });
+      await openView(page, 5, { edit: true });
+
+      expect((await layoutErrors(page)).errors).toEqual([]);
+    });
+
+    test('WCAG text-spacing overrides do not cut text off', async ({ page }) => {
+      await openView(page, 5, { edit: true });
+      await page.addStyleTag({ content: '* { line-height: 1.5 !important; letter-spacing: 0.12em !important; word-spacing: 0.16em !important; } p { margin-bottom: 2em !important; }' });
+      await page.waitForTimeout(300);
+
+      expect((await layoutErrors(page)).errors).toEqual([]);
+    });
+
+    test('with reduced motion nothing animates while arranging', async ({ page }) => {
+      await page.emulateMedia({ reducedMotion: 'reduce' });
+      await openView(page, 5, { edit: true });
+      await page.getByRole('button', { name: 'Remove Clean claim rate' }).click();
+
+      const running = await page.evaluate(() => document.getAnimations().filter((a) => a.playState === 'running' && (a.effect?.getTiming().iterations ?? 1) === Infinity).length);
+      expect(running).toBe(0);
+    });
+
+    test('a long view name wraps instead of running off the page', async ({ page }) => {
+      await page.route(/\/api\/v1\/providers\/[^/]+\/saved-views\/5$/, (route) =>
+        route.fulfill({
+          headers: { ETag: '"1"' },
+          json: {
+            id: 5,
+            name: 'A very long view name that goes on and on about quarterly cash and payer mix for every base and every aircraft type we fly',
+            description: null,
+            ownerName: 'jdoe',
+            isOwner: true,
+            version: '1',
+            updatedAt: '2026-11-22T10:00:00Z',
+            layout: { version: 1, density: 'comfortable', widgets: [{ id: 'w1', metricKey: 'net_collections', presentation: 'line', x: 0, y: 0, w: 6, h: 3 }] },
+          },
+        }),
+      );
+      await page.setViewportSize({ width: 320, height: 700 });
+      await openView(page, 5);
+
+      expect((await layoutErrors(page)).errors).toEqual([]);
+      expect(await axeViolations(page)).toEqual([]);
+    });
   });
 });

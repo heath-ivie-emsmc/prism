@@ -125,7 +125,7 @@ public sealed class SignInTests : IDisposable
         string body = await me.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
         Assert.Contains("\"userName\":\"jdoe\"", body, StringComparison.Ordinal);
         Assert.Contains("\"displayName\":\"Jane Doe\"", body, StringComparison.Ordinal);
-        Assert.Contains("\"permissions\":[\"prism.app\",\"prism.dashboard.view\"]", body, StringComparison.Ordinal);
+        Assert.Contains("\"permissions\":[\"prism.app\",\"prism.dashboard.view\",\"prism.views.manage\"]", body, StringComparison.Ordinal);
         Assert.Contains("\"providers\":[{\"id\":\"100\",\"name\":\"Mercy Air\",\"facilityCount\":2}]", body, StringComparison.Ordinal);
         Assert.DoesNotContain("facilityIds", body, StringComparison.Ordinal);
     }

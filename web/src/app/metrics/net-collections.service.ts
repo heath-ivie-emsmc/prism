@@ -176,6 +176,66 @@ export interface CleanClaimRateDto {
   readonly points: readonly CleanClaimPointDto[];
 }
 
+/** Cash posted in one month for transports of one payer group that were a given number of months old when paid. */
+export interface PaymentAgeCellDto {
+  readonly payerKey: string;
+  readonly payerName: string;
+  readonly postingPeriod: string;
+  readonly ageMonths: number;
+  readonly cash: number;
+  readonly transports: number;
+}
+
+/** Response of GET /api/v1/providers/{providerId}/metrics/net-collections/payment-age. */
+export interface PaymentAgeDto {
+  readonly metric: MetricDto;
+  readonly providerId: string;
+  readonly period: string | null;
+  readonly serviceLine: 'all' | 'air' | 'ground';
+  readonly group: string | null;
+  readonly cells: readonly PaymentAgeCellDto[];
+}
+
+/** Matured net cash per transport for one payer group. `cashPerTransport` is null when there are no transports. */
+export interface PayerCashPerTransportDto {
+  readonly key: string;
+  readonly name: string;
+  readonly transports: number;
+  readonly cash: number;
+  readonly cashPerTransport: number | null;
+}
+
+/** Response of GET /api/v1/providers/{providerId}/metrics/net-collections/cash-per-transport. */
+export interface CashPerTransportDto {
+  readonly metric: MetricDto;
+  readonly providerId: string;
+  readonly period: string | null;
+  readonly cohortFrom: string | null;
+  readonly cohortThrough: string | null;
+  readonly serviceLine: 'all' | 'air' | 'ground';
+  readonly group: string | null;
+  readonly payers: readonly PayerCashPerTransportDto[];
+}
+
+/** Cash posted in one month for one aircraft type or level of service. */
+export interface NetCashByGroupPointDto {
+  readonly groupKey: string;
+  readonly groupName: string;
+  readonly serviceLine: 'air' | 'ground';
+  readonly period: string;
+  readonly cash: number;
+  readonly transports: number;
+}
+
+/** Response of GET /api/v1/providers/{providerId}/metrics/net-collections/by-group. */
+export interface NetCashByGroupDto {
+  readonly metric: MetricDto;
+  readonly providerId: string;
+  readonly period: string | null;
+  readonly serviceLine: 'all' | 'air' | 'ground';
+  readonly points: readonly NetCashByGroupPointDto[];
+}
+
 /** Reads net cash for a Provider. The Provider is in the path, and the API checks it against the user's assignments on every call. */
 @Injectable({ providedIn: 'root' })
 export class NetCollectionsService {
@@ -195,14 +255,30 @@ export class NetCollectionsService {
     return this.http.get<NetCashProjectionDto>(`${this.base(providerId)}/projection`, { params });
   }
 
-  breakdown(providerId: string, period: string, serviceLine: 'air' | 'ground'): Observable<NetCashBreakdownDto> {
+  breakdown(providerId: string, period: string, serviceLine: 'all' | 'air' | 'ground'): Observable<NetCashBreakdownDto> {
     const params = new HttpParams().set('period', period).set('serviceLine', serviceLine);
     return this.http.get<NetCashBreakdownDto>(`${this.base(providerId)}/breakdown`, { params });
   }
 
-  payerMix(providerId: string, period: string, serviceLine: 'air' | 'ground', group: string): Observable<PayerMixDto> {
-    const params = new HttpParams().set('period', period).set('serviceLine', serviceLine).set('group', group);
-    return this.http.get<PayerMixDto>(`${this.base(providerId)}/payer-mix`, { params });
+  payerMix(providerId: string, period: string, serviceLine: 'all' | 'air' | 'ground', group?: string): Observable<PayerMixDto> {
+    return this.http.get<PayerMixDto>(`${this.base(providerId)}/payer-mix`, { params: this.periodParams(period, serviceLine, group) });
+  }
+
+  paymentAge(providerId: string, period: string, serviceLine: 'all' | 'air' | 'ground'): Observable<PaymentAgeDto> {
+    return this.http.get<PaymentAgeDto>(`${this.base(providerId)}/payment-age`, { params: this.periodParams(period, serviceLine) });
+  }
+
+  cashPerTransport(providerId: string, period: string, serviceLine: 'all' | 'air' | 'ground'): Observable<CashPerTransportDto> {
+    return this.http.get<CashPerTransportDto>(`${this.base(providerId)}/cash-per-transport`, { params: this.periodParams(period, serviceLine) });
+  }
+
+  byGroup(providerId: string, period: string, serviceLine: 'all' | 'air' | 'ground'): Observable<NetCashByGroupDto> {
+    return this.http.get<NetCashByGroupDto>(`${this.base(providerId)}/by-group`, { params: this.periodParams(period, serviceLine) });
+  }
+
+  private periodParams(period: string, serviceLine: string, group?: string): HttpParams {
+    const params = new HttpParams().set('period', period).set('serviceLine', serviceLine);
+    return group ? params.set('group', group) : params;
   }
 
   transports(providerId: string, endPeriod: string, months: number, serviceLine: 'all' | 'air' | 'ground'): Observable<TransportVolumeDto> {

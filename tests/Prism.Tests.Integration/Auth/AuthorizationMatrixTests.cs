@@ -21,6 +21,10 @@ public sealed class AuthorizationMatrixTests : IDisposable
 
     public void Dispose() => factory.Dispose();
 
+    /// <summary>The route with every parameter, including constrained ones like <c>{viewId:int}</c>, replaced by a value that satisfies it.</summary>
+    private static string Concrete(string route) =>
+        System.Text.RegularExpressions.Regex.Replace(route, @"\{[^}]+\}", "1", System.Text.RegularExpressions.RegexOptions.None, TimeSpan.FromSeconds(1));
+
     private List<(string Route, string[] Methods, bool Anonymous)> ApiRoutes()
     {
         using HttpClient warmup = factory.CreateClient();
@@ -56,7 +60,7 @@ public sealed class AuthorizationMatrixTests : IDisposable
         {
             foreach (string method in methods)
             {
-                using HttpResponseMessage response = await client.SendAsync(new HttpMethod(method), route);
+                using HttpResponseMessage response = await client.SendAsync(new HttpMethod(method), Concrete(route));
 
                 Assert.True(
                     response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden,
@@ -97,7 +101,7 @@ public sealed class AuthorizationMatrixTests : IDisposable
         {
             foreach (string method in methods)
             {
-                using HttpResponseMessage response = await limited.SendAsync(new HttpMethod(method), route);
+                using HttpResponseMessage response = await limited.SendAsync(new HttpMethod(method), Concrete(route));
 
                 Assert.True(
                     response.StatusCode is HttpStatusCode.Forbidden or HttpStatusCode.NotFound,

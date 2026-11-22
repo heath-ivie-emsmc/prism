@@ -1,6 +1,7 @@
 import { Routes } from '@angular/router';
 import { anonymousOnlyGuard, authGuard } from './auth/auth.guard';
 import { ShellComponent } from './shell/shell.component';
+import { unsavedChangesGuard } from './saved-views/unsaved-changes.guard';
 
 export const routes: Routes = [
   {
@@ -25,6 +26,26 @@ export const routes: Routes = [
       {
         path: 'dashboard/net-cash/:group',
         loadComponent: () => import('./payer-mix/payer-mix.component').then((m) => m.PayerMixComponent),
+      },
+      {
+        path: 'saved-views',
+        title: 'Saved views · Prism',
+        loadComponent: () => import('./saved-views/saved-views-list.component').then((m) => m.SavedViewsListComponent),
+      },
+      {
+        path: 'saved-views/new',
+        canDeactivate: [unsavedChangesGuard],
+        loadComponent: () => import('./saved-views/view-builder.component').then((m) => m.ViewBuilderComponent),
+      },
+      {
+        path: 'saved-view-invitations/redeem',
+        title: 'Shared view · Prism',
+        loadComponent: () => import('./saved-views/redeem-invitation.component').then((m) => m.RedeemInvitationComponent),
+      },
+      {
+        path: 'saved-views/:id',
+        canDeactivate: [unsavedChangesGuard],
+        loadComponent: () => import('./saved-views/view-builder.component').then((m) => m.ViewBuilderComponent),
       },
     ],
   },

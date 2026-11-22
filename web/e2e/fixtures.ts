@@ -5,7 +5,7 @@ const MOCK_ME = {
   userName: 'jdoe',
   displayName: 'Jane Doe',
   providers: [{ id: '526', name: 'Seminole County Fire Department', facilityCount: 3 }],
-  permissions: ['dashboard.view'],
+  permissions: ['prism.app', 'prism.dashboard.view', 'prism.views.manage'],
 };
 
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -263,11 +263,121 @@ async function mockNetCollections(page: import('@playwright/test').Page): Promis
   });
 }
 
+type Pres = { key: string; name: string; icon: string; sizes: string[]; minWidth: number; minHeight: number; maxWidth: number; maxHeight: number; isDefault: boolean };
+const pres = (key: string, name: string, icon: string, isDefault: boolean, sizes = ['M', 'L'], bounds: [number, number, number, number] = [6, 3, 12, 6]): Pres => ({
+  key, name, icon, sizes, minWidth: bounds[0], minHeight: bounds[1], maxWidth: bounds[2], maxHeight: bounds[3], isDefault,
+});
+const LINE = (d: boolean) => pres('line', 'Line', 'show_chart', d);
+const COLUMN = (d: boolean) => pres('column', 'Column', 'bar_chart', d);
+const TABLE = (d: boolean) => pres('table', 'Table', 'table_rows', d);
+const TILE = (d: boolean) => pres('tile', 'Tile', 'pin', d, ['S', 'M', 'L'], [3, 2, 6, 3]);
+
+function available(key: string, name: string, description: string, unit: string, category: string, presentations: Pres[], months = false) {
+  return {
+    key, name, description, unit, category, status: 'available', placeable: true, claimLevel: false,
+    serviceLines: ['air', 'ground', 'both'], dimensions: months ? ['period', 'months', 'serviceLine'] : ['period', 'serviceLine'], presentations,
+    options: months ? [{ key: 'months', name: 'Months shown', type: 'choice', choices: ['6', '12'], default: '6', appliesTo: presentations.map((p) => p.key) }] : [],
+  };
+}
+
+const planned = (key: string, name: string, description: string, unit: string, category: string, claimLevel = false) => ({
+  key, name, description, unit, category, status: 'planned', placeable: false, claimLevel, serviceLines: [], dimensions: [], presentations: [], options: [],
+});
+
+/** The Metric Catalog as the API serves it, in the shape the palette and the settings pane read. */
+export const CATALOG = {
+  categories: [
+    { key: 'cash', name: 'Cash' }, { key: 'transports', name: 'Transports' }, { key: 'payer', name: 'Payers' },
+    { key: 'claims', name: 'Claims and AR' }, { key: 'fleet', name: 'Fleet and bases' }, { key: 'insights', name: 'Insights' },
+  ],
+  metrics: [
+    available('net_collections', 'Net cash collected', 'Cash collected in the accounting period, after refunds.', 'USD', 'cash', [LINE(true), COLUMN(false), TABLE(false)], true),
+    available('net_cash_projection', 'Projected net cash', 'Cash the data warehouse forecasts for the months after the chosen period.', 'USD', 'cash', [COLUMN(true), LINE(false), TABLE(false)]),
+    available('transport_volume', 'Transports and loaded miles', 'Transports by month of service and the loaded miles billed.', 'transports', 'transports', [TILE(true), COLUMN(false), TABLE(false)], true),
+    available('payer_mix', 'Payer mix', 'Transports by the primary payer group.', 'transports', 'payer', [COLUMN(true), TABLE(false)]),
+    available('clean_claim_rate', 'Clean claim rate', 'The share of claims accepted first time.', 'percent', 'claims', [TILE(true), LINE(false), TABLE(false)], true),
+    { ...planned('what_changed', 'What changed', 'A written summary of the findings behind a change in net cash.', 'text', 'insights'), status: 'available' },
+    planned('ar_days', 'AR days', 'Days in accounts receivable, with the trend.', 'days', 'claims'),
+    planned('aircraft_performance', 'Aircraft performance', 'Transports, loaded miles and net cash by tail number.', 'USD', 'fleet'),
+    planned('denied_claims', 'Denied claims', 'Denied claims with payer, reason and deadline.', 'claims', 'claims', true),
+  ],
+};
+
+type StoredView = { id: number; name: string; description: string | null; ownerName: string; isOwner: boolean; layout: unknown; version: number; updatedAt: string };
+
+const w = (id: string, metricKey: string, presentation: string, x: number, y: number, ww: number, h: number, options?: Record<string, string>) => ({ id, metricKey, presentation, x, y, w: ww, h, ...(options ? { options } : {}) });
+
+/** Views the mocked user starts with: one of their own with two metrics, one shared with them, and one that names a metric the catalog no longer has. */
+function seedViews(): StoredView[] {
+  const base = { description: null, updatedAt: '2026-11-22T10:00:00Z' };
+  return [
+    { ...base, id: 5, name: 'Cash overview', ownerName: 'jdoe', isOwner: true, version: 1, layout: { version: 1, density: 'comfortable', widgets: [w('w1', 'net_collections', 'line', 0, 0, 6, 3), w('w2', 'clean_claim_rate', 'tile', 6, 0, 3, 2)] } },
+    { ...base, id: 6, name: 'Executive summary', ownerName: 'asmith', isOwner: false, version: 1, layout: { version: 1, density: 'comfortable', widgets: [w('w1', 'transport_volume', 'tile', 0, 0, 3, 2)] } },
+    { ...base, id: 7, name: 'Old layout', ownerName: 'jdoe', isOwner: true, version: 1, layout: { version: 1, density: 'comfortable', widgets: [w('w1', 'retired_metric', 'line', 0, 0, 6, 3), w('w2', 'net_collections', 'table', 6, 0, 6, 3)] } },
+  ];
+}
+
+/** The saved views routes, backed by a small in-memory store so a test can save, reload and delete. A test overrides a route for a failure case. */
+async function mockSavedViews(page: import('@playwright/test').Page): Promise<void> {
+  const views = new Map(seedViews().map((v) => [v.id, v]));
+  let next = 8;
+  const etag = (v: StoredView) => ({ ETag: `"${v.version}"` });
+  const body = (v: StoredView) => ({ ...v, version: String(v.version) });
+  const summary = (v: StoredView) => ({ id: v.id, name: v.name, description: v.description, ownerName: v.ownerName, isOwner: v.isOwner, widgetCount: (v.layout as { widgets: unknown[] }).widgets.length, updatedAt: v.updatedAt });
+
+  await page.route('**/api/v1/providers/*/metrics/catalog', (route) => route.fulfill({ json: CATALOG }));
+  await page.route(/\/api\/v1\/providers\/[^/]+\/saved-views(\?.*)?$/, async (route) => {
+    const request = route.request();
+    if (request.method() === 'GET') {
+      const all = [...views.values()];
+      return route.fulfill({ json: { mine: all.filter((v) => v.isOwner).map(summary), shared: all.filter((v) => !v.isOwner).map(summary) } });
+    }
+    const input = request.postDataJSON() as { name: string; description: string | null; layout: unknown };
+    if ([...views.values()].some((v) => v.isOwner && v.name === input.name)) {
+      return route.fulfill({ status: 409, json: { title: 'You already have a view with this name.' } });
+    }
+    const created: StoredView = { id: next++, name: input.name, description: input.description, ownerName: 'jdoe', isOwner: true, layout: input.layout, version: 1, updatedAt: new Date().toISOString() };
+    views.set(created.id, created);
+    return route.fulfill({ status: 201, headers: etag(created), json: body(created) });
+  });
+  await page.route(/\/api\/v1\/providers\/[^/]+\/saved-views\/(\d+)$/, async (route) => {
+    const request = route.request();
+    const id = Number(request.url().match(/saved-views\/(\d+)$/)![1]);
+    const view = views.get(id);
+    if (!view) {
+      return route.fulfill({ status: 404, json: { title: 'Not Found' } });
+    }
+    if (request.method() === 'GET') {
+      return route.fulfill({ headers: etag(view), json: body(view) });
+    }
+    if (request.method() === 'DELETE') {
+      views.delete(id);
+      return route.fulfill({ status: 204 });
+    }
+    if (request.headers()['if-match'] !== `"${view.version}"`) {
+      return route.fulfill({ status: 412, json: { title: 'This view was saved by someone else since you opened it.' } });
+    }
+    const input = request.postDataJSON() as { name: string; description: string | null; layout: unknown };
+    Object.assign(view, { name: input.name, description: input.description, layout: input.layout, version: view.version + 1 });
+    return route.fulfill({ headers: etag(view), json: body(view) });
+  });
+  await page.route(/\/saved-views\/\d+\/shares$/, (route) => route.fulfill({ json: { recipients: [], pending: [] } }));
+  await page.route(/\/saved-views\/\d+\/invitations$/, (route) => {
+    const emails = (route.request().postDataJSON() as { emails: string[] }).emails;
+    return route.fulfill({ json: { sent: emails.map((email, i) => ({ invitationId: i + 1, email, expiresAt: '2026-11-29T00:00:00Z', isExpired: false })), failed: [] } });
+  });
+  await page.route('**/api/v1/saved-view-invitations/redeem', (route) => {
+    const token = (route.request().postDataJSON() as { token?: string } | null)?.token;
+    return token === 'T'.repeat(43) ? route.fulfill({ json: { providerId: '526', viewId: 6 } }) : route.fulfill({ status: 404, json: { title: 'Not Found' } });
+  });
+}
+
 export const test = base.extend({
   page: async ({ page }, use) => {
     if (!process.env['PRISM_E2E_STORAGE_STATE']) {
       await page.route('**/api/v1/me', (route) => route.fulfill({ json: MOCK_ME }));
       await mockNetCollections(page);
+      await mockSavedViews(page);
     }
     await use(page);
   },

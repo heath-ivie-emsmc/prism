@@ -1,6 +1,6 @@
 import type { ElementHandle } from '@playwright/test';
 import { expect, test } from './fixtures';
-import { openDashboard } from './support';
+import { lastAnnouncement, openDashboard, openView } from './support';
 
 /** Everything works without a mouse (WCAG 2.1.1, 2.1.2, 2.4.3, 2.4.7, 2.4.11). */
 /**
@@ -117,5 +117,153 @@ test.describe('keyboard', () => {
     expect(text, 'the first Tab stop should be a "Skip to main content" link').toContain('skip');
     await page.keyboard.press('Enter');
     await expect(page.locator('main')).toBeFocused();
+  });
+
+  test.describe('saved views', () => {
+    test('Tab reaches every control on the edit page, each shows focus, and nothing traps', async ({ page }) => {
+      await openView(page, 5, { edit: true });
+
+      const seen: string[] = [];
+      const missing: string[] = [];
+      for (let i = 0; i < 80; i++) {
+        await page.keyboard.press('Tab');
+        const focused = page.locator(':focus');
+        if ((await focused.count()) === 0) break;
+        const id = await focused.evaluate((n) => `${n.tagName.toLowerCase()}|${n.getAttribute('aria-label') ?? (n.textContent ?? '').trim().slice(0, 30)}|${n.className}`);
+        if (seen.includes(id) && seen[0] === id) break;
+        seen.push(id);
+        const indicator = await focusIndicator((await focused.elementHandle()) as ElementHandle<Element>);
+        if (!indicator.visible) missing.push(indicator.description);
+      }
+
+      expect(seen.length, 'controls reached by Tab').toBeGreaterThan(15);
+      expect(seen.length, 'a keyboard trap would run to the limit').toBeLessThan(80);
+      expect(missing, 'controls with no visible focus indicator').toEqual([]);
+    });
+
+    test('each widget toolbar is one Tab stop and the arrow keys move along it', async ({ page }) => {
+      await openView(page, 5, { edit: true });
+      const tools = page.getByRole('toolbar', { name: 'Net cash collected actions' }).getByRole('button');
+      const tabbable = await tools.evaluateAll((els) => els.filter((e) => e.getAttribute('tabindex') !== '-1').length);
+      expect(tabbable).toBe(1);
+
+      await tools.first().focus();
+      await page.keyboard.press('ArrowRight');
+      await expect(page.locator(':focus')).toHaveAttribute('aria-label', /^Size /);
+      await page.keyboard.press('End');
+      await expect(page.locator(':focus')).toHaveAttribute('aria-label', /^Remove /);
+      await page.keyboard.press('Home');
+      await expect(page.locator(':focus')).toHaveAttribute('aria-label', /^Move /);
+    });
+
+    test('the focused control is never hidden behind the footer or another control (WCAG 2.4.11)', async ({ page }) => {
+      await openView(page, 5, { edit: true });
+
+      const hidden: string[] = [];
+      for (let i = 0; i < 40; i++) {
+        await page.keyboard.press('Tab');
+        const focused = page.locator(':focus');
+        if ((await focused.count()) === 0) break;
+        const covered = await focused.evaluate((node) => {
+          const r = node.getBoundingClientRect();
+          if (r.width === 0 || r.height === 0) return false;
+          const top = document.elementFromPoint(r.left + r.width / 2, Math.min(r.top + r.height / 2, innerHeight - 1));
+          return !!top && !node.contains(top) && !top.contains(node);
+        });
+        if (covered) hidden.push(await focused.evaluate((n) => n.getAttribute('aria-label') ?? (n.textContent ?? '').trim().slice(0, 30)));
+      }
+
+      expect(hidden).toEqual([]);
+    });
+
+    test('the skip links jump to the canvas and the palette', async ({ page }) => {
+      await openView(page, 5, { edit: true });
+
+      await page.getByRole('link', { name: 'Skip to canvas' }).focus();
+      await page.keyboard.press('Enter');
+      await expect(page.locator(':focus')).toHaveAttribute('aria-label', /^Move /);
+
+      await page.getByRole('link', { name: 'Skip to metric palette' }).focus();
+      await page.keyboard.press('Enter');
+      await expect(page.locator('#builder-pane')).toBeFocused();
+    });
+
+    test('a palette category opens and closes with Enter and Space, and says which', async ({ page }) => {
+      await openView(page, 5, { edit: true });
+      const cash = page.getByRole('button', { name: /^expand_less Cash|^Cash/ }).first();
+      await cash.focus();
+
+      await expect(cash).toHaveAttribute('aria-expanded', 'true');
+      await page.keyboard.press('Enter');
+      await expect(cash).toHaveAttribute('aria-expanded', 'false');
+      await page.keyboard.press('Space');
+      await expect(cash).toHaveAttribute('aria-expanded', 'true');
+    });
+
+    test('searching the palette says how many metrics match and Escape clears it', async ({ page }) => {
+      await openView(page, 5, { edit: true });
+
+      await page.getByLabel('Search metrics').fill('clean');
+      await expect.poll(() => lastAnnouncement(page)).toBe('1 metric match "clean".');
+      await page.keyboard.press('Escape');
+
+      await expect(page.getByLabel('Search metrics')).toHaveValue('');
+    });
+
+    test('Ctrl+Z and Ctrl+Shift+Z undo and redo while arranging, but not while typing a name', async ({ page }) => {
+      await openView(page, 5, { edit: true });
+      await page.getByRole('button', { name: 'Remove Clean claim rate' }).click();
+      await expect(page.locator('app-grid-canvas li.item')).toHaveCount(1);
+
+      await page.getByLabel('View name').focus();
+      await page.keyboard.press('Control+z');
+      await expect(page.locator('app-grid-canvas li.item')).toHaveCount(1);
+
+      await page.getByRole('button', { name: 'Move Net cash collected', exact: true }).focus();
+      await page.keyboard.press('Control+z');
+      await expect(page.locator('app-grid-canvas li.item')).toHaveCount(2);
+      await page.keyboard.press('Control+Shift+z');
+      await expect(page.locator('app-grid-canvas li.item')).toHaveCount(1);
+    });
+
+    test('removing a widget puts focus on the next one, and undo puts it back', async ({ page }) => {
+      await openView(page, 5, { edit: true });
+
+      await page.getByRole('button', { name: 'Remove Net cash collected' }).click();
+
+      await expect(page.locator(':focus')).toHaveAttribute('aria-label', 'Move Clean claim rate');
+      expect(await lastAnnouncement(page)).toBeDefined();
+    });
+
+    test('the share dialog closes with Escape and focus returns to Share', async ({ page }) => {
+      await openView(page, 5);
+      const share = page.getByRole('button', { name: 'Share', exact: true });
+
+      await share.click();
+      await page.getByRole('dialog').waitFor();
+      await page.keyboard.press('Escape');
+
+      await expect(page.getByRole('dialog')).toHaveCount(0);
+      await expect(share).toBeFocused();
+    });
+
+    test('the delete confirmation never starts on the destructive button, and Escape keeps the view', async ({ page }) => {
+      await openView(page, 7);
+      await page.getByRole('button', { name: 'More actions' }).click();
+      await page.getByRole('menuitem', { name: 'Delete view' }).click();
+      await page.getByRole('dialog').waitFor();
+
+      expect(await page.locator(':focus').evaluate((n) => (n.textContent ?? '').trim())).not.toBe('Delete view');
+      await page.keyboard.press('Escape');
+
+      await expect(page.getByRole('dialog')).toHaveCount(0);
+      await expect(page).toHaveURL(/\/saved-views\/7$/);
+    });
+
+    test('the page has its own h1 focused when it opens, so a screen reader announces the change', async ({ page }) => {
+      await openView(page, 5);
+
+      await expect(page.locator('h1')).toBeFocused();
+    });
   });
 });

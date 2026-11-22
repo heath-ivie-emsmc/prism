@@ -47,3 +47,16 @@ _Avoid_: AI summary, analysis, report
 **Label**:
 The display name a Provider sees for a renamable term, such as Reporting Division. It is set per Provider, with defaults by Service Line, and never changes the term's API key.
 _Avoid_: Alias, custom field name, translation
+
+**Saved View**:
+A dashboard layout a user arranged and saved: which Metrics, drawn which way, and where on a 12-column grid. It belongs to one user in one Provider and can be shared by emailed invitation with other users who have access to that Provider. It stores Metric keys and positions only, never figures, Labels or filter values, so it always shows the data its viewer is allowed to see.
+_Avoid_: Dashboard, report, template, layout (as a name for the thing a user keeps)
+
+**Widget**:
+One Metric placed on a Saved View, with its presentation (line, column, table, tile and so on), its options and its place on the grid. The same Metric can appear twice.
+_Avoid_: Card, tile (a tile is one presentation of a Widget), panel
+
+**Invitation**:
+An emailed, time-limited, single-use link that gives one signed-in user read access to a Saved View. Only a hash of its token is stored.
+_Avoid_: Share link, invite code
+

@@ -74,6 +74,94 @@
         }
       }
     },
+    "/api/v1/saved-view-invitations/redeem": {
+      "post": {
+        "tags": [
+          "Saved views"
+        ],
+        "summary": "Open a shared Saved View from an emailed link",
+        "description": "Uses up the invitation \u0060token\u0060 from the emailed link and gives the signed-in user read access to that view. The token works once, until it expires, and not after the owner revokes it. The caller must be assigned to the view\u0027s Provider. Every failure (unknown, used, expired, revoked or out-of-scope) returns the same 404, so nothing says whether a token, a view or an address exists. Returns the Provider and view to open. Example body: \u0060{\u0022token\u0022:\u0022\u003C43 characters from the link\u003E\u0022}\u0060.",
+        "operationId": "RedeemSavedViewInvitation",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/RedeemRequest"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RedeemResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/providers/{providerId}/metrics/net-collections": {
       "get": {
         "tags": [
@@ -1060,6 +1148,68 @@
         }
       }
     },
+    "/api/v1/providers/{providerId}/metrics/catalog": {
+      "get": {
+        "tags": [
+          "Metrics"
+        ],
+        "summary": "The Metric Catalog",
+        "description": "Every Metric a Saved View can show, grouped by \u0060categories\u0060. \u0060status\u0060 is \u0060available\u0060 or \u0060planned\u0060: a planned Metric is listed so the palette can show it as coming soon, and cannot be placed. \u0060placeable\u0060 is false for something computed on the dashboard only, such as \u0060what_changed\u0060. \u0060dimensions\u0060 are the filters the Metric honors (\u0060period\u0060, \u0060months\u0060, \u0060serviceLine\u0060, \u0060group\u0060, \u0060division\u0060); a Metric that does not list \u0060division\u0060 ignores the Reporting Division filter. \u0060presentations\u0060 are the ways it can be drawn, each with the preset sizes (\u0060S\u0060, \u0060M\u0060, \u0060L\u0060) that suit it and its bounds in columns and rows of the 12-column grid. \u0060options\u0060 are the settings a widget exposes, as \u0060choice\u0060 or \u0060toggle\u0060. \u0060claimLevel\u0060 marks a Metric that would carry claim detail and so stays planned until it has its own permission and an audit record. Definitions only: no figures, and the same for every Provider the caller can read.",
+        "operationId": "GetMetricCatalog",
+        "parameters": [
+          {
+            "name": "providerId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MetricCatalogResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/providers/{providerId}/insights/what-changed": {
       "get": {
         "tags": [
@@ -1155,6 +1305,775 @@
           },
           "503": {
             "description": "Service Unavailable",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/providers/{providerId}/saved-views": {
+      "get": {
+        "tags": [
+          "Saved views"
+        ],
+        "summary": "The caller\u0027s Saved Views and the ones shared with them",
+        "description": "\u0060mine\u0060 are the views the caller owns and \u0060shared\u0060 the ones shared with them, each by name. A list never includes a layout. Up to 200 of each, by name.",
+        "operationId": "ListSavedViews",
+        "parameters": [
+          {
+            "name": "providerId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SavedViewListResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Saved views"
+        ],
+        "summary": "Save a new view",
+        "description": "Creates a view owned by the caller. \u0060name\u0060 is 1 to 80 characters and unique among the caller\u0027s views in this Provider. \u0060layout\u0060 is \u0060{\u0022version\u0022:1,\u0022density\u0022:\u0022comfortable\u0022,\u0022widgets\u0022:[{\u0022id\u0022:\u0022w1\u0022,\u0022metricKey\u0022:\u0022net_collections\u0022,\u0022presentation\u0022:\u0022line\u0022,\u0022options\u0022:{\u0022months\u0022:\u00226\u0022},\u0022x\u0022:0,\u0022y\u0022:0,\u0022w\u0022:6,\u0022h\u0022:3}]}\u0060: at most 24 widgets on 12 columns, each a Metric from the catalog that is available and placeable, drawn one of the ways the catalog allows, with options and sizes the catalog allows. A bad layout returns 400 with codes and never the values sent. An \u0060ownerId\u0060 or \u0060providerId\u0060 in the body is ignored. At most 100 views per owner and Provider.",
+        "operationId": "CreateSavedView",
+        "parameters": [
+          {
+            "name": "providerId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/SavedViewRequest"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SavedViewResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/providers/{providerId}/saved-views/{viewId}": {
+      "get": {
+        "tags": [
+          "Saved views"
+        ],
+        "summary": "One Saved View with its layout",
+        "description": "The view if the caller owns it or it was shared with them, otherwise 404 (a view that is missing, in another Provider or not theirs look the same). \u0060isOwner\u0060 is false for a recipient, who can open it but not change it. The \u0060ETag\u0060 header is the version to send back as \u0060If-Match\u0060 when saving.",
+        "operationId": "GetSavedView",
+        "parameters": [
+          {
+            "name": "providerId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "viewId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SavedViewResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Saved views"
+        ],
+        "summary": "Save changes to a view",
+        "description": "Owner only. Send the \u0060ETag\u0060 you loaded as \u0060If-Match\u0060: if the view was saved by someone else since, the answer is 412 and nothing changes. Without \u0060If-Match\u0060 the answer is 428. Same body rules as creating a view.",
+        "operationId": "UpdateSavedView",
+        "parameters": [
+          {
+            "name": "providerId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "viewId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/SavedViewRequest"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SavedViewResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "Precondition Failed",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "Precondition Required",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Saved views"
+        ],
+        "summary": "Delete a view",
+        "description": "Owner only. Removes the view with its recipients and pending invitations. Recipients lose access at once.",
+        "operationId": "DeleteSavedView",
+        "parameters": [
+          {
+            "name": "providerId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "viewId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/providers/{providerId}/saved-views/{viewId}/invitations": {
+      "post": {
+        "tags": [
+          "Saved views"
+        ],
+        "summary": "Email an invitation to open a view",
+        "description": "Owner only. Emails each address in \u0060emails\u0060 (at most 10 a request) a link that works once and expires. Example body: \u0060{\u0022emails\u0022:[\u0022colleague@example.org\u0022]}\u0060. An address with a pending invitation gets a fresh one and the old link stops working. The email names the view and the sender only. \u0060sent\u0060 are the invitations made and \u0060failed\u0060 the addresses whose email could not be sent (their invitations are revoked). A view has at most 50 recipients and pending invitations, and an owner can send 30 an hour. Returns 503 when invitations are not turned on for this host or no email could be sent.",
+        "operationId": "InviteToSavedView",
+        "parameters": [
+          {
+            "name": "providerId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "viewId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/InviteRequest"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InviteResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service Unavailable",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/providers/{providerId}/saved-views/{viewId}/shares": {
+      "get": {
+        "tags": [
+          "Saved views"
+        ],
+        "summary": "Who can open a view, and the invitations still waiting",
+        "description": "Owner only. \u0060recipients\u0060 have redeemed an invitation (\u0060email\u0060 is the address it went to). \u0060pending\u0060 have not been used, revoked or (when \u0060isExpired\u0060) have run out.",
+        "operationId": "ListSavedViewShares",
+        "parameters": [
+          {
+            "name": "providerId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "viewId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SharingResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/providers/{providerId}/saved-views/{viewId}/shares/{shareId}": {
+      "delete": {
+        "tags": [
+          "Saved views"
+        ],
+        "summary": "Remove a recipient",
+        "description": "Owner only. The recipient can no longer open the view.",
+        "operationId": "RevokeSavedViewShare",
+        "parameters": [
+          {
+            "name": "providerId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "viewId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "shareId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/providers/{providerId}/saved-views/{viewId}/invitations/{invitationId}": {
+      "delete": {
+        "tags": [
+          "Saved views"
+        ],
+        "summary": "Cancel a pending invitation",
+        "description": "Owner only. The emailed link stops working.",
+        "operationId": "RevokeSavedViewInvitation",
+        "parameters": [
+          {
+            "name": "providerId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "viewId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "invitationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
             "content": {
               "application/problem\u002Bjson": {
                 "schema": {
@@ -1344,6 +2263,195 @@
         },
         "description": "Matured net cash per transport by payer group for \u0060Period\u0060. The cohorts are the transports flown from \u0060CohortFrom\u0060 to \u0060CohortThrough\u0060.\n\u0060Group\u0060 is set when the figures are for one aircraft type or level of service."
       },
+      "CatalogCategoryResponse": {
+        "required": [
+          "key",
+          "name"
+        ],
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "description": "A palette group. \u0060Key\u0060 is stable, \u0060Name\u0060 is for display."
+      },
+      "CatalogMetricResponse": {
+        "required": [
+          "key",
+          "name",
+          "description",
+          "unit",
+          "category",
+          "status",
+          "placeable",
+          "claimLevel",
+          "serviceLines",
+          "dimensions",
+          "presentations",
+          "options"
+        ],
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "unit": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "placeable": {
+            "type": "boolean"
+          },
+          "claimLevel": {
+            "type": "boolean"
+          },
+          "serviceLines": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "dimensions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "presentations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CatalogPresentationResponse"
+            }
+          },
+          "options": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CatalogOptionResponse"
+            }
+          }
+        },
+        "description": "One Metric. \u0060Key\u0060 is the stable identifier a layout stores. \u0060Status\u0060 is \u0060available\u0060 or \u0060planned\u0060."
+      },
+      "CatalogOptionResponse": {
+        "required": [
+          "key",
+          "name",
+          "type",
+          "choices",
+          "default",
+          "appliesTo"
+        ],
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "choices": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "default": {
+            "type": "string"
+          },
+          "appliesTo": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "description": "A widget setting. \u0060Type\u0060 is \u0060choice\u0060 or \u0060toggle\u0060, \u0060Default\u0060 is one of \u0060Choices\u0060 for a choice, or \u0060true\u0060 or \u0060false\u0060 for a toggle."
+      },
+      "CatalogPresentationResponse": {
+        "required": [
+          "key",
+          "name",
+          "icon",
+          "sizes",
+          "minWidth",
+          "minHeight",
+          "maxWidth",
+          "maxHeight",
+          "isDefault"
+        ],
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "icon": {
+            "type": "string"
+          },
+          "sizes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "minWidth": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "minHeight": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "maxWidth": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "maxHeight": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "isDefault": {
+            "type": "boolean"
+          }
+        },
+        "description": "A way to draw a Metric, with its preset sizes and its bounds on the 12-column grid."
+      },
       "CleanClaimPointResponse": {
         "required": [
           "period",
@@ -1485,6 +2593,111 @@
         },
         "description": "One finding. \u0060Kind\u0060 is a stable key (\u0060aged-payments\u0060, \u0060volume\u0060, \u0060payer-mix\u0060). \u0060Label\u0060 is \u0060temporary\u0060, \u0060structural\u0060, \u0060watch\u0060 or \u0060info\u0060.\n\u0060Impact\u0060 is USD and signed: negative lowered cash, or is expected to."
       },
+      "InviteRequest": {
+        "required": [
+          "emails"
+        ],
+        "type": "object",
+        "properties": {
+          "emails": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "description": "The addresses to invite, at most 10."
+      },
+      "InviteResponse": {
+        "required": [
+          "sent",
+          "failed"
+        ],
+        "type": "object",
+        "properties": {
+          "sent": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PendingInvitationResponse"
+            }
+          },
+          "failed": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "LayoutWidget": {
+        "required": [
+          "id",
+          "metricKey",
+          "presentation",
+          "options",
+          "x",
+          "y",
+          "w",
+          "h"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "metricKey": {
+            "type": "string"
+          },
+          "presentation": {
+            "type": "string"
+          },
+          "options": {
+            "type": [
+              "null",
+              "object"
+            ],
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "x": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "y": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "w": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "h": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          }
+        },
+        "description": "One Metric on the grid. It names a Metric by key and says how to draw it and where. It never carries a value, a Label or a filter."
+      },
       "MeResponse": {
         "required": [
           "userName",
@@ -1514,6 +2727,28 @@
           }
         },
         "description": "Response of \u0060GET /api/me\u0060."
+      },
+      "MetricCatalogResponse": {
+        "required": [
+          "categories",
+          "metrics"
+        ],
+        "type": "object",
+        "properties": {
+          "categories": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CatalogCategoryResponse"
+            }
+          },
+          "metrics": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CatalogMetricResponse"
+            }
+          }
+        },
+        "description": "The catalog: \u0060Categories\u0060 in palette order and every \u0060Metrics\u0060 entry."
       },
       "MetricResponse": {
         "required": [
@@ -2106,6 +3341,35 @@
         },
         "description": "Net cash by payer group, posting month and payment age for \u0060Period\u0060 and the twelve months before it. \u0060Group\u0060 is set when the figures are\nfor one aircraft type or level of service."
       },
+      "PendingInvitationResponse": {
+        "required": [
+          "invitationId",
+          "email",
+          "expiresAt",
+          "isExpired"
+        ],
+        "type": "object",
+        "properties": {
+          "invitationId": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "email": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "isExpired": {
+            "type": "boolean"
+          }
+        }
+      },
       "PeriodResponse": {
         "required": [
           "period",
@@ -2184,6 +3448,69 @@
         },
         "description": "A Provider the user may see. FacilityCount is how many Facilities they are limited to, and 0 means all of them. The Facility ids stay on the server."
       },
+      "RecipientResponse": {
+        "required": [
+          "shareId",
+          "email",
+          "sharedAt"
+        ],
+        "type": "object",
+        "properties": {
+          "shareId": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "email": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "sharedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "RedeemRequest": {
+        "required": [
+          "token"
+        ],
+        "type": "object",
+        "properties": {
+          "token": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        },
+        "description": "The token from an emailed link."
+      },
+      "RedeemResponse": {
+        "required": [
+          "providerId",
+          "viewId"
+        ],
+        "type": "object",
+        "properties": {
+          "providerId": {
+            "type": "string"
+          },
+          "viewId": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          }
+        }
+      },
       "RemainderResponse": {
         "required": [
           "amount",
@@ -2208,6 +3535,219 @@
           }
         },
         "description": "The part of the change no driver explains (USD), how it compares with the usual month-to-month range, and the sentence for it."
+      },
+      "SavedViewLayout": {
+        "required": [
+          "version",
+          "density",
+          "widgets"
+        ],
+        "type": "object",
+        "properties": {
+          "version": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "density": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "widgets": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/LayoutWidget"
+            }
+          }
+        },
+        "description": "The saved arrangement: a version, a density (\u0060comfortable\u0060 or \u0060compact\u0060) and the widgets on a 12-column grid."
+      },
+      "SavedViewListResponse": {
+        "required": [
+          "mine",
+          "shared"
+        ],
+        "type": "object",
+        "properties": {
+          "mine": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SummaryResponse"
+            }
+          },
+          "shared": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SummaryResponse"
+            }
+          }
+        }
+      },
+      "SavedViewRequest": {
+        "required": [
+          "name",
+          "description",
+          "layout"
+        ],
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "description": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "layout": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/SavedViewLayout"
+              }
+            ]
+          }
+        },
+        "description": "A view to save. Only these three fields are read: anything else in the body, such as an owner or Provider, is ignored."
+      },
+      "SavedViewResponse": {
+        "required": [
+          "id",
+          "name",
+          "description",
+          "ownerName",
+          "isOwner",
+          "layout",
+          "version",
+          "updatedAt"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "ownerName": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "isOwner": {
+            "type": "boolean"
+          },
+          "layout": {
+            "$ref": "#/components/schemas/SavedViewLayout"
+          },
+          "version": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "description": "A view with its layout. \u0060Version\u0060 is the same value as the \u0060ETag\u0060 header, without the quotes."
+      },
+      "SharingResponse": {
+        "required": [
+          "recipients",
+          "pending"
+        ],
+        "type": "object",
+        "properties": {
+          "recipients": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RecipientResponse"
+            }
+          },
+          "pending": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PendingInvitationResponse"
+            }
+          }
+        }
+      },
+      "SummaryResponse": {
+        "required": [
+          "id",
+          "name",
+          "description",
+          "ownerName",
+          "isOwner",
+          "widgetCount",
+          "updatedAt"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "ownerName": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "isOwner": {
+            "type": "boolean"
+          },
+          "widgetCount": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
       },
       "TransportVolumeGroupResponse": {
         "required": [
@@ -2460,6 +4000,9 @@
     },
     {
       "name": "Metrics"
+    },
+    {
+      "name": "Saved views"
     }
   ]
 }

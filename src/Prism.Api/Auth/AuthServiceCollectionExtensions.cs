@@ -40,8 +40,10 @@ public static class AuthServiceCollectionExtensions
             .Configure<IOptions<PrismAuthOptions>, AuthCookies>(ConfigureSessionScheme);
         services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer();
         services.AddAuthorization(options =>
-            options.AddPolicy(Permissions.DashboardView, policy =>
-                policy.RequireClaim(SessionTokenIssuer.PermissionsClaim, Permissions.DashboardView)));
+        {
+            options.AddPolicy(Permissions.DashboardView, policy => policy.RequireClaim(SessionTokenIssuer.PermissionsClaim, Permissions.DashboardView));
+            options.AddPolicy(Permissions.ViewsManage, policy => policy.RequireClaim(SessionTokenIssuer.PermissionsClaim, Permissions.ViewsManage));
+        });
 
         services.AddRateLimiter(options => options.RejectionStatusCode = StatusCodes.Status429TooManyRequests);
         // The limits come from the bound options, read when the limiter is first used, so late-added configuration counts.
@@ -49,6 +51,7 @@ public static class AuthServiceCollectionExtensions
         {
             AddPerClientPolicy(options, AuthEndpoints.RateLimitPolicy, Math.Max(1, auth.Value.RateLimitPerMinute));
             AddPerClientPolicy(options, AuthEndpoints.CallbackRateLimitPolicy, Math.Max(1, auth.Value.CallbackRateLimitPerMinute));
+            AddPerClientPolicy(options, SavedViews.SavedViewEndpoints.InvitationRateLimitPolicy, Math.Max(1, auth.Value.RateLimitPerMinute));
         });
 
         return services;

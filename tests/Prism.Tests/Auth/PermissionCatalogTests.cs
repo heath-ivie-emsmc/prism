@@ -5,16 +5,16 @@ namespace Prism.Tests.Auth;
 public sealed class PermissionCatalogTests
 {
     [Fact]
-    public void An_analyst_can_sign_in_and_view_the_dashboard_only()
+    public void An_analyst_can_sign_in_view_the_dashboard_and_manage_saved_views()
     {
-        Assert.Equal([Permissions.App, Permissions.DashboardView], Permissions.ForRoles(["ProviderAnalyst"]));
+        Assert.Equal([Permissions.App, Permissions.DashboardView, Permissions.ViewsManage], Permissions.ForRoles(["ProviderAnalyst"]));
     }
 
     [Fact]
     public void A_provider_admin_can_also_manage_settings()
     {
         Assert.Equal(
-            [Permissions.App, Permissions.DashboardView, Permissions.SettingsManage],
+            [Permissions.App, Permissions.DashboardView, Permissions.SettingsManage, Permissions.ViewsManage],
             Permissions.ForRoles(["ProviderAdmin"]));
     }
 
@@ -29,7 +29,7 @@ public sealed class PermissionCatalogTests
     {
         IReadOnlyList<string> granted = Permissions.ForRoles(["ProviderAnalyst", "PlatformSupport", "ProviderAdmin"]);
 
-        Assert.Equal([Permissions.App, Permissions.DashboardView, Permissions.SettingsManage], granted);
+        Assert.Equal([Permissions.App, Permissions.DashboardView, Permissions.SettingsManage, Permissions.ViewsManage], granted);
     }
 
     [Theory]

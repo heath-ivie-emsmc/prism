@@ -66,10 +66,10 @@ const MODE_LABEL: Readonly<Record<string, string>> = {
         <ems-icon name="Document" size="sm" />
         Reports
       </button>
-      <button emsNavTab type="button" disabled title="Coming soon">
+      <a emsNavTab routerLink="/saved-views" routerLinkActive #viewsLink="routerLinkActive" [active]="viewsLink.isActive">
         <ems-icon name="filter_none" size="sm" />
         Saved views
-      </button>
+      </a>
       <span emsNavTrailing class="shell__trailing">
         <button emsButton="flat" fab color="neutral" type="button" [attr.aria-label]="'Theme: ' + themeLabel()" [title]="'Theme: ' + themeLabel()" (click)="cycleTheme()">
           <ems-icon [name]="themeIcon()" />

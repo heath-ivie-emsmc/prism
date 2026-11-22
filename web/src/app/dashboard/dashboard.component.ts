@@ -1,35 +1,28 @@
-import { ChangeDetectionStrategy, Component, computed, effect, inject, signal, untracked } from '@angular/core';
-import { rxResource, toSignal } from '@angular/core/rxjs-interop';
+import { ChangeDetectionStrategy, Component, computed, inject } from '@angular/core';
+import { rxResource } from '@angular/core/rxjs-interop';
 import { of } from 'rxjs';
-import { FormControl, ReactiveFormsModule } from '@angular/forms';
 import {
   EmsBreadcrumbsComponent,
   EmsButtonDirective,
-  EmsSelectComponent,
   EmsBreadcrumb,
-  EmsPickerOption,
 } from '@ems-management-consultants/ui';
-import { AuthService } from '../auth/auth.service';
-import { DashboardContext, MOCK_CONTEXT, divisionsFor } from './dashboard-context';
-import { apPeriodEnd, apPeriodLabel, formatDate } from './dashboard-format';
-import { CleanClaimRateDto, NetCollectionsPeriodsDto, NetCollectionsService, TransportVolumeDto } from '../metrics/net-collections.service';
+import { DashboardFilterContext } from './dashboard-filter-context';
+import { CleanClaimRateDto, NetCollectionsService, TransportVolumeDto } from '../metrics/net-collections.service';
+import { FilterBarComponent } from './filter-bar.component';
 import { KpiCardComponent } from './kpi-card.component';
 import { NetCashPanelComponent } from './net-cash-panel.component';
 import { ProjectionPanelComponent } from './projection-panel.component';
 import { SegmentOption, SegmentedControlComponent } from './segmented-control.component';
-import { SERVICE_LINE_OPTIONS, ServiceLineSelection, defaultLabels } from './service-line';
 import { SkeletonComponent } from '../shared/skeleton.component';
-import { ServiceLineToggleComponent } from './service-line-toggle.component';
 import { CLEAN_CLAIM_GOAL, toCleanClaimCard } from './clean-claims';
 import { MileUnit, toMilesCard, toTransportsCard } from './transport-volume';
 
-const ALL_DIVISIONS = 'all';
 const CRUMBS: EmsBreadcrumb[] = [{ label: 'Dashboard' }];
 
 /** The top of the dashboard: Provider, Data Through, and the filters. The metrics below it arrive with the first Metric Catalog slice. */
 @Component({
   selector: 'app-dashboard',
-  imports: [EmsBreadcrumbsComponent, EmsButtonDirective, EmsSelectComponent, KpiCardComponent, NetCashPanelComponent, ProjectionPanelComponent, ReactiveFormsModule, SegmentedControlComponent, ServiceLineToggleComponent, SkeletonComponent],
+  imports: [EmsBreadcrumbsComponent, EmsButtonDirective, FilterBarComponent, KpiCardComponent, NetCashPanelComponent, ProjectionPanelComponent, SegmentedControlComponent, SkeletonComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <main class="dashboard">
@@ -43,19 +36,7 @@ const CRUMBS: EmsBreadcrumb[] = [{ label: 'Dashboard' }];
           </p>
         </div>
 
-        <form class="dashboard__filters" aria-label="Dashboard filters" (submit)="$event.preventDefault()">
-          @if (showServiceLineToggle()) {
-            <app-service-line-toggle [options]="serviceLineOptions()" [(value)]="serviceLine" />
-          }
-          <ems-select class="dashboard__select" label="Period" [options]="periods()" [formControl]="period" [clearable]="false" />
-          <ems-select
-            class="dashboard__select"
-            [label]="labels().reportingDivision"
-            [options]="divisionOptions()"
-            [formControl]="division"
-            [clearable]="false"
-          />
-        </form>
+        <app-filter-bar label="Dashboard filters" />
       </header>
 
       <!-- Net cash, transports and loaded miles are real. The other tiles and the projection panel below are layout only: placeholder content until the Metric Catalog serves them. -->
@@ -176,12 +157,6 @@ const CRUMBS: EmsBreadcrumb[] = [{ label: 'Dashboard' }];
       margin: 0.25rem 0 0;
       line-height: var(--ems-line-height-body);
       color: var(--ems-text-muted);
-    }
-    .dashboard__filters {
-      display: flex;
-      flex-wrap: wrap;
-      align-items: center;
-      gap: 1rem;
     }
     /* Net cash on the left, the four tiles on the right. The tiles take the height they need and the net cash panel stretches to match, so the spare height goes to its chart. */
     .dashboard__overview {
@@ -318,17 +293,12 @@ const CRUMBS: EmsBreadcrumb[] = [{ label: 'Dashboard' }];
     .dots__dot--closing {
       background: var(--ems-surface-accent-citrus);
     }
-    .dashboard__select {
-      min-width: 12rem;
-    }
   `,
 })
 export class DashboardComponent {
-  private readonly auth = inject(AuthService);
   private readonly netCollections = inject(NetCollectionsService);
 
-  /** Mocked: replaced by the Provider context API. */
-  protected readonly context = signal<DashboardContext>(MOCK_CONTEXT);
+  private readonly filters = inject(DashboardFilterContext);
 
   protected readonly crumbs = CRUMBS;
 
@@ -338,50 +308,22 @@ export class DashboardComponent {
     { value: 'statute', label: 'Statute' },
     { value: 'nautical', label: 'Nautical' },
   ];
-  /** Nautical miles are an aviation unit. Ground transports are always in statute miles, so the switch is not offered for them. */
-  protected readonly mileUnit = signal<MileUnit>('statute');
 
-  protected readonly serviceLine = signal<ServiceLineSelection>('air');
-  /** The newest accounting period to show, as yyyyMM. Empty until the Provider's periods have loaded. */
-  protected readonly period = new FormControl<string>('', { nonNullable: true });
-  protected readonly division = new FormControl<string>(ALL_DIVISIONS, { nonNullable: true });
-
-  /** The first Provider name in the session, exactly as the token carries it. The mock name shows only when the user has no Provider. */
-  protected readonly providerName = computed(() => this.auth.me()?.providers[0]?.name || this.context().providerName);
-
-  /** The Provider whose data is shown: the first one the user was assigned. A switcher comes later. The API checks it again. */
-  protected readonly providerId = computed(() => this.auth.me()?.providers[0]?.id ?? null);
-
-  private readonly periodsResource = rxResource<NetCollectionsPeriodsDto | null, string | null>({
-    params: () => this.providerId(),
-    stream: ({ params }) => (params ? this.netCollections.periods(params) : of(null)),
-  });
-
-  protected readonly periodsError = computed<unknown>(() => this.periodsResource.error());
-  /** Nothing can be asked for until the list of months is here, so every figure waits on it too. */
-  protected readonly periodsLoading = computed(() => this.periodsResource.isLoading());
+  // The filters live in DashboardFilterContext so saved views follow the same ones.
+  protected readonly mileUnit = this.filters.mileUnit;
+  protected readonly serviceLine = this.filters.serviceLine;
+  protected readonly period = this.filters.period;
+  protected readonly providerName = this.filters.providerName;
+  protected readonly providerId = this.filters.providerId;
+  protected readonly periodsError = this.filters.periodsError;
+  protected readonly periodsLoading = this.filters.periodsLoading;
+  protected readonly dataThrough = this.filters.dataThrough;
+  protected readonly labels = this.filters.labels;
+  protected readonly endPeriod = this.filters.endPeriod;
 
   protected retryPeriods(): void {
-    this.periodsResource.reload();
+    this.filters.retryPeriods();
   }
-
-  /** The newest accounting period that has data. The data is complete through the end of it. */
-  private readonly newestPeriod = computed(() => (this.periodsResource.hasValue() ? this.periodsResource.value() : undefined)?.periods[0]?.period ?? '');
-  protected readonly dataThrough = computed(() => {
-    const end = apPeriodEnd(this.newestPeriod());
-    return end ? formatDate(end) : '';
-  });
-
-  protected readonly showServiceLineToggle = computed(() => this.context().enabledServiceLines.length > 1);
-  protected readonly serviceLineOptions = computed(() =>
-    SERVICE_LINE_OPTIONS.filter((option) => option.value === 'both' || this.context().enabledServiceLines.includes(option.value)),
-  );
-
-  protected readonly labels = computed(() => defaultLabels(this.serviceLine()));
-  protected readonly periods = computed<EmsPickerOption<string>[]>(() =>
-    ((this.periodsResource.hasValue() ? this.periodsResource.value() : undefined)?.periods ?? []).map((p) => ({ value: p.period, label: apPeriodLabel(p.period) })),
-  );
-  protected readonly endPeriod = toSignal(this.period.valueChanges, { initialValue: this.period.value });
 
   /** Transports and loaded miles for the six months ending at the chosen period, for the Service Line on screen. One request feeds both tiles. */
   private readonly volume = rxResource<TransportVolumeDto | null, { providerId: string; endPeriod: string; line: 'all' | 'air' | 'ground' } | null>({
@@ -424,33 +366,5 @@ export class DashboardComponent {
 
   protected retryVolume(): void {
     this.volume.reload();
-  }
-  protected readonly divisionOptions = computed<EmsPickerOption<string>[]>(() => [
-    { value: ALL_DIVISIONS, label: this.labels().allReportingDivisions },
-    ...divisionsFor(this.context().reportingDivisions, this.serviceLine()).map((division) => ({
-      value: division.id,
-      label: division.name,
-    })),
-  ]);
-
-  private readonly selectedDivision = toSignal(this.division.valueChanges, { initialValue: this.division.value });
-
-  constructor() {
-    // Start on the newest period once the list arrives, and again if the chosen one is no longer in the list (a different Provider).
-    effect(() => {
-      const options = this.periods();
-      const selected = this.endPeriod();
-      if (options.length > 0 && !options.some((option) => option.value === selected)) {
-        untracked(() => this.period.setValue(options[0]!.value));
-      }
-    });
-    // Changing the Service Line can remove the chosen Reporting Division from the list. Fall back to "all" instead of leaving a dead choice.
-    effect(() => {
-      const options = this.divisionOptions();
-      const selected = this.selectedDivision();
-      if (!options.some((option) => option.value === selected)) {
-        untracked(() => this.division.setValue(ALL_DIVISIONS));
-      }
-    });
   }
 }

@@ -100,6 +100,16 @@ public sealed class AuthTestFactory : WebApplicationFactory<Program>
         return client;
     }
 
+    /// <summary>A client for a specific user (id and name), for tests where more than one person is involved.</summary>
+    public CookieClient NewSignedInClientAs(long portalUserId, string userName, params string[] permissions)
+    {
+        var user = new PortalUser(userName, userName, portalUserId, ["ProviderAnalyst"], []);
+        string session = Services.GetRequiredService<ISessionTokenIssuer>().Issue(user, permissions.Length > 0 ? permissions : [Permissions.App, Permissions.DashboardView, Permissions.ViewsManage]);
+        CookieClient client = NewClient();
+        client.Set("prism_session", session);
+        return client;
+    }
+
     protected override void Dispose(bool disposing)
     {
         if (disposing)
@@ -128,6 +138,9 @@ public sealed class FakePortalDirectory : IPortalDirectory
 
     public List<ProviderScope> Providers { get; } = [new ProviderScope("100", "Mercy Air", ["1", "2"])];
 
+    /// <summary>When set, answers the Provider lookup per user instead of giving everyone <see cref="Providers"/>.</summary>
+    public Func<long, IReadOnlyList<ProviderScope>>? ProvidersByUser { get; set; }
+
     public int ProviderLookups { get; private set; }
 
     public bool FailProviders { get; set; }
@@ -146,7 +159,7 @@ public sealed class FakePortalDirectory : IPortalDirectory
             throw new HttpRequestException("portal down");
         }
 
-        return Task.FromResult<IReadOnlyList<ProviderScope>>([.. Providers]);
+        return Task.FromResult(ProvidersByUser?.Invoke(portalUserId) ?? [.. Providers]);
     }
 }
 

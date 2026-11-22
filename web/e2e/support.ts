@@ -34,6 +34,36 @@ export async function openDashboard(page: Page): Promise<void> {
   await page.waitForTimeout(400);
 }
 
+/** The saved views list, waiting until its rows are in. */
+export async function openSavedViews(page: Page): Promise<void> {
+  await page.goto('/saved-views');
+  await page.locator('app-saved-views-list h1').waitFor();
+  await page.locator('app-saved-views-list li a').first().waitFor();
+  await page.evaluate(() => document.fonts.ready);
+  await page.waitForTimeout(200);
+}
+
+/** One saved view, read-only or in edit mode, after its widgets have loaded and drawn. */
+export async function openView(page: Page, id: number | 'new', options: { edit?: boolean; widgets?: number } = {}): Promise<void> {
+  await page.goto(`/saved-views/${id}`);
+  await page.locator('app-view-builder h1').waitFor();
+  if (id !== 'new') {
+    await page.locator('app-grid-canvas li.item').first().waitFor();
+    await page.locator('app-grid-canvas app-chart canvas, app-grid-canvas .widget__value, app-grid-canvas table').first().waitFor();
+  }
+  if (options.edit && id !== 'new') {
+    await page.getByRole('button', { name: 'Edit', exact: true }).click();
+    await page.locator('[role="toolbar"]').first().waitFor();
+  }
+  await page.evaluate(() => document.fonts.ready);
+  await page.waitForTimeout(400);
+}
+
+/** The text most recently spoken through the live region, for checking what a screen reader would hear. */
+export async function lastAnnouncement(page: Page): Promise<string> {
+  return page.evaluate(() => [...document.querySelectorAll('.cdk-live-announcer-element')].map((e) => (e.textContent ?? '').trim()).filter(Boolean).pop() ?? '');
+}
+
 /** Axe violations at WCAG 2.2 AA, as short readable lines. Scope to a selector to check one part of the page. */
 /** Switch the net cash panel between its line, bar and table views with the chart-type control. */
 export async function chooseNetCashView(page: Page, view: 'line' | 'bar' | 'table'): Promise<void> {

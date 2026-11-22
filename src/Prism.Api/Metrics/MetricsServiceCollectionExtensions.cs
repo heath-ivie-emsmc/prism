@@ -37,6 +37,7 @@ public static class MetricsServiceCollectionExtensions
     public static void MapMetricEndpoints(this RouteGroupBuilder v1)
     {
         NetCollectionsEndpoints.Map(v1);
+        CatalogEndpoints.Map(v1);
         InsightsEndpoints.Map(v1);
     }
 }

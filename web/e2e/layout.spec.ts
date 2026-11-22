@@ -1,7 +1,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, test } from './fixtures';
-import { REPORT_DIR, SCHEMES, SIZES, axeViolations, chooseNetCashView, layoutErrors, openDashboard } from './support';
+import { REPORT_DIR, SCHEMES, SIZES, axeViolations, chooseNetCashView, layoutErrors, openDashboard, openSavedViews, openView } from './support';
 
 /**
  * Responsive layout and accessibility of the dashboard at every window size, light and dark. In a real browser it checks that:
@@ -49,6 +49,36 @@ for (const view of ['bar', 'table'] as const) {
       expect(errors, `layout errors at ${label} (screenshot: ${REPORT_DIR}/${label}.png)`).toEqual([]);
       expect(axe, `axe violations at ${label}`).toEqual([]);
     });
+  }
+}
+
+// The saved views pages: the list, a view to read, a view being arranged, and a new empty one. Every size, light and dark.
+const SAVED_VIEW_STATES = [
+  { name: 'list', open: openSavedViews },
+  { name: 'view', open: (p: import('@playwright/test').Page) => openView(p, 5) },
+  { name: 'edit', open: (p: import('@playwright/test').Page) => openView(p, 5, { edit: true }) },
+  { name: 'new', open: (p: import('@playwright/test').Page) => openView(p, 'new') },
+] as const;
+for (const state of SAVED_VIEW_STATES) {
+  for (const scheme of SCHEMES) {
+    for (const size of SIZES) {
+      test(`saved views ${state.name}: ${size.name} ${size.width}px, ${scheme}`, async ({ page }) => {
+        await page.setViewportSize({ width: size.width, height: size.height });
+        await page.emulateMedia({ colorScheme: scheme });
+        await state.open(page);
+
+        mkdirSync(REPORT_DIR, { recursive: true });
+        const label = `saved-views-${state.name}-${size.name}-${size.width}-${scheme}`;
+        await page.screenshot({ path: join(REPORT_DIR, `${label}.png`), fullPage: true });
+
+        const { errors, issues } = await layoutErrors(page);
+        const axe = await axeViolations(page);
+        writeFileSync(join(REPORT_DIR, `${label}.json`), JSON.stringify({ size, scheme, issues, axe }, null, 2));
+
+        expect(errors, `layout errors at ${label} (screenshot: ${REPORT_DIR}/${label}.png)`).toEqual([]);
+        expect(axe, `axe violations at ${label}`).toEqual([]);
+      });
+    }
   }
 }
 

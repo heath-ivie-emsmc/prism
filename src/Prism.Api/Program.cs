@@ -4,6 +4,7 @@ using Prism.Api.Auth;
 using Prism.Api.Health;
 using Prism.Api.Metrics;
 using Prism.Api.Observability;
+using Prism.Api.SavedViews;
 using Prism.Infrastructure.Configuration;
 using Scalar.AspNetCore;
 using Serilog;
@@ -25,6 +26,7 @@ builder.Services.AddPrismForwardedHeaders();
 builder.Services.AddPrismPersistence(builder.Configuration);
 builder.Services.AddPrismAuth(builder.Configuration);
 builder.Services.AddPrismMetrics();
+builder.Services.AddPrismSavedViews();
 
 var app = builder.Build();
 
@@ -49,6 +51,9 @@ app.UseExceptionHandler();
 app.UseDefaultFiles();
 app.UseStaticFiles();
 app.UseRouting();
+
+// After routing, so the endpoint's declared body size is known, and before anything reads the body.
+app.UseMiddleware<Prism.Api.Http.RequestSizeLimitMiddleware>();
 
 // CSRF runs before authentication so a forged request is refused without touching the session.
 app.UseMiddleware<CsrfMiddleware>();
@@ -85,6 +90,7 @@ api.MapSsoEndpoints();
 RouteGroupBuilder v1 = api.MapGroup(ApiRoutes.V1);
 v1.MapIdentityEndpoints();
 v1.MapMetricEndpoints();
+v1.MapSavedViewEndpoints();
 
 // Unknown paths fall back to index.html so client-side routes work on reload, except /api (and /api/...), where an
 // unknown path must stay a plain 404 and never turn into HTML. The docs and OpenAPI routes are real endpoints and match first.
