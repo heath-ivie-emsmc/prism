@@ -27,8 +27,11 @@ public sealed record AttentionClaim(
     DateOnly FilingDueDate,
     int DaysLeft);
 
-/// <summary>The claims one check flags, soonest filing deadline first, and the date the data runs to.</summary>
-public sealed record AttentionClaims(DateOnly? DataThrough, IReadOnlyList<AttentionClaim> Claims);
+/// <summary>The claims one check flags, soonest filing deadline first, the date the data runs to, and how many claims match in all (more than the rows when paged).</summary>
+public sealed record AttentionClaims(DateOnly? DataThrough, IReadOnlyList<AttentionClaim> Claims, int Total);
+
+/// <summary>One page of claims, counted from 1.</summary>
+public sealed record AttentionPage(int Number, int Size);
 
 /// <summary>
 /// Reads the claims that need a customer's attention from the warehouse. Reads only. The Provider filter is applied here, from the id the access check produced.
@@ -38,5 +41,6 @@ public interface IClaimAttention
 {
     Task<AttentionCounts> GetCountsAsync(int providerId, ApPeriod period, ServiceLineFilter serviceLine, string? groupKey, CancellationToken cancellationToken);
 
-    Task<AttentionClaims> GetClaimsAsync(int providerId, AttentionCheck check, ApPeriod period, ServiceLineFilter serviceLine, string? groupKey, CancellationToken cancellationToken);
+    // A null page returns every matching claim (the export). Either way, more than AttentionCatalog.MaxClaims matches is refused.
+    Task<AttentionClaims> GetClaimsAsync(int providerId, AttentionCheck check, ApPeriod period, ServiceLineFilter serviceLine, string? groupKey, AttentionPage? page, CancellationToken cancellationToken);
 }

@@ -15,6 +15,12 @@ public readonly record struct ApPeriod(int Year, int Month)
     public static bool TryParse(string? value, out ApPeriod period)
     {
         period = default;
+        // Cap the raw length first: a trimmed value is six characters, and the column pads with a few spaces.
+        if (value is { Length: > 16 })
+        {
+            return false;
+        }
+
         string text = value?.Trim() ?? "";
         if (text.Length != 6 || !text.All(char.IsAsciiDigit))
         {

@@ -22,6 +22,9 @@ public sealed record AttentionCheck(string Key, string Name, string Description,
 /// </summary>
 public static class AttentionCatalog
 {
+    /// <summary>The most claims one check, period and filter may match. Past this the read is refused, not truncated.</summary>
+    public const int MaxClaims = 10_000;
+
     public const string Denied = "denied";
     public const string NeedsAttention = "needs_attention";
     public const string All = "all";

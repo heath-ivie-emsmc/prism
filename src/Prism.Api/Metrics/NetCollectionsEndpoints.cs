@@ -622,7 +622,7 @@ internal static partial class NetCollectionsEndpoints
 
     private static MetricResponse MetricOf(MetricDefinition d) => new(d.Key, d.Name, d.Description, d.Unit);
 
-    [GeneratedRegex("^[a-z0-9-]{1,40}$", RegexOptions.NonBacktracking | RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"^[a-z0-9-]{1,40}\z", RegexOptions.NonBacktracking | RegexOptions.CultureInvariant)]
     internal static partial Regex GroupKeyPattern();
 
     private static NetCashBreakdownResponse ToResponse(string providerId, NetCashBreakdown breakdown) =>

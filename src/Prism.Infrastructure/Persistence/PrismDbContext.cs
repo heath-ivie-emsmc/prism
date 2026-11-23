@@ -52,6 +52,7 @@ public sealed class PrismDbContext(DbContextOptions<PrismDbContext> options) : D
             entity.Property(e => e.CheckKey).HasColumnName("check_key").HasMaxLength(50).IsRequired();
             entity.Property(e => e.Period).HasColumnName("period").HasMaxLength(6).IsRequired();
             entity.Property(e => e.RowCount).HasColumnName("row_count");
+            entity.Property(e => e.GroupKey).HasColumnName("group_key").HasMaxLength(40);
             entity.Property(e => e.CreatedAtTimestamp).HasColumnName("created_at_timestamp")
                 .HasDefaultValueSql("now()").ValueGeneratedOnAdd();
             entity.Property(e => e.UpdatedAtTimestamp).HasColumnName("updated_at_timestamp")

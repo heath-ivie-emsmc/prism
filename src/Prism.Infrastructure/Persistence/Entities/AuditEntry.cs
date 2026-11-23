@@ -22,6 +22,9 @@ public sealed class AuditEntry
 
     public int RowCount { get; set; }
 
+    /// <summary>The aircraft-type key the read was narrowed to, or null for the whole period.</summary>
+    public string? GroupKey { get; set; }
+
     /// <summary>Set by the database trigger. This is when the read happened.</summary>
     public DateTimeOffset CreatedAtTimestamp { get; set; }
 

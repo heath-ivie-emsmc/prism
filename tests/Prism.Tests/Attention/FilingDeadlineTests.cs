@@ -43,4 +43,16 @@ public sealed class FilingDeadlineTests
         Assert.Equal(valid, new FilingLimitOptions { Default = days }.IsValid());
         Assert.Equal(valid, new FilingLimitOptions { ByPayerCategory = new() { ["Medicare"] = days } }.IsValid());
     }
+
+    [Fact]
+    public void A_payer_category_is_found_whatever_its_case_even_when_a_plain_dictionary_was_assigned()
+    {
+        var plain = new Dictionary<string, int> { ["Medicare"] = 90 };
+        var options = new FilingLimitOptions { Default = 365, ByPayerCategory = plain };
+
+        Assert.Equal(90, options.LimitFor("MEDICARE"));
+        Assert.Equal(90, options.LimitFor("medicare"));
+        Assert.Equal(365, options.LimitFor("Commercial"));
+        Assert.Equal(365, options.LimitFor(null));
+    }
 }

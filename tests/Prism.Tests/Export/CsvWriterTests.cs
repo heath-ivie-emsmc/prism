@@ -44,4 +44,33 @@ public sealed class CsvWriterTests
 
         Assert.Equal("\"A\",\"B\"\r\n\"1\",\"'=x\"\r\n\"2\",\"\"\r\n", csv);
     }
+
+    [Theory]
+    [InlineData("-12.50", "\"-12.50\"")]
+    [InlineData("0.00", "\"0.00\"")]
+    public void A_number_cell_keeps_its_minus_sign_and_gets_no_apostrophe(string formatted, string expected)
+    {
+        decimal value = decimal.Parse(formatted, System.Globalization.CultureInfo.InvariantCulture);
+
+        Assert.Equal(expected, CsvWriter.Cell(CsvCell.Number(value)));
+    }
+
+    [Fact]
+    public void A_text_cell_that_looks_like_a_negative_number_is_still_neutralized()
+    {
+        Assert.Equal("\"'-12.50\"", CsvWriter.Cell(new CsvCell("-12.50")));
+    }
+
+    [Fact]
+    public void The_buffer_writer_output_is_the_same_UTF8_bytes_as_the_string_version_including_non_ascii_and_quotes()
+    {
+        string[] header = ["Payer", "Note"];
+        CsvCell[][] rows = [["Sjögren – 日本語 😀", "say \"=hi\""], [CsvCell.Number(-12.5m), "=x"]];
+        var buffer = new System.Buffers.ArrayBufferWriter<byte>();
+
+        CsvWriter.Write(buffer, header, rows);
+
+        Assert.Equal(CsvWriter.Write(header, rows), System.Text.Encoding.UTF8.GetString(buffer.WrittenSpan));
+        Assert.Equal("\"Payer\",\"Note\"\r\n\"Sjögren – 日本語 😀\",\"say \"\"=hi\"\"\"\r\n\"-12.50\",\"'=x\"\r\n", CsvWriter.Write(header, rows));
+    }
 }

@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Prism.Application.Audit;
+using Prism.Application.Metrics;
 using Prism.Infrastructure.Persistence;
 using Prism.Infrastructure.Persistence.Entities;
 
@@ -13,7 +14,7 @@ public sealed class AuditLogTests(PostgresFixture postgres) : IClassFixture<Post
         CancellationToken ct = TestContext.Current.CancellationToken;
         await using PrismDbContext db = postgres.NewContext();
 
-        await new AuditLog(db).WriteAsync(4101, 9001, AuditActions.ClaimsList, "denied", "202610", 2, ct);
+        await new AuditLog(db).WriteAsync(4101, 9001, new AuditRead(AuditActions.ClaimsList, "denied", new ApPeriod(2026, 10), 2), ct);
 
         AuditEntry row = await db.AuditEntries.AsNoTracking().SingleAsync(e => e.ProviderId == 4101 && e.PortalUserId == 9001, ct);
         Assert.Equal(AuditActions.ClaimsList, row.Action);
@@ -33,8 +34,9 @@ public sealed class AuditLogTests(PostgresFixture postgres) : IClassFixture<Post
             .SqlQuery<string>($"SELECT column_name AS \"Value\" FROM information_schema.columns WHERE table_name = 'audit_entry' ORDER BY ordinal_position")
             .ToListAsync(ct);
 
+        // group_key is the aircraft-type key (lowercase letters, digits and hyphens, at most 40) the endpoint validated; it is a catalog key, not claim detail.
         Assert.Equal(
-            ["id", "provider_id", "portal_user_id", "action", "check_key", "period", "row_count", "created_at_timestamp", "updated_at_timestamp"],
+            ["id", "provider_id", "portal_user_id", "action", "check_key", "period", "row_count", "created_at_timestamp", "updated_at_timestamp", "group_key"],
             columns);
     }
 
@@ -44,6 +46,32 @@ public sealed class AuditLogTests(PostgresFixture postgres) : IClassFixture<Post
         CancellationToken ct = TestContext.Current.CancellationToken;
         await using PrismDbContext db = postgres.NewContext();
 
-        await Assert.ThrowsAsync<ArgumentException>(() => new AuditLog(db).WriteAsync(1, 1, " ", "denied", "202610", 0, ct));
+        await Assert.ThrowsAsync<ArgumentException>(() => new AuditLog(db).WriteAsync(1, 1, new AuditRead(" ", "denied", new ApPeriod(2026, 10), 0), ct));
+    }
+
+    [Fact]
+    public async Task A_recorded_read_cannot_be_updated_deleted_or_truncated()
+    {
+        CancellationToken ct = TestContext.Current.CancellationToken;
+        await using PrismDbContext db = postgres.NewContext();
+        await new AuditLog(db).WriteAsync(4102, 9002, new AuditRead(AuditActions.ClaimsList, "denied", new ApPeriod(2026, 10), 1), ct);
+
+        await Assert.ThrowsAsync<Npgsql.PostgresException>(() => db.Database.ExecuteSqlRawAsync("UPDATE audit_entry SET row_count = 0 WHERE provider_id = 4102", ct));
+        await Assert.ThrowsAsync<Npgsql.PostgresException>(() => db.Database.ExecuteSqlRawAsync("DELETE FROM audit_entry WHERE provider_id = 4102", ct));
+        await Assert.ThrowsAsync<Npgsql.PostgresException>(() => db.Database.ExecuteSqlRawAsync("TRUNCATE audit_entry", ct));
+
+        Assert.Equal(1, await db.AuditEntries.AsNoTracking().CountAsync(e => e.ProviderId == 4102, ct));
+    }
+
+    [Fact]
+    public async Task The_aircraft_type_the_read_was_narrowed_to_is_recorded()
+    {
+        CancellationToken ct = TestContext.Current.CancellationToken;
+        await using PrismDbContext db = postgres.NewContext();
+
+        await new AuditLog(db).WriteAsync(4103, 9003, new AuditRead(AuditActions.ClaimsExport, "all", new ApPeriod(2026, 10), 3, "fixed-wing"), ct);
+
+        AuditEntry row = await db.AuditEntries.AsNoTracking().SingleAsync(e => e.ProviderId == 4103, ct);
+        Assert.Equal("fixed-wing", row.GroupKey);
     }
 }

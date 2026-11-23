@@ -1,6 +1,6 @@
 using System.Globalization;
+using System.IO.Pipelines;
 using System.Security.Claims;
-using System.Text;
 using Prism.Api.Metrics;
 using Prism.Application;
 using Prism.Application.Attention;
@@ -22,11 +22,16 @@ internal static class ClaimAttentionEndpoints
     internal const int MaxPageSize = 100;
     internal const int DefaultPageSize = 25;
     internal const int MaxPage = 1000;
+    internal const int MaxGroupKeyLength = 40;
+    public const string RateLimitPolicy = "claims-attention";
 
     public static void Map(RouteGroupBuilder v1)
     {
         RouteGroupBuilder group = v1.MapGroup("/providers/{providerId}/claims/attention")
             .RequireAuthorization(Permissions.ClaimsView)
+            .RequireRateLimiting(RateLimitPolicy)
+            .AddEndpointFilter(NoStore)
+            .AddEndpointFilter(PerUserLimit)
             .WithTags("Claims needing attention");
 
         group.MapGet("/counts", Counts)
@@ -41,6 +46,7 @@ internal static class ClaimAttentionEndpoints
             .ProducesProblem(StatusCodes.Status401Unauthorized)
             .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status429TooManyRequests)
             .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
 
         group.MapGet("/{checkKey}", Claims)
@@ -57,6 +63,7 @@ internal static class ClaimAttentionEndpoints
             .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status422UnprocessableEntity)
+            .ProducesProblem(StatusCodes.Status429TooManyRequests)
             .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
 
         group.MapGet("/{checkKey}/export", Export)
@@ -72,7 +79,29 @@ internal static class ClaimAttentionEndpoints
             .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status422UnprocessableEntity)
+            .ProducesProblem(StatusCodes.Status429TooManyRequests)
             .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
+    }
+
+    // Claim data must never sit in a browser or proxy cache.
+    private static ValueTask<object?> NoStore(EndpointFilterInvocationContext context, EndpointFilterDelegate next)
+    {
+        context.HttpContext.Response.Headers.CacheControl = "no-store";
+        context.HttpContext.Response.Headers.Pragma = "no-cache";
+        return next(context);
+    }
+
+    // Runs after authentication, so the budget is the signed-in user's, not the address's. A session without a user id is left to the handlers (404).
+    private static ValueTask<object?> PerUserLimit(EndpointFilterInvocationContext context, EndpointFilterDelegate next)
+    {
+        HttpContext http = context.HttpContext;
+        if (PortalUserId(http.User) is { } userId && !http.RequestServices.GetRequiredService<ClaimReadLimiter>().TryAcquire(userId))
+        {
+            http.Response.Headers.RetryAfter = "60";
+            return ValueTask.FromResult<object?>(Results.Problem(statusCode: StatusCodes.Status429TooManyRequests, title: "Too many requests"));
+        }
+
+        return next(context);
     }
 
     public static async Task<IResult> Counts(
@@ -118,24 +147,27 @@ internal static class ClaimAttentionEndpoints
             });
         }
 
+        // The audit identity is checked before the PHI query runs, so a session without one never reads a claim.
+        if (PortalUserId(user) is not { } portalUserId)
+        {
+            return Results.NotFound();
+        }
+
         AttentionClaims result;
         try
         {
-            result = await claims.GetClaimsAsync(id, check, scope.Period, scope.ServiceLine, group, cancellationToken);
+            result = await claims.GetClaimsAsync(id, check, scope.Period, scope.ServiceLine, group, new AttentionPage(number, size), cancellationToken);
         }
         catch (WarehouseResultTooLargeException)
         {
             return TooMany();
         }
 
-        AttentionClaimResponse[] rows = result.Claims.Skip((number - 1) * size).Take(size).Select(ToResponse).ToArray();
-        if (!await TryAuditAsync(user, audit, id, new AuditRead(AuditActions.ClaimsList, check.Key, scope.Period, rows.Length), cancellationToken))
-        {
-            return Results.NotFound();
-        }
+        AttentionClaimResponse[] rows = result.Claims.Select(ToResponse).ToArray();
+        await audit.WriteAsync(id, portalUserId, new AuditRead(AuditActions.ClaimsList, check.Key, scope.Period, rows.Length, group), cancellationToken);
 
         return Results.Ok(new AttentionClaimsResponse(
-            providerId, check.Key, scope.Period.ToString(), result.DataThrough?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), result.Claims.Count, number, size, rows));
+            providerId, check.Key, scope.Period.ToString(), result.DataThrough?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), result.Total, number, size, rows));
     }
 
     public static async Task<IResult> Export(
@@ -152,24 +184,36 @@ internal static class ClaimAttentionEndpoints
             return Invalid(period, group);
         }
 
+        // The audit identity is checked before the PHI query runs, so a session without one never reads a claim.
+        if (PortalUserId(user) is not { } portalUserId)
+        {
+            return Results.NotFound();
+        }
+
         AttentionClaims result;
         try
         {
-            result = await claims.GetClaimsAsync(id, check, scope.Period, scope.ServiceLine, group, cancellationToken);
+            result = await claims.GetClaimsAsync(id, check, scope.Period, scope.ServiceLine, group, null, cancellationToken);
         }
         catch (WarehouseResultTooLargeException)
         {
             return TooMany();
         }
 
-        if (!await TryAuditAsync(user, audit, id, new AuditRead(AuditActions.ClaimsExport, check.Key, scope.Period, result.Claims.Count), cancellationToken))
-        {
-            return Results.NotFound();
-        }
+        await audit.WriteAsync(id, portalUserId, new AuditRead(AuditActions.ClaimsExport, check.Key, scope.Period, result.Claims.Count, group), cancellationToken);
 
-        string csv = CsvWriter.Write(CsvHeader, result.Claims.Select(CsvRow));
         string fileName = $"prism-needs-attention-{check.Key.Replace('_', '-')}-{time.GetUtcNow():yyyy-MM-dd}.csv";
-        return Results.File(Encoding.UTF8.GetBytes(csv), "text/csv; charset=utf-8", fileName);
+        IReadOnlyList<AttentionClaim> exported = result.Claims;
+        return Results.Stream(
+            async stream =>
+            {
+                // UTF-8 goes straight to the response in pipe-sized chunks: no whole-file string, no second byte copy.
+                var output = PipeWriter.Create(stream, new StreamPipeWriterOptions(leaveOpen: true));
+                CsvWriter.Write(output, CsvHeader, exported.Select(CsvRow));
+                await output.CompleteAsync();
+            },
+            "text/csv; charset=utf-8",
+            fileName);
     }
 
     private static readonly string[] CsvHeader =
@@ -178,7 +222,7 @@ internal static class ClaimAttentionEndpoints
         "Balance due", "Estimated filing due date", "Filing days left",
     ];
 
-    private static string[] CsvRow(AttentionClaim c) =>
+    private static CsvCell[] CsvRow(AttentionClaim c) =>
     [
         c.ClaimRef,
         c.ServiceDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
@@ -189,7 +233,7 @@ internal static class ClaimAttentionEndpoints
         c.Status,
         c.DenialCode ?? "",
         c.DenialReason ?? "",
-        c.BalanceDue.ToString("0.00", CultureInfo.InvariantCulture),
+        CsvCell.Number(c.BalanceDue),
         c.FilingDueDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
         c.DaysLeft >= 0 ? c.DaysLeft.ToString(CultureInfo.InvariantCulture) : $"Overdue by {-c.DaysLeft}",
     ];
@@ -212,9 +256,13 @@ internal static class ClaimAttentionEndpoints
     private static (ApPeriod Period, ServiceLineFilter ServiceLine)? Validate(string? period, string? serviceLine, string? group) =>
         period is not null && ApPeriod.TryParse(period, out ApPeriod parsed)
         && NetCollectionsEndpoints.TryParseServiceLine(serviceLine, out ServiceLineFilter filter)
-        && (group is null || NetCollectionsEndpoints.GroupKeyPattern().IsMatch(group))
+        && IsGroupKey(group)
             ? (parsed, filter)
             : null;
+
+    // Length is capped before the pattern runs. The pattern is anchored at the very end (not before a trailing newline).
+    private static bool IsGroupKey(string? group) =>
+        group is null || (group.Length <= MaxGroupKeyLength && NetCollectionsEndpoints.GroupKeyPattern().IsMatch(group));
 
     private static IResult Invalid(string? period, string? group)
     {
@@ -223,7 +271,7 @@ internal static class ClaimAttentionEndpoints
             return NetCollectionsEndpoints.Invalid("period", "period must be a month written yyyyMM, for example 202610.");
         }
 
-        return group is not null && !NetCollectionsEndpoints.GroupKeyPattern().IsMatch(group)
+        return !IsGroupKey(group)
             ? NetCollectionsEndpoints.Invalid("group", "group must be a key from the breakdown route, such as fixed-wing.")
             : NetCollectionsEndpoints.Invalid("serviceLine", "serviceLine must be all, air or ground.");
     }
@@ -234,22 +282,9 @@ internal static class ClaimAttentionEndpoints
             title: "Too many claims",
             detail: "More than 10,000 claims match. Narrow the period or Service Line.");
 
-    // The audit row is written before the response leaves. A failed write throws and the request fails, so no read goes unrecorded.
-    private static async Task<bool> TryAuditAsync(
-        ClaimsPrincipal user, IAuditLog audit, int providerId, AuditRead read, CancellationToken cancellationToken)
-    {
-        if (!long.TryParse(user.FindFirstValue(SessionTokenIssuer.PortalUserIdClaim), CultureInfo.InvariantCulture, out long portalUserId))
-        {
-            return false;
-        }
-
-        await audit.WriteAsync(providerId, portalUserId, read.Action, read.CheckKey, read.Period.ToString(), read.Rows, cancellationToken);
-        return true;
-    }
+    private static long? PortalUserId(ClaimsPrincipal user) =>
+        long.TryParse(user.FindFirstValue(SessionTokenIssuer.PortalUserIdClaim), CultureInfo.InvariantCulture, out long id) ? id : null;
 }
-
-/// <summary>What one audited read touched: the kind, the check, the period and how many rows.</summary>
-internal sealed record AuditRead(string Action, string CheckKey, ApPeriod Period, int Rows);
 
 /// <summary>The route and query values of the claims list.</summary>
 internal sealed record ClaimsRequest(string ProviderId, string CheckKey, string? Period, string? ServiceLine, string? Group, int? Page, int? PageSize);

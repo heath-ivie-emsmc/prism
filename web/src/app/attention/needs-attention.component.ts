@@ -16,7 +16,7 @@ import { LoadProblemComponent } from '../shared/load-problem.component';
 import { SkeletonComponent } from '../shared/skeleton.component';
 import { saveBlob } from '../saved-views/view-image';
 import {
-  ClaimRowView, FALLBACK_TABS, downloadName, groupWords, headerState, reviewQuery, safeCheck, safeGroup, selectedMessage, sendButtonName, tabOptions, toClaimRow,
+  ClaimRowView, FALLBACK_TABS, downloadFailureMessage, downloadName, groupWords, headerState, reviewQuery, safeCheck, safeGroup, selectedMessage, sendButtonName, tabOptions, toClaimRow,
 } from './attention';
 import {
   AttentionClaimsDto, AttentionCountsDto, AttentionQuery, AttentionService, CLAIMS_PERMISSION,
@@ -495,9 +495,9 @@ export class NeedsAttentionComponent {
         this.downloading.set(false);
         this.announcer.announce(`Downloaded ${file.fileName}`, 'polite');
       },
-      error: () => {
+      error: (error: unknown) => {
         this.downloading.set(false);
-        this.announcer.announce("The claims couldn't be downloaded. Try again.", 'assertive');
+        this.announcer.announce(downloadFailureMessage(error), 'assertive');
       },
     });
   }

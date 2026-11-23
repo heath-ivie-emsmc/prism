@@ -46,6 +46,7 @@ public static class AuthServiceCollectionExtensions
             options.AddPolicy(Permissions.ViewsManage, policy => policy.RequireClaim(SessionTokenIssuer.PermissionsClaim, Permissions.ViewsManage));
         });
 
+        services.AddSingleton<Attention.ClaimReadLimiter>();
         services.AddRateLimiter(options => options.RejectionStatusCode = StatusCodes.Status429TooManyRequests);
         // The limits come from the bound options, read when the limiter is first used, so late-added configuration counts.
         services.AddOptions<RateLimiterOptions>().Configure<IOptions<PrismAuthOptions>>((options, auth) =>
@@ -53,6 +54,7 @@ public static class AuthServiceCollectionExtensions
             AddPerClientPolicy(options, AuthEndpoints.RateLimitPolicy, Math.Max(1, auth.Value.RateLimitPerMinute));
             AddPerClientPolicy(options, AuthEndpoints.CallbackRateLimitPolicy, Math.Max(1, auth.Value.CallbackRateLimitPerMinute));
             AddPerClientPolicy(options, SavedViews.SavedViewEndpoints.InvitationRateLimitPolicy, Math.Max(1, auth.Value.RateLimitPerMinute));
+            AddPerClientPolicy(options, Attention.ClaimAttentionEndpoints.RateLimitPolicy, Math.Max(1, auth.Value.RateLimitPerMinute));
         });
 
         return services;

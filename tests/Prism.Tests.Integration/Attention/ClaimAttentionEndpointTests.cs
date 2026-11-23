@@ -267,6 +267,121 @@ public sealed class ClaimAttentionEndpointTests : IDisposable
             Task.FromResult<IReadOnlySet<string>>(portalCompanyId == 200 ? new HashSet<string> { "9", "10" } : []);
     }
 
+    [Fact]
+    public async Task Claim_data_and_counts_are_never_cacheable()
+    {
+        foreach (string url in new[] { $"{Base}/counts?period=202610", $"{Base}/denied?period=202610", $"{Base}/denied/export?period=202610" })
+        {
+            (HttpStatusCode status, _, HttpResponseMessage response) = await GetAsync(url, WithClaims);
+
+            Assert.Equal(HttpStatusCode.OK, status);
+            Assert.Contains("no-store", response.Headers.CacheControl?.ToString(), StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
+    public async Task Reading_claims_over_the_per_client_limit_is_refused_with_429()
+    {
+        using var limited = new AuthTestFactory(
+            settings: new Dictionary<string, string?> { ["Auth:RateLimitPerMinute"] = "3" },
+            configureServices: services =>
+            {
+                services.RemoveAll<IClaimAttention>();
+                services.AddSingleton<IClaimAttention>(claims);
+                services.RemoveAll<IProviderDivisionDirectory>();
+                services.AddSingleton<IProviderDivisionDirectory>(new FakeDivisions());
+            });
+        limited.Directory.Providers.Clear();
+        limited.Directory.Providers.Add(new ProviderScope("100", "Mercy Air", []));
+        using CookieClient client = limited.NewSignedInClient(WithClaims);
+
+        var codes = new List<HttpStatusCode>();
+        for (int i = 0; i < 5; i++)
+        {
+            using HttpResponseMessage response = await client.GetAsync($"{Base}/denied?period=202610");
+            codes.Add(response.StatusCode);
+        }
+
+        Assert.Equal([HttpStatusCode.OK, HttpStatusCode.OK, HttpStatusCode.OK, HttpStatusCode.TooManyRequests, HttpStatusCode.TooManyRequests], codes);
+    }
+
+    [Theory]
+    [InlineData("fixed-wing%0A")]
+    [InlineData("Fixed-Wing")]
+    [InlineData("a%20b")]
+    [InlineData("0123456789012345678901234567890123456789x")]
+    public async Task A_group_key_that_is_not_a_plain_key_is_refused_before_any_read(string group)
+    {
+        foreach (string url in new[] { $"{Base}/counts?period=202610&group={group}", $"{Base}/denied?period=202610&group={group}", $"{Base}/denied/export?period=202610&group={group}" })
+        {
+            (HttpStatusCode status, _, _) = await GetAsync(url, WithClaims);
+
+            Assert.Equal(HttpStatusCode.BadRequest, status);
+        }
+
+        Assert.Equal(0, claims.Reads);
+        Assert.Empty(factory.Audit.Calls);
+    }
+
+    [Fact]
+    public async Task A_period_with_a_huge_value_is_refused_without_a_read()
+    {
+        (HttpStatusCode status, _, _) = await GetAsync($"{Base}/denied?period={new string('1', 5000)}", WithClaims);
+
+        Assert.Equal(HttpStatusCode.BadRequest, status);
+        Assert.Equal(0, claims.Reads);
+    }
+
+    [Fact]
+    public async Task The_audit_record_says_which_aircraft_type_the_read_was_narrowed_to()
+    {
+        await GetAsync($"{Base}/denied?period=202610&group=fixed-wing", WithClaims);
+        await GetAsync($"{Base}/denied/export?period=202610", WithClaims);
+
+        Assert.Equal(["fixed-wing", null], factory.Audit.Calls.Select(c => c.GroupKey));
+    }
+
+    [Fact]
+    public async Task A_page_is_asked_of_the_reader_and_the_export_asks_for_every_claim()
+    {
+        await GetAsync($"{Base}/denied?period=202610&page=2&pageSize=1", WithClaims);
+        AttentionPage? listPage = claims.LastPage;
+        await GetAsync($"{Base}/denied/export?period=202610", WithClaims);
+
+        Assert.Equal(new AttentionPage(2, 1), listPage);
+        Assert.Null(claims.LastPage);
+    }
+
+    [Fact]
+    public async Task One_user_over_their_own_budget_is_refused_while_another_user_on_the_same_address_is_not()
+    {
+        using var limited = new AuthTestFactory(
+            settings: new Dictionary<string, string?> { ["Auth:RateLimitPerMinute"] = "100", ["Auth:ClaimReadsPerUserPerMinute"] = "2" },
+            configureServices: services =>
+            {
+                services.RemoveAll<IClaimAttention>();
+                services.AddSingleton<IClaimAttention>(claims);
+                services.RemoveAll<IProviderDivisionDirectory>();
+                services.AddSingleton<IProviderDivisionDirectory>(new FakeDivisions());
+            });
+        limited.Directory.Providers.Clear();
+        limited.Directory.Providers.Add(new ProviderScope("100", "Mercy Air", []));
+        using CookieClient first = limited.NewSignedInClientAs(7, "first", WithClaims);
+        using CookieClient second = limited.NewSignedInClientAs(8, "second", WithClaims);
+
+        var codes = new List<HttpStatusCode>();
+        for (int i = 0; i < 3; i++)
+        {
+            using HttpResponseMessage response = await first.GetAsync($"{Base}/denied?period=202610");
+            codes.Add(response.StatusCode);
+        }
+
+        using HttpResponseMessage other = await second.GetAsync($"{Base}/denied?period=202610");
+
+        Assert.Equal([HttpStatusCode.OK, HttpStatusCode.OK, HttpStatusCode.TooManyRequests], codes);
+        Assert.Equal(HttpStatusCode.OK, other.StatusCode);
+    }
+
     private sealed class FakeClaims : IClaimAttention
     {
         public int Reads { get; private set; }
@@ -278,6 +393,8 @@ public sealed class ClaimAttentionEndpointTests : IDisposable
         public ServiceLineFilter LastServiceLine { get; private set; }
 
         public string? LastGroup { get; private set; }
+
+        public AttentionPage? LastPage { get; private set; }
 
         public List<AttentionClaim> Rows { get; set; } =
         [
@@ -295,13 +412,15 @@ public sealed class ClaimAttentionEndpointTests : IDisposable
                 new DateOnly(2026, 11, 5), [new AttentionCount("denied", 2), new AttentionCount("needs_attention", 4), new AttentionCount("all", 8)], 48200m));
         }
 
-        public Task<AttentionClaims> GetClaimsAsync(int providerId, AttentionCheck check, ApPeriod period, ServiceLineFilter serviceLine, string? groupKey, CancellationToken cancellationToken)
+        public Task<AttentionClaims> GetClaimsAsync(int providerId, AttentionCheck check, ApPeriod period, ServiceLineFilter serviceLine, string? groupKey, AttentionPage? page, CancellationToken cancellationToken)
         {
             Reads++;
             LastProviderId = providerId;
             LastServiceLine = serviceLine;
             LastGroup = groupKey;
-            return Failure is { } failure ? throw failure : Task.FromResult(new AttentionClaims(new DateOnly(2026, 11, 5), Rows));
+            LastPage = page;
+            IReadOnlyList<AttentionClaim> shown = page is null ? Rows : Rows.Skip((page.Number - 1) * page.Size).Take(page.Size).ToList();
+            return Failure is { } failure ? throw failure : Task.FromResult(new AttentionClaims(new DateOnly(2026, 11, 5), shown, Rows.Count));
         }
     }
 }

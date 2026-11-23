@@ -77,6 +77,9 @@ public sealed class PrismAuthOptions
     /// <summary>Per client address, per minute, on the routes that consume a login token. Lower, because a legitimate user needs one.</summary>
     public int CallbackRateLimitPerMinute { get; set; } = 10;
 
+    /// <summary>Per signed-in user, per minute, on the claim-level (PHI) read and export routes. Checked after sign-in, so it holds when many users share one address.</summary>
+    public int ClaimReadsPerUserPerMinute { get; set; } = 20;
+
     /// <summary>Defaults to true outside Development.</summary>
     public bool? RequireSecureCookies { get; set; }
 }

@@ -37,6 +37,22 @@ export function describeProblem(error: unknown, subject: string): LoadProblem {
   if (status === 403 || status === 404) {
     return { title: `We couldn't find ${subject} for your account`, detail: 'If you expected to see it, contact your administrator.', reference, retryable: false };
   }
+  if (status === 429) {
+    return {
+      title: `We're loading ${subject} too often`,
+      detail: 'Prism limits how often claim details can be read. Wait a minute, then try again.',
+      reference,
+      retryable: true,
+    };
+  }
+  if (status === 422) {
+    return {
+      title: `Too much data to show ${subject}`,
+      detail: 'More than 10,000 claims match. Choose a single month, Service Line or aircraft type, then try again.',
+      reference,
+      retryable: false,
+    };
+  }
   if (status === 502 || status === 503 || status === 504) {
     return {
       title: `We can't load ${subject} right now`,

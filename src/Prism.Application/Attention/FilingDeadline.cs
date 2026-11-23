@@ -25,7 +25,23 @@ public sealed class FilingLimitOptions
     public int Default { get; set; } = 365;
 
     /// <summary>Keyed by the warehouse payer category (<c>prim_pay_category</c>), compared ignoring case.</summary>
-    public Dictionary<string, int> ByPayerCategory { get; set; } = [];
+    public Dictionary<string, int> ByPayerCategory
+    {
+        get;
+        // Always case-insensitive, even when a caller assigns a plain dictionary, so the lookup below is one hash probe.
+        set => field = CaseInsensitive(value);
+    } = CaseInsensitive(null);
+
+    private static Dictionary<string, int> CaseInsensitive(Dictionary<string, int>? source)
+    {
+        var copy = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        foreach ((string key, int days) in source ?? [])
+        {
+            copy[key] = days;
+        }
+
+        return copy;
+    }
 
     public int LimitFor(string? payerCategory)
     {
@@ -34,8 +50,7 @@ public sealed class FilingLimitOptions
             return Default;
         }
 
-        KeyValuePair<string, int> match = ByPayerCategory.FirstOrDefault(limit => string.Equals(limit.Key, payerCategory, StringComparison.OrdinalIgnoreCase));
-        return match.Key is null ? Default : match.Value;
+        return ByPayerCategory.TryGetValue(payerCategory, out int days) ? days : Default;
     }
 
     public bool IsValid() =>

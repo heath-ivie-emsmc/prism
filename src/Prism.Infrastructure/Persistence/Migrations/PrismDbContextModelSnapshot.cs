@@ -16,7 +16,7 @@ partial class PrismDbContextModelSnapshot : ModelSnapshot
     // If you encounter a merge conflict in the line below, it means you need to
     // discard one of the migration branches and recreate its migrations on top of
     // the other branch. See https://aka.ms/efcore-docs-migrations-conflicts for more info.
-    public override string LastMigrationId => "20261122224619_CreateAuditEntry";
+    public override string LastMigrationId => "20261123130916_AddAuditEntryGroupKey";
 
     protected override void BuildModel(ModelBuilder modelBuilder)
     {
@@ -53,6 +53,11 @@ partial class PrismDbContextModelSnapshot : ModelSnapshot
                     .HasColumnType("timestamp with time zone")
                     .HasColumnName("created_at_timestamp")
                     .HasDefaultValueSql("now()");
+
+                b.Property<string>("GroupKey")
+                    .HasMaxLength(40)
+                    .HasColumnType("character varying(40)")
+                    .HasColumnName("group_key");
 
                 b.Property<string>("Period")
                     .IsRequired()

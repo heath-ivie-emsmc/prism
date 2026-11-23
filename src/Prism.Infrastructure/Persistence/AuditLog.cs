@@ -5,20 +5,26 @@ namespace Prism.Infrastructure.Persistence;
 
 public sealed class AuditLog(PrismDbContext db) : IAuditLog
 {
-    public async Task WriteAsync(int providerId, long portalUserId, string action, string checkKey, string period, int rowCount, CancellationToken cancellationToken)
+    public Task WriteAsync(int providerId, long portalUserId, AuditRead read, CancellationToken cancellationToken)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(action);
-        ArgumentException.ThrowIfNullOrWhiteSpace(checkKey);
-        ArgumentException.ThrowIfNullOrWhiteSpace(period);
+        ArgumentNullException.ThrowIfNull(read);
+        ArgumentException.ThrowIfNullOrWhiteSpace(read.Action);
+        ArgumentException.ThrowIfNullOrWhiteSpace(read.CheckKey);
 
+        return SaveAsync(providerId, portalUserId, read, cancellationToken);
+    }
+
+    private async Task SaveAsync(int providerId, long portalUserId, AuditRead read, CancellationToken cancellationToken)
+    {
         db.AuditEntries.Add(new AuditEntry
         {
             ProviderId = providerId,
             PortalUserId = portalUserId,
-            Action = action,
-            CheckKey = checkKey,
-            Period = period,
-            RowCount = rowCount,
+            Action = read.Action,
+            CheckKey = read.CheckKey,
+            Period = read.Period.ToString(),
+            RowCount = read.Rows,
+            GroupKey = read.GroupKey,
         });
 
         await db.SaveChangesAsync(cancellationToken);

@@ -24,6 +24,13 @@ describe('load problems', () => {
     expect(describeProblem(http(403), 'x').retryable).toBe(false);
   });
 
+  it('asks the person to wait when reads are rate limited, and to narrow the request when too many claims match', () => {
+    expect(describeProblem(http(429), 'the claims')).toMatchObject({ retryable: true, title: `We're loading the claims too often` });
+    expect(describeProblem(http(429), 'x').detail).toContain('Wait a minute');
+    expect(describeProblem(http(422), 'the claims')).toMatchObject({ retryable: false });
+    expect(describeProblem(http(422), 'x').detail).toContain('10,000');
+  });
+
   it('points to support for other server errors', () => {
     expect(describeProblem(http(500), 'net cash')).toMatchObject({ title: 'Something went wrong loading net cash', retryable: true });
   });

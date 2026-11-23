@@ -91,7 +91,7 @@ public sealed class ClaimAttentionReaderTests(PostgresFixture postgres) : IClass
         ClaimAttentionReader reader = await NewReaderAsync();
 
         AttentionCounts counts = await reader.GetCountsAsync(2026, October, ServiceLineFilter.Both, "fixed-wing", TestContext.Current.CancellationToken);
-        AttentionClaims rows = await reader.GetClaimsAsync(2026, AttentionCatalog.Find("all")!, October, ServiceLineFilter.Both, "fixed-wing", TestContext.Current.CancellationToken);
+        AttentionClaims rows = await reader.GetClaimsAsync(2026, AttentionCatalog.Find("all")!, October, ServiceLineFilter.Both, "fixed-wing", null, TestContext.Current.CancellationToken);
 
         // Fixed Wing claims in October: 1 and 7 (2 is September, 21 is another Provider).
         Assert.Equal([2, 2, 2], counts.Counts.Select(c => c.Count));
@@ -115,7 +115,7 @@ public sealed class ClaimAttentionReaderTests(PostgresFixture postgres) : IClass
     {
         ClaimAttentionReader reader = await NewReaderAsync();
 
-        AttentionClaims result = await reader.GetClaimsAsync(2026, AttentionCatalog.Find("denied")!, October, ServiceLineFilter.Both, null, TestContext.Current.CancellationToken);
+        AttentionClaims result = await reader.GetClaimsAsync(2026, AttentionCatalog.Find("denied")!, October, ServiceLineFilter.Both, null, null, TestContext.Current.CancellationToken);
 
         // Claim 7 is Medicare with a 90-day limit, so it is due before claim 1, which has the 365-day default.
         Assert.Equal(new DateOnly(2026, 11, 21), result.DataThrough);
@@ -134,7 +134,7 @@ public sealed class ClaimAttentionReaderTests(PostgresFixture postgres) : IClass
     {
         ClaimAttentionReader reader = await NewReaderAsync(limits: new FilingLimitOptions { Default = 30 });
 
-        AttentionClaims result = await reader.GetClaimsAsync(2026, AttentionCatalog.Find("denied")!, October, ServiceLineFilter.Both, null, TestContext.Current.CancellationToken);
+        AttentionClaims result = await reader.GetClaimsAsync(2026, AttentionCatalog.Find("denied")!, October, ServiceLineFilter.Both, null, null, TestContext.Current.CancellationToken);
 
         // 2026-10-02 + 30 days = 2026-11-01, which is 20 days before the data runs to.
         Assert.Equal(-20, result.Claims.Single(c => c.ClaimRef == "FW-1").DaysLeft);
@@ -145,8 +145,8 @@ public sealed class ClaimAttentionReaderTests(PostgresFixture postgres) : IClass
     {
         ClaimAttentionReader reader = await NewReaderAsync();
 
-        AttentionClaims attention = await reader.GetClaimsAsync(2026, AttentionCatalog.Find("needs_attention")!, October, ServiceLineFilter.Both, null, TestContext.Current.CancellationToken);
-        AttentionClaims all = await reader.GetClaimsAsync(2026, AttentionCatalog.Find("all")!, October, ServiceLineFilter.Both, null, TestContext.Current.CancellationToken);
+        AttentionClaims attention = await reader.GetClaimsAsync(2026, AttentionCatalog.Find("needs_attention")!, October, ServiceLineFilter.Both, null, null, TestContext.Current.CancellationToken);
+        AttentionClaims all = await reader.GetClaimsAsync(2026, AttentionCatalog.Find("all")!, October, ServiceLineFilter.Both, null, null, TestContext.Current.CancellationToken);
 
         Assert.Equal(["7", "FW-1", "G-5", "RW-4"], attention.Claims.Select(c => c.ClaimRef).Order(StringComparer.Ordinal));
         Assert.Equal(4, attention.Claims.Count);
@@ -159,7 +159,7 @@ public sealed class ClaimAttentionReaderTests(PostgresFixture postgres) : IClass
     {
         ClaimAttentionReader reader = await NewReaderAsync();
 
-        AttentionClaims all = await reader.GetClaimsAsync(2026, AttentionCatalog.Find("all")!, October, ServiceLineFilter.Both, null, TestContext.Current.CancellationToken);
+        AttentionClaims all = await reader.GetClaimsAsync(2026, AttentionCatalog.Find("all")!, October, ServiceLineFilter.Both, null, null, TestContext.Current.CancellationToken);
         string everything = string.Join('|', all.Claims);
 
         Assert.DoesNotContain("PATIENT-MARKER", everything, StringComparison.Ordinal);
@@ -174,6 +174,50 @@ public sealed class ClaimAttentionReaderTests(PostgresFixture postgres) : IClass
         ClaimAttentionReader reader = await NewReaderAsync(maxRows: 3);
 
         await Assert.ThrowsAsync<WarehouseResultTooLargeException>(
-            () => reader.GetClaimsAsync(2026, AttentionCatalog.Find("all")!, October, ServiceLineFilter.Both, null, TestContext.Current.CancellationToken));
+            () => reader.GetClaimsAsync(2026, AttentionCatalog.Find("all")!, October, ServiceLineFilter.Both, null, null, TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task A_page_is_cut_by_the_database_in_deadline_order_and_carries_the_total()
+    {
+        ClaimAttentionReader reader = await NewReaderAsync();
+        AttentionCheck all = AttentionCatalog.Find("all")!;
+        CancellationToken ct = TestContext.Current.CancellationToken;
+
+        AttentionClaims everything = await reader.GetClaimsAsync(2026, all, October, ServiceLineFilter.Both, null, null, ct);
+        AttentionClaims first = await reader.GetClaimsAsync(2026, all, October, ServiceLineFilter.Both, null, new AttentionPage(1, 4), ct);
+        AttentionClaims second = await reader.GetClaimsAsync(2026, all, October, ServiceLineFilter.Both, null, new AttentionPage(2, 4), ct);
+
+        Assert.Equal(6, everything.Total);
+        Assert.Equal(6, first.Total);
+        Assert.Equal(everything.Claims.Select(c => c.ClaimRef), first.Claims.Concat(second.Claims).Select(c => c.ClaimRef));
+        Assert.Equal([4, 2], [first.Claims.Count, second.Claims.Count]);
+        // Order is the filing deadline (Medicare's 90 days puts claim 7 first), then service date, then id.
+        Assert.Equal("7", everything.Claims[0].ClaimRef);
+        Assert.Equal(everything.Claims.OrderBy(c => c.DaysLeft).ThenBy(c => c.ServiceDate).ThenBy(c => c.EncounterId).Select(c => c.ClaimRef), everything.Claims.Select(c => c.ClaimRef));
+    }
+
+    [Fact]
+    public async Task A_page_past_the_end_is_empty_but_still_reports_the_total()
+    {
+        ClaimAttentionReader reader = await NewReaderAsync();
+
+        AttentionClaims result = await reader.GetClaimsAsync(
+            2026, AttentionCatalog.Find("all")!, October, ServiceLineFilter.Both, null, new AttentionPage(50, 25), TestContext.Current.CancellationToken);
+
+        Assert.Empty(result.Claims);
+        Assert.Equal(6, result.Total);
+    }
+
+    [Fact]
+    public async Task A_payer_category_limit_matches_whatever_its_case_in_the_database()
+    {
+        ClaimAttentionReader reader = await NewReaderAsync(limits: new FilingLimitOptions { Default = 365, ByPayerCategory = new() { ["INSURANCE"] = 30 } });
+
+        AttentionClaims result = await reader.GetClaimsAsync(2026, AttentionCatalog.Find("denied")!, October, ServiceLineFilter.Both, null, new AttentionPage(1, 10), TestContext.Current.CancellationToken);
+
+        // Claim 1 is Insurance (30 days), claim 7 is Medicare (365 default), so claim 1 is due first even though it was a day earlier than the default would put it.
+        Assert.Equal(["FW-1", "7"], result.Claims.Select(c => c.ClaimRef));
+        Assert.Equal(new DateOnly(2026, 11, 1), result.Claims[0].FilingDueDate);
     }
 }

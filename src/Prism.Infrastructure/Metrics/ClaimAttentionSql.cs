@@ -36,17 +36,39 @@ internal static class ClaimAttentionSql
         WHERE {Scope}
         """;
 
-    internal static string ClaimsSql(AttentionPredicate predicate) =>
+    // The filing limit per payer category is passed as two parallel arrays and joined here, so the order, the page and the total all come from the database:
+    // the deadline is the date of service plus the category's limit (or the default), the same rule FilingDeadline applies. dos is cast so a timestamp column also works.
+    private static string BuildClaimsSql(AttentionPredicate predicate) =>
         $"""
         SELECT encounter_id,
                COALESCE(NULLIF(trim(run_number), ''), encounter_id::text) AS claim_ref,
                dos, prim_pay, prim_pay_category, vehicle, reporting_division, status,
-               denial_code, denial_reason, balance_due, snapshot_date
+               denial_code, denial_reason, balance_due, snapshot_date,
+               COUNT(*) OVER () AS total
         FROM {Table}
+        LEFT JOIN LATERAL (
+            SELECT l.days
+            FROM unnest(@limit_categories::text[], @limit_days::int[]) AS l(category, days)
+            WHERE lower(l.category) = lower(prim_pay_category)
+            LIMIT 1) AS filing ON TRUE
         WHERE {Scope}
           AND {RuleFor(predicate)}
-        ORDER BY dos, encounter_id
+        ORDER BY (dos::date + COALESCE(filing.days, @default_limit_days)), dos, encounter_id
+        LIMIT CAST(@page_size AS bigint) OFFSET CAST(@page_offset AS bigint)
         """;
+
+    private static readonly string DeniedClaimsSql = BuildClaimsSql(AttentionPredicate.Denied);
+    private static readonly string NeedsAttentionClaimsSql = BuildClaimsSql(AttentionPredicate.NeedsAttention);
+    private static readonly string AllClaimsSql = BuildClaimsSql(AttentionPredicate.All);
+
+    /// <summary>The claims query for a check. Built once per predicate: the text is fixed, so it is also stable for prepared statements.</summary>
+    internal static string ClaimsSql(AttentionPredicate predicate) => predicate switch
+    {
+        AttentionPredicate.Denied => DeniedClaimsSql,
+        AttentionPredicate.NeedsAttention => NeedsAttentionClaimsSql,
+        AttentionPredicate.All => AllClaimsSql,
+        _ => throw new ArgumentOutOfRangeException(nameof(predicate)),
+    };
 
     private static string RuleFor(AttentionPredicate predicate) => predicate switch
     {

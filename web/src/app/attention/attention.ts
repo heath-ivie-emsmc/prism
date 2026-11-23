@@ -1,3 +1,4 @@
+import { HttpErrorResponse } from '@angular/common/http';
 import { formatDate } from '../dashboard/dashboard-format';
 import { SegmentOption } from '../dashboard/segmented-control.component';
 import { AttentionClaimDto, AttentionCountDto } from './attention.service';
@@ -168,4 +169,12 @@ export function attentionCard(deniedCount: number, deniedBalance: number): Atten
     amountNote: 'still owed',
     amountSpoken: `${owed} still owed`,
   };
+}
+
+/** What to announce when the CSV could not be downloaded. Plain words by status; nothing from the server body is shown. */
+export function downloadFailureMessage(error: unknown): string {
+  const status = error instanceof HttpErrorResponse ? error.status : undefined;
+  if (status === 429) return 'Too many downloads. Wait a minute, then try again.';
+  if (status === 422) return 'More than 10,000 claims match, so they cannot be downloaded. Choose a single month, Service Line or aircraft type.';
+  return "The claims couldn't be downloaded. Try again.";
 }

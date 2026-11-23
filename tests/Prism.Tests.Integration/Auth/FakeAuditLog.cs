@@ -10,17 +10,17 @@ public sealed class FakeAuditLog : IAuditLog
 
     public Exception? Failure { get; set; }
 
-    public Task WriteAsync(int providerId, long portalUserId, string action, string checkKey, string period, int rowCount, CancellationToken cancellationToken)
+    public Task WriteAsync(int providerId, long portalUserId, AuditRead read, CancellationToken cancellationToken)
     {
         if (Failure is { } failure)
         {
             throw failure;
         }
 
-        Calls.Enqueue(new AuditCall(providerId, portalUserId, action, checkKey, period, rowCount));
+        Calls.Enqueue(new AuditCall(providerId, portalUserId, read.Action, read.CheckKey, read.Period.ToString(), read.Rows, read.GroupKey));
         return Task.CompletedTask;
     }
 }
 
 /// <summary>One audited read.</summary>
-public sealed record AuditCall(int ProviderId, long PortalUserId, string Action, string CheckKey, string Period, int RowCount);
+public sealed record AuditCall(int ProviderId, long PortalUserId, string Action, string CheckKey, string Period, int RowCount, string? GroupKey = null);

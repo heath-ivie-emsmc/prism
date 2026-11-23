@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
+import { HttpErrorResponse } from '@angular/common/http';
 import { AttentionClaimDto } from './attention.service';
 import {
-  attentionCard, daysText, downloadName, groupWords, headerState, reviewQuery, safeCheck, safeGroup, selectedMessage, sendButtonName, statusWords, tabOptions, toClaimRow, totalBalance, urgencyOf,
+  attentionCard, daysText, downloadFailureMessage, downloadName, groupWords, headerState, reviewQuery, safeCheck, safeGroup, selectedMessage, sendButtonName, statusWords, tabOptions, toClaimRow, totalBalance, urgencyOf,
 } from './attention';
 
 const CLAIM: AttentionClaimDto = {
@@ -113,5 +114,22 @@ describe('attentionCard', () => {
 
   it('shows no card when nothing is denied', () => {
     expect(attentionCard(0, 0)).toBeNull();
+  });
+});
+
+describe('downloadFailureMessage', () => {
+  it('tells the person to wait when downloads are rate limited', () => {
+    expect(downloadFailureMessage(new HttpErrorResponse({ status: 429 }))).toContain('Wait a minute');
+  });
+
+  it('tells the person to narrow the request when too many claims match', () => {
+    expect(downloadFailureMessage(new HttpErrorResponse({ status: 422 }))).toContain('10,000');
+  });
+
+  it('uses the plain message for anything else and never repeats server text', () => {
+    const message = downloadFailureMessage(new HttpErrorResponse({ status: 500, error: { title: 'PATIENT-MARKER' } }));
+
+    expect(message).toBe("The claims couldn't be downloaded. Try again.");
+    expect(downloadFailureMessage(new Error('boom'))).toBe(message);
   });
 });

@@ -65,7 +65,7 @@ public sealed class PrismAuthOptionsValidator : IValidateOptions<PrismAuthOption
             failures.Add($"{nameof(options.MaxLoginTokenLifetimeMinutes)} must be between 1 and 12, so a token cannot outlive its replay entry.");
         }
 
-        if (options.RateLimitPerMinute < 1 || options.CallbackRateLimitPerMinute < 1)
+        if (options.RateLimitPerMinute < 1 || options.CallbackRateLimitPerMinute < 1 || options.ClaimReadsPerUserPerMinute < 1)
         {
             failures.Add("Rate limits must be at least 1 request per minute.");
         }
