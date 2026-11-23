@@ -9,6 +9,7 @@ import {
 import { DashboardFilterContext } from './dashboard-filter-context';
 import { CleanClaimRateDto, NetCollectionsService, TransportVolumeDto } from '../metrics/net-collections.service';
 import { FilterBarComponent } from './filter-bar.component';
+import { frameContext } from '../shared/fullscreen';
 import { KpiCardComponent } from './kpi-card.component';
 import { NetCashPanelComponent } from './net-cash-panel.component';
 import { ProjectionPanelComponent } from './projection-panel.component';
@@ -44,7 +45,7 @@ const CRUMBS: EmsBreadcrumb[] = [{ label: 'Dashboard' }];
         <app-net-cash-panel class="dashboard__cash" [periodsLoading]="periodsLoading()" [providerId]="providerId()" [endPeriod]="endPeriod()" [serviceLine]="serviceLine()" [periodsError]="periodsError()" (retryPeriods)="retryPeriods()" />
 
         <div class="dashboard__tiles">
-        <app-kpi-card title="Transports" [value]="transportsCard().value" [delta]="transportsCard().delta" [footnote]="transportsCard().footnote" [caveat]="volumeCaveat()" [loading]="volumeLoading()">
+        <app-kpi-card title="Transports" [value]="transportsCard().value" [delta]="transportsCard().delta" [footnote]="transportsCard().footnote" [caveat]="volumeCaveat()" [loading]="volumeLoading()" [expandable]="!volumeLoading() && !volumeFailed() && transportsCard().bars.length > 0" [context]="tileContext()">
           @if (volumeLoading()) {
             <app-skeleton height="4.75rem" />
           } @else if (volumeFailed()) {
@@ -64,7 +65,7 @@ const CRUMBS: EmsBreadcrumb[] = [{ label: 'Dashboard' }];
           }
         </app-kpi-card>
 
-        <app-kpi-card title="Loaded miles" [value]="milesCard().value" [unit]="milesCard().unit" [unitHidden]="true" [delta]="milesCard().delta" footnote="Billed miles, patient on board" [caveat]="volumeCaveat()" [loading]="volumeLoading()">
+        <app-kpi-card title="Loaded miles" [value]="milesCard().value" [unit]="milesCard().unit" [unitHidden]="true" [delta]="milesCard().delta" footnote="Billed miles, patient on board" [caveat]="volumeCaveat()" [loading]="volumeLoading()" [expandable]="!volumeLoading() && !volumeFailed() && !!milesCard().line" [context]="tileContext()">
           @if (volumeLoading()) {
             <app-skeleton height="4.75rem" />
           } @else if (volumeFailed()) {
@@ -339,6 +340,10 @@ export class DashboardComponent {
   protected readonly volumeLoading = computed(() => this.periodsLoading() || this.volume.isLoading());
   protected readonly volumeFailed = computed(() => this.volume.error() !== undefined);
   protected readonly transportsCard = computed(() => toTransportsCard(this.volumeValue()));
+  /** What the tiles cover, said when one is full screen and the page filters are out of sight. */
+  protected readonly tileContext = computed(() =>
+    frameContext(this.filters.periods().find((p) => p.value === this.endPeriod())?.label ?? '', { air: 'Air', ground: 'Ground', both: 'Air and ground' }[this.serviceLine()]),
+  );
   protected readonly milesCard = computed(() => toMilesCard(this.volumeValue(), this.serviceLine() === 'ground' ? 'statute' : this.mileUnit()));
   protected readonly volumeCaveat = computed(() => (this.volumeValue()?.periodOpen ? 'This month is still open, so counts may rise.' : ''));
 

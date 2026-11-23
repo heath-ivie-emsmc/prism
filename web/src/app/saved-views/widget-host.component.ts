@@ -1,9 +1,12 @@
 import { CdkDragHandle } from '@angular/cdk/drag-drop';
 import { ChangeDetectionStrategy, Component, ElementRef, HostListener, computed, inject, input, linkedSignal, output, signal } from '@angular/core';
 import { MatMenuModule } from '@angular/material/menu';
-import { EmsButtonDirective, EmsCardComponent, EmsChipComponent, EmsIconComponent } from '@ems-management-consultants/ui';
+import { EmsButtonDirective, EmsChipComponent, EmsIconComponent } from '@ems-management-consultants/ui';
 import { CatalogMetricDto, LayoutWidget, SizePreset } from './layout.model';
+import { DashboardFilterContext } from '../dashboard/dashboard-filter-context';
 import { SegmentOption, SegmentedControlComponent } from '../dashboard/segmented-control.component';
+import { DataFrameComponent } from '../shared/data-frame.component';
+import { frameContext } from '../shared/fullscreen';
 import { MetricWidgetComponent, WidgetStatus } from './metric-widget.component';
 
 /** Everything a widget's toolbar can ask the page to do. The page owns the layout, so the host only reports. */
@@ -26,11 +29,11 @@ const UNIT_LABELS: Readonly<Record<string, string>> = { USD: 'US dollars', perce
  */
 @Component({
   selector: 'app-widget-host',
-  imports: [CdkDragHandle, EmsButtonDirective, EmsCardComponent, EmsChipComponent, EmsIconComponent, MatMenuModule, MetricWidgetComponent, SegmentedControlComponent],
+  imports: [CdkDragHandle, DataFrameComponent, EmsButtonDirective, EmsChipComponent, EmsIconComponent, MatMenuModule, MetricWidgetComponent, SegmentedControlComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    <ems-card [heading]="title()">
-      <div emsCardActions>
+    <app-data-frame [heading]="title()" [expandable]="!editing()" [context]="context()">
+      <div frameActions class="host__actions">
       @if (kinds().length > 1) {
         <span class="host__unit">{{ unitLabel() }}</span>
         <span data-snapshot-skip>
@@ -65,7 +68,7 @@ const UNIT_LABELS: Readonly<Record<string, string>> = { USD: 'US dollars', perce
         <ems-chip state="info" icon="open_with">Moving</ems-chip>
       }
       <app-metric-widget [widget]="shownWidget()" [metric]="metric()" [editing]="editing()" (status)="status.emit($event)" />
-    </ems-card>
+    </app-data-frame>
   `,
   styles: `
     :host {
@@ -73,13 +76,14 @@ const UNIT_LABELS: Readonly<Record<string, string>> = { USD: 'US dollars', perce
       min-width: 0;
       height: 100%;
     }
-    /* The card fills the grid area the widget was given, and its content area fills the card, so a taller widget really is taller. */
-    ems-card {
-      height: 100%;
-    }
-    :host ::ng-deep ems-card .ems-card__content {
-      flex: 1 1 auto;
-      min-height: 0;
+    /* The frame fills the grid area the widget was given, so a taller widget really is taller. */
+    .host__actions {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: flex-end;
+      min-width: 0;
+      gap: var(--ems-gap-sm);
     }
     .host__unit {
       margin-inline-end: 0.75rem;
@@ -131,6 +135,10 @@ export class WidgetHostComponent {
   protected readonly shownWidget = computed<LayoutWidget>(() => ({ ...this.widget(), presentation: this.shown() }));
   /** One option per way the catalog says this Metric can be drawn, so a new presentation in the catalog shows up here with no change to this file. */
   protected readonly kinds = computed<SegmentOption<string>[]>(() => this.metric().presentations.map((p) => ({ value: p.key, label: p.name, icon: p.icon })));
+  /** What the figures cover, shown when the widget is full screen and the page filters are out of sight. */
+  protected readonly context = computed(() =>
+    frameContext(this.filters.periods().find((p) => p.value === this.filters.endPeriod())?.label ?? '', { air: 'Air', ground: 'Ground', both: 'Air and ground' }[this.filters.serviceLine()]),
+  );
   protected readonly unitLabel = computed(() => UNIT_LABELS[this.metric().unit] ?? this.metric().unit);
 
   protected choose(key: string): void {
@@ -141,6 +149,7 @@ export class WidgetHostComponent {
     }
   }
 
+  private readonly filters = inject(DashboardFilterContext);
   private readonly element = inject<ElementRef<HTMLElement>>(ElementRef);
   private readonly active = signal(0);
 

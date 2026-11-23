@@ -30,6 +30,8 @@ export interface WidgetData {
   readonly summary: string;
   readonly table: WidgetTable;
   readonly categories: readonly string[];
+  /** When each category is a payer group, its key, in the order of `categories`, so a payer keeps one colour on every chart. */
+  readonly categoryKeys?: readonly string[];
   readonly series: readonly WidgetSeries[];
   /** The one figure a tile shows, with a short note under it. */
   readonly headline: { readonly value: string; readonly note: string } | null;
@@ -196,6 +198,7 @@ export function fromPayerMix(dto: PayerMixDto): WidgetData {
       rows: dto.shares.map((s) => [s.name, whole(s.current), share(s.current, total), share(s.prior, priorTotal)]),
     },
     categories: dto.shares.map((s) => s.name),
+    categoryKeys: dto.shares.map((s) => s.key),
     series: [
       { name: dto.priorPeriod ? apPeriodLabel(dto.priorPeriod) : 'Month before', values: dto.shares.map((s) => s.prior) },
       { name: dto.period ? apPeriodLabel(dto.period) : 'This month', values: dto.shares.map((s) => s.current) },
@@ -273,6 +276,7 @@ export function fromCashPerTransport(dto: CashPerTransportDto): WidgetData {
       rows: dto.payers.map((p) => [p.name, p.cashPerTransport === null ? 'n/a' : moneyExact(p.cashPerTransport), whole(p.transports), moneyExact(p.cash)]),
     },
     categories: payers.map((p) => p.name),
+    categoryKeys: payers.map((p) => p.key),
     series: [{ name: 'Cash per transport', values: payers.map((p) => p.cashPerTransport) }],
     headline: null,
     dataThrough: null,
@@ -302,6 +306,7 @@ export function fromPaymentAge(dto: PaymentAgeDto): WidgetData {
       rows: payers.map(([key, name]) => [name, moneyExact(cashFor(key)), meanAge(key)]),
     },
     categories: payers.map(([, name]) => name),
+    categoryKeys: payers.map(([key]) => key),
     series: [{ name: 'Net cash', values: payers.map(([key]) => cashFor(key)) }],
     headline: null,
     dataThrough: null,

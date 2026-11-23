@@ -88,6 +88,7 @@ describe('widget data', () => {
     });
 
     expect(data.table.rows[0]).toEqual(['Commercial', '$400.00', '3.5 months']);
+    expect(data.categoryKeys).toEqual(['c']);
   });
 
   it('keeps every summary under the accessible-name limit however long the text', () => {

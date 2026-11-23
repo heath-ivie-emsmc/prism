@@ -5,6 +5,8 @@ import { ActivatedRoute, Router } from '@angular/router';
 import { map, of } from 'rxjs';
 import { EmsBreadcrumb, EmsBreadcrumbsComponent, EmsMessageComponent, EmsPickerOption, EmsSelectComponent } from '@ems-management-consultants/ui';
 import { AuthService } from '../auth/auth.service';
+import { DataFrameComponent } from '../shared/data-frame.component';
+import { frameContext } from '../shared/fullscreen';
 import { LoadProblemComponent } from '../shared/load-problem.component';
 import { SkeletonComponent } from '../shared/skeleton.component';
 import { ChartComponent } from '../charts/chart.component';
@@ -47,7 +49,7 @@ interface TableRow {
  */
 @Component({
   selector: 'app-payer-mix',
-  imports: [WhatChangedComponent, SkeletonComponent, LoadProblemComponent, PayerDonutsComponent, PayerLegendComponent, PayerStackedComponent, ChartComponent, EmsBreadcrumbsComponent, EmsMessageComponent, EmsSelectComponent, ReactiveFormsModule, SegmentedControlComponent],
+  imports: [DataFrameComponent, WhatChangedComponent, SkeletonComponent, LoadProblemComponent, PayerDonutsComponent, PayerLegendComponent, PayerStackedComponent, ChartComponent, EmsBreadcrumbsComponent, EmsMessageComponent, EmsSelectComponent, ReactiveFormsModule, SegmentedControlComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <main class="page">
@@ -67,14 +69,12 @@ interface TableRow {
       <div class="page__panels">
         <app-what-changed [providerId]="providerId()" [period]="month()" [line]="line()" [group]="group()" [groupName]="groupName()" />
 
-        <section class="app-panel" aria-labelledby="mix-title">
-          <header class="mix__header">
-            <h2 id="mix-title">{{ groupName() }} payer mix</h2>
-            <div class="mix__controls">
-              <span class="mix__unit">Share of transports</span>
-              <app-segmented-control label="Chart type" [options]="views" [(value)]="view" [iconOnly]="true" />
-            </div>
-          </header>
+        <app-data-frame [heading]="groupName() + ' payer mix'" [context]="context()">
+          <div frameActions class="mix__controls">
+            <span class="mix__unit">Share of transports</span>
+            <app-segmented-control label="Chart type" [options]="views" [(value)]="view" [iconOnly]="true" />
+          </div>
+          <div class="mix__body">
 
           @if (loadError() !== undefined) {
             <app-load-problem [error]="loadError()" subject="the payer mix" (retry)="retry()" />
@@ -101,7 +101,7 @@ interface TableRow {
               <app-payer-donuts [shares]="shares()" [callout]="callout()" [currentName]="currentName()" [priorName]="priorName()" [currentLong]="currentLong()" [priorLong]="priorLong()" />
               <app-payer-legend [shares]="shares()" [currentName]="currentName()" [priorName]="priorName()" />
             } @else {
-              <div class="table-wrap" role="region" aria-labelledby="mix-title" tabindex="0">
+              <div class="table-wrap" role="region" [attr.aria-label]="groupName() + ' payer mix'" tabindex="0">
                 <table class="table">
                   <caption class="cdk-visually-hidden">{{ groupName() }} transports by primary payer, {{ priorName() }} and {{ currentName() }}</caption>
                   <thead>
@@ -137,7 +137,8 @@ interface TableRow {
             Each transport is counted in the month it happened, under its primary payer. Commercial is insurance and third-party liability, Medicare includes
             Medicare Advantage, Medicaid includes Medicaid managed care, and VA includes CHAMPVA and TRICARE.
           </p>
-        </section>
+          </div>
+        </app-data-frame>
       </div>
     </main>
   `,
@@ -175,15 +176,6 @@ interface TableRow {
       line-height: var(--ems-line-height-title);
       font-weight: var(--ems-font-weight-heavy);
     }
-    h2 {
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
-      margin: 0;
-      font-size: var(--ems-font-size-heading);
-      line-height: var(--ems-line-height-heading);
-      font-weight: var(--ems-font-weight-heavy);
-    }
     .page__subtitle,
     .page__note {
       margin: 0.25rem 0 0;
@@ -209,17 +201,10 @@ interface TableRow {
         grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
       }
     }
-    .app-panel {
+    .mix__body {
       display: flex;
       flex-direction: column;
       gap: 1rem;
-    }
-    .mix__header {
-      display: flex;
-      flex-wrap: wrap;
-      align-items: center;
-      justify-content: space-between;
-      gap: 0.75rem;
     }
     .mix__controls {
       display: flex;
@@ -331,6 +316,8 @@ export class PayerMixComponent {
 
   protected readonly month = computed(() => (/^\d{6}$/.test(this.query().period) ? this.query().period : ((this.periodsResource.hasValue() ? this.periodsResource.value() : undefined)?.periods[0]?.period ?? '')));
   protected readonly periodLabel = computed(() => apPeriodLabel(this.month()));
+  /** What the figures cover, said when the panel is full screen and the page filters are out of sight. */
+  protected readonly context = computed(() => frameContext(this.periodLabel(), this.line() === 'air' ? 'Air' : 'Ground'));
   protected readonly currentName = computed(() => monthName(this.month()));
   protected readonly priorName = computed(() => priorMonthName(this.month()));
 

@@ -1,5 +1,6 @@
 import type { EChartsCoreOption } from 'echarts/core';
 import type { ChartColors } from '../charts/chart.component';
+import { payerColor } from '../payer-mix/payer-mix';
 import { WidgetData, money, whole } from './widget-data';
 
 export type ChartKind = 'line' | 'column' | 'stacked' | 'donut';
@@ -20,6 +21,15 @@ export function formatValue(value: number, unit: WidgetData['unit'], compact: bo
     default:
       return compact ? compactCount.format(value) : whole(value);
   }
+}
+
+/**
+ * The colour of one payer group's bar or slice, the same on every chart (the stacked bars and donuts on Payer mix use it too), so Commercial is
+ * always the same green. Only when the category is a payer; months and other categories keep the palette. The outline keeps a pale fill visible.
+ */
+function payerFill(data: WidgetData, index: number): { itemStyle?: { color: string } } {
+  const key = data.categoryKeys?.[index];
+  return key === undefined ? {} : { itemStyle: { color: payerColor(key).fill } };
 }
 
 /**
@@ -49,7 +59,7 @@ export function buildWidgetOption(data: WidgetData, kind: ChartKind, colors: Cha
           emphasis: { disabled: true },
           itemStyle: { borderColor: colors.text, borderWidth: 1 },
           label: { color: colors.text, formatter: (p: { name: string; percent: number }) => (colors.narrow ? '' : `${p.name} ${p.percent.toFixed(0)}%`) },
-          data: data.categories.map((name, i) => ({ name, value: latest?.values[i] ?? 0 })),
+          data: data.categories.map((name, i) => ({ name, value: latest?.values[i] ?? 0, ...payerFill(data, i) })),
         },
       ],
     } as EChartsCoreOption;
@@ -71,9 +81,9 @@ export function buildWidgetOption(data: WidgetData, kind: ChartKind, colors: Cha
       name: series.name,
       type: bar ? 'bar' : 'line',
       emphasis: { disabled: true },
-      data: [...series.values],
+      data: bar && data.series.length === 1 && data.categoryKeys ? series.values.map((value, index) => ({ value, ...payerFill(data, index) })) : [...series.values],
       ...(kind === 'stacked' ? { stack: 'total' } : {}),
-      ...(bar ? { itemStyle: { borderColor: colors.text, borderWidth: kind === 'stacked' ? 1 : 0 } } : { symbol: SYMBOLS[i % SYMBOLS.length], symbolSize: 8, lineStyle: { type: DASHES[i % DASHES.length], width: 2 } }),
+      ...(bar ? { itemStyle: { borderColor: colors.text, borderWidth: kind === 'stacked' || (data.series.length === 1 && data.categoryKeys) ? 1 : 0 } } : { symbol: SYMBOLS[i % SYMBOLS.length], symbolSize: 8, lineStyle: { type: DASHES[i % DASHES.length], width: 2 } }),
     })),
   } as EChartsCoreOption;
 }

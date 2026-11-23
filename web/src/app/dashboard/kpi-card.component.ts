@@ -1,5 +1,6 @@
-import { ChangeDetectionStrategy, Component, input } from '@angular/core';
-import { EmsCardComponent, EmsIconComponent } from '@ems-management-consultants/ui';
+import { ChangeDetectionStrategy, Component, input, signal } from '@angular/core';
+import { EmsIconComponent } from '@ems-management-consultants/ui';
+import { DataFrameComponent } from '../shared/data-frame.component';
 import { SkeletonComponent } from '../shared/skeleton.component';
 
 export interface KpiDelta {
@@ -10,10 +11,10 @@ export interface KpiDelta {
 /** Small Metric tile: title, big value with a unit, a visual slot, a change line and a footnote. Layout only: it knows nothing about any Metric. */
 @Component({
   selector: 'app-kpi-card',
-  imports: [EmsCardComponent, EmsIconComponent, SkeletonComponent],
+  imports: [DataFrameComponent, EmsIconComponent, SkeletonComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    <ems-card [heading]="title()" [attr.aria-busy]="loading()">
+    <app-data-frame [heading]="title()" [expandable]="expandable()" [context]="context()" [attr.aria-busy]="loading()" (expandedChange)="expanded.set($event)">
       @if (loading()) {
         <span class="cdk-visually-hidden" role="status">Loading {{ title() }}</span>
       }
@@ -29,7 +30,7 @@ export interface KpiDelta {
           }
         </p>
       </div>
-      <div class="kpi__visual"><ng-content /></div>
+      <div class="kpi__visual" [class.kpi__visual--expanded]="expanded()"><ng-content /></div>
       <!-- Always laid out, empty when there is no change to report, so the footnote under it sits on the same line in every tile of a row. -->
       <p class="kpi__delta" [attr.aria-hidden]="delta() ? null : 'true'">
         @if (loading()) {
@@ -51,7 +52,7 @@ export interface KpiDelta {
       @if (caveat() && !loading()) {
         <p class="kpi__footnote kpi__caveat">{{ caveat() }}</p>
       }
-    </ems-card>
+    </app-data-frame>
   `,
   styles: `
     :host {
@@ -74,9 +75,6 @@ export interface KpiDelta {
     .kpi__footrow > :not(.kpi__footnote) {
       flex: none;
       align-self: center;
-    }
-    ems-card {
-      height: 100%;
     }
     .kpi__value {
       margin: 0;
@@ -101,6 +99,11 @@ export interface KpiDelta {
     .kpi__visual {
       margin: 0.75rem 0;
       min-height: 3rem;
+    }
+    /* Full screen: the picture is a fixed height in the page, so it is told to be tall, and the tile centres what it holds. */
+    .kpi__visual--expanded {
+      --chart-height: 55dvh;
+      margin-block: 1.5rem;
     }
     .kpi__delta {
       min-height: var(--ems-line-height-small);
@@ -129,4 +132,10 @@ export class KpiCardComponent {
   readonly caveat = input('');
   /** The figures are on their way: grey blocks stand in for them. The picture in the slot is the page's to replace with its own block. */
   readonly loading = input(false);
+  /** Offer full screen. Only for a tile whose picture is worth a bigger look, and only when the picture is there. */
+  readonly expandable = input(false);
+  /** What the figure covers, shown when the tile is full screen and the page filters are out of sight. */
+  readonly context = input('');
+
+  protected readonly expanded = signal(false);
 }

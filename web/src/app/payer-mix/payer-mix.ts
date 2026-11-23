@@ -54,16 +54,16 @@ export function formatPoints(points: number): string {
   return `${n > 0 ? '+' : n < 0 ? '−' : ''}${Math.abs(n)} ${Math.abs(n) === 1 ? 'pt' : 'pts'}`;
 }
 
-/** The fill and the readable text color on it for each payer group, in the stacked bars, donuts and their key. Fixed, so a group has one color on every view. */
+/** The fill and the readable text color on it for each payer group, in the stacked bars, donuts and their key. Fixed, so a group has one color on every view. None is a grey: grey reads as "nothing to see" or "no data", and every payer is something to see. */
 const PAYER_COLORS: Record<string, { fill: string; text: string }> = {
   commercial: { fill: '#00704a', text: '#ffffff' },
   medicare: { fill: '#ffd400', text: '#1a1a1a' },
   medicaid: { fill: '#a01f1f', text: '#ffffff' },
-  'other-gov': { fill: '#5f5f66', text: '#ffffff' },
-  va: { fill: '#8c8c92', text: '#1a1a1a' },
+  'other-gov': { fill: '#752e58', text: '#ffffff' },
+  va: { fill: '#c4560a', text: '#ffffff' },
   facility: { fill: '#3b6fb6', text: '#ffffff' },
-  patient: { fill: '#e2e2e6', text: '#1a1a1a' },
-  'not-recorded': { fill: '#c2c2c8', text: '#1a1a1a' },
+  patient: { fill: '#6b4fc4', text: '#ffffff' },
+  'not-recorded': { fill: '#7a4a21', text: '#ffffff' },
 };
 
 export function payerColor(key: string): { fill: string; text: string } {

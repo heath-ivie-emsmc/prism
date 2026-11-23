@@ -10,6 +10,8 @@
 headings and landmarks, forced colors, 200% text, 400% zoom, text spacing, reduced motion, Tab order, visible focus, skip links, menus and dialogs.
 `saved-views.spec.ts` covers what a user does with saved views: arrange by keyboard and pointer, save, conflict, share, redeem and the refusals.
 `needs-attention.spec.ts` covers the claims review: tabs and counts, ticking claims and the count badge on Send to CSE, the drawer, the tab-aware CSV download, the refusal without the claims permission, and the Insights card that links to it.
+`data-frame.spec.ts` covers the shared data frame: the expand-to-full-screen button on Saved view widgets, the Net cash panel and the Transports and Loaded miles tiles (named after the widget, absent while arranging, 44px on touch, keyboard Enter, collapse and focus return), and the full screen layout and axe check at every size. Headless Chromium ignores a synthetic Escape for full screen, so the tests leave through the button or `exitFullscreen()`; Escape itself is covered in the component test.
+
 A new page or state adds itself to those specs in the same change.
 
 Controls under 24px are reported as warnings in the JSON report but do not fail the run.

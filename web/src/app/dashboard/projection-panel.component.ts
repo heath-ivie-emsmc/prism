@@ -1,5 +1,6 @@
 import { ChangeDetectionStrategy, Component, signal } from '@angular/core';
 import { EmsChipComponent } from '@ems-management-consultants/ui';
+import { payerColor } from '../payer-mix/payer-mix';
 import { SegmentOption, SegmentedControlComponent } from './segmented-control.component';
 
 type Month = 'nov' | 'dec' | 'jan';
@@ -20,12 +21,12 @@ interface PayerShare {
 
 /** Layout only: placeholder shares until the projection endpoint exists. */
 const PAYERS: readonly PayerShare[] = [
-  { name: 'Commercial', amount: '$859K', percent: 70.7, color: 'var(--ems-surface-accent-emerald)' },
-  { name: 'Medicare', amount: '$209K', percent: 17.2, color: 'var(--ems-surface-accent-citrus)' },
-  { name: 'Medicaid', amount: '$83K', percent: 6.8, color: 'var(--ems-surface-error-stronger)' },
-  { name: 'Other gov', amount: '$30K', percent: 2.5, color: 'var(--ems-surface-neutral-strong)' },
-  { name: 'VA', amount: '$28K', percent: 2.3, color: 'var(--ems-surface-neutral-strong)' },
-  { name: 'Patient resp.', amount: '$6K', percent: 0.5, color: 'var(--ems-surface-neutral-default)' },
+  { name: 'Commercial', amount: '$859K', percent: 70.7, color: payerColor('commercial').fill },
+  { name: 'Medicare', amount: '$209K', percent: 17.2, color: payerColor('medicare').fill },
+  { name: 'Medicaid', amount: '$83K', percent: 6.8, color: payerColor('medicaid').fill },
+  { name: 'Other gov', amount: '$30K', percent: 2.5, color: payerColor('other-gov').fill },
+  { name: 'VA', amount: '$28K', percent: 2.3, color: payerColor('va').fill },
+  { name: 'Patient resp.', amount: '$6K', percent: 0.5, color: payerColor('patient').fill },
 ];
 
 /** The projection for one future month: expected cash, range, how much is already billed, and the payer mix behind it. */

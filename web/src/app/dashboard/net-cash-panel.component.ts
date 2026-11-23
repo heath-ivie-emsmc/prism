@@ -7,6 +7,8 @@ import { RouterLink } from '@angular/router';
 import { ChartComponent, ChartOptionBuilder } from '../charts/chart.component';
 import { NetCashMonth, boundedMonths, changeFromPrior, formatExact, formatLabel, summarizeNetCash } from '../charts/net-cash';
 import { NetCashProjectionDto, NetCollectionsDto, NetCollectionsService } from '../metrics/net-collections.service';
+import { DataFrameComponent } from '../shared/data-frame.component';
+import { frameContext } from '../shared/fullscreen';
 import { LoadProblemComponent } from '../shared/load-problem.component';
 import { SkeletonComponent } from '../shared/skeleton.component';
 import { apPeriodLabel } from './dashboard-format';
@@ -48,15 +50,12 @@ interface TableRow {
 /** The large net cash panel: filters, the headline for the latest month, and the line, bar or table view of the months. */
 @Component({
   selector: 'app-net-cash-panel',
-  imports: [SkeletonComponent, ChartComponent, EmsButtonDirective, LoadProblemComponent, EmsChipComponent, EmsIconComponent, EmsMessageComponent, EmsSelectComponent, ReactiveFormsModule, RouterLink, SegmentedControlComponent, SwitchComponent],
+  imports: [DataFrameComponent, SkeletonComponent, ChartComponent, EmsButtonDirective, LoadProblemComponent, EmsChipComponent, EmsIconComponent, EmsMessageComponent, EmsSelectComponent, ReactiveFormsModule, RouterLink, SegmentedControlComponent, SwitchComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    <section class="panel" aria-labelledby="net-cash-title" [attr.aria-busy]="series.isLoading()">
-      <header class="panel__header">
-        <h2 id="net-cash-title">Net cash collected</h2>
-        <app-segmented-control label="Chart type" [options]="chartKinds" [(value)]="chartKind" [iconOnly]="true" />
-      </header>
-
+    <app-data-frame heading="Net cash collected" [context]="context()">
+      <app-segmented-control frameActions label="Chart type" [options]="chartKinds" [(value)]="chartKind" [iconOnly]="true" />
+      <div class="panel" [attr.aria-busy]="series.isLoading()">
       <div class="panel__filters">
         <app-segmented-control label="Date range" [options]="ranges" [(value)]="range" />
         <app-segmented-control label="Call type" [options]="callTypes" [(value)]="callType" [disabled]="true" [title]="notAvailable" />
@@ -139,46 +138,26 @@ interface TableRow {
       }
 
       <p class="panel__note">Cash is by the accounting period the payment was posted in, from the latest data load.</p>
-    </section>
+      </div>
+    </app-data-frame>
   `,
   styles: `
     :host {
       display: block;
     }
+    /* The frame is the card; this is just the stack of filters, headline and chart inside it. */
     .panel {
-      height: 100%;
-      box-sizing: border-box;
+      flex: 1 1 auto;
+      min-height: 0;
       display: flex;
       flex-direction: column;
       gap: 1rem;
-      padding: 1.25rem;
-      /* The same surface, ring and shadow as the library card the other panels use, so they read as one set. */
-      border-radius: var(--ems-corner-md);
-      background: var(--ems-surface-neutral-default);
-      box-shadow:
-        inset 0 0 0 var(--ems-border-width-default) var(--ems-border-neutral-default),
-        var(--ems-fx-neutral-default-frosted-raised-glowing);
-      -webkit-backdrop-filter: var(--ems-fx-frosted);
-      backdrop-filter: var(--ems-fx-frosted);
     }
     /* The chart takes whatever height the panel has left, never less than a readable chart. */
     app-chart {
       flex: 1 1 0;
       min-height: 12rem;
       --chart-height: 100%;
-    }
-    .panel__header {
-      display: flex;
-      flex-wrap: wrap;
-      align-items: center;
-      justify-content: space-between;
-      gap: 1rem;
-    }
-    h2 {
-      margin: 0;
-      font-size: var(--ems-font-size-heading);
-      line-height: var(--ems-line-height-heading);
-      font-weight: var(--ems-font-weight-heavy);
     }
     .panel__filters {
       display: flex;
@@ -348,6 +327,11 @@ export class NetCashPanelComponent {
 
   /** The person asked to try again after the periods failed to load. */
   readonly retryPeriods = output<void>();
+
+  /** What the figures cover, said when the panel is full screen and the page filters are out of sight. */
+  protected readonly context = computed(() =>
+    frameContext(apPeriodLabel(this.endPeriod()), { air: 'Air', ground: 'Ground', both: 'Air and ground' }[this.serviceLine()]),
+  );
 
   protected readonly chartKinds = CHART_KINDS;
   protected readonly ranges = RANGES;
