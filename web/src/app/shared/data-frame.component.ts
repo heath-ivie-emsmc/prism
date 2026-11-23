@@ -1,6 +1,9 @@
 import { LiveAnnouncer } from '@angular/cdk/a11y';
 import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, computed, inject, input, output, signal } from '@angular/core';
 import { EmsButtonDirective, EmsCardComponent, EmsIconComponent } from '@ems-management-consultants/ui';
+import { ContextBadgeComponent } from './context-badge.component';
+import { FreshnessStampComponent } from './freshness-stamp.component';
+import { Labels } from '../dashboard/service-line';
 import { EXITED_ANNOUNCEMENT, UNAVAILABLE_ANNOUNCEMENT, enteredAnnouncement, expandButtonName, fullscreenSupported } from './fullscreen';
 
 /**
@@ -13,7 +16,7 @@ import { EXITED_ANNOUNCEMENT, UNAVAILABLE_ANNOUNCEMENT, enteredAnnouncement, exp
  */
 @Component({
   selector: 'app-data-frame',
-  imports: [EmsButtonDirective, EmsCardComponent, EmsIconComponent],
+  imports: [ContextBadgeComponent, EmsButtonDirective, EmsCardComponent, EmsIconComponent, FreshnessStampComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: { '(document:fullscreenchange)': 'sync()' },
   template: `
@@ -28,6 +31,12 @@ import { EXITED_ANNOUNCEMENT, UNAVAILABLE_ANNOUNCEMENT, enteredAnnouncement, exp
         <p class="frame__context">{{ context() }}</p>
       }
       <ng-content />
+      @if (dataThrough()) {
+        <div class="frame__foot">
+          <app-freshness-stamp [dataThrough]="dataThrough()" />
+          <app-context-badge [serviceLine]="serviceLine()" [divisionApplied]="divisionApplied()" [labels]="labels()" />
+        </div>
+      }
     </ems-card>
   `,
   styles: `
@@ -46,9 +55,35 @@ import { EXITED_ANNOUNCEMENT, UNAVAILABLE_ANNOUNCEMENT, enteredAnnouncement, exp
       flex: 1 1 auto;
       min-height: 0;
     }
+    /* Narrow phones: the actions (a subtitle, a view switcher) take their own full-width row under the title, so neither is squeezed into a sliver. */
+    @media (max-width: 400px) {
+      :host ::ng-deep ems-card .ems-card__header {
+        flex-wrap: wrap;
+        min-height: 0;
+      }
+      :host ::ng-deep ems-card .ems-card__title {
+        flex: 1 1 auto;
+        min-width: 0;
+      }
+      :host ::ng-deep ems-card .ems-card__actions {
+        flex: 1 1 100%;
+        flex-wrap: wrap;
+        min-width: 0;
+      }
+    }
     .frame__expand {
       min-width: 2rem;
       min-height: 2rem;
+    }
+    /* Wraps instead of overflowing at 320px; the two statements are separate lines when there is no room side by side. */
+    .frame__foot {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0 1rem;
+      margin-top: auto;
+      padding-top: 0.5rem;
+      min-width: 0;
+      overflow-wrap: anywhere;
     }
     .frame__context {
       margin: 0 0 0.5rem;
@@ -86,6 +121,12 @@ export class DataFrameComponent {
   readonly expandable = input(true);
   /** What the figures cover, for example "October 2026 · Air". Shown only when expanded, because the page filters are out of sight then. */
   readonly context = input('');
+
+  /** yyyy-MM-dd. When given, a footer shows the freshness stamp and what the figures cover. Omit it and the frame looks as before. */
+  readonly dataThrough = input<string | null>(null);
+  readonly serviceLine = input<'all' | 'air' | 'ground'>('all');
+  readonly divisionApplied = input(false);
+  readonly labels = input<Labels | null>(null);
 
   /** Tells the content when it is full screen, for content that has to draw larger (a fixed-height picture). Report only: the frame owns the state. */
   readonly expandedChange = output<boolean>();

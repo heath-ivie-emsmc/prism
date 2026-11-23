@@ -1,6 +1,7 @@
 using System.Globalization;
 using Microsoft.Extensions.Caching.Memory;
 using Prism.Application.Warehouse;
+using Prism.Infrastructure.Metrics;
 
 namespace Prism.Infrastructure.Warehouse;
 
@@ -20,8 +21,24 @@ public sealed class ProviderDivisionDirectory(IWarehouse warehouse, IWarehousePr
         LIMIT 500
         """;
 
+    // The same name the net cash breakdown shows as the base, without a "- Old AR ..." suffix, so a legacy division counts under its current one.
+    internal const string ReportingDivisionsSql =
+        $$"""
+        SELECT name
+        FROM (
+            SELECT DISTINCT {{DivisionSql.NormalizedName}} AS name
+            FROM reporting.trip_detail_snapshot
+            WHERE provider_id = @provider_id
+              AND snapshot_date = (SELECT MAX(snapshot_date) FROM reporting.trip_detail_snapshot WHERE provider_id = @provider_id)
+        ) d
+        WHERE name IS NOT NULL
+        ORDER BY name
+        LIMIT 500
+        """;
+
     private static readonly TimeSpan Lifetime = TimeSpan.FromMinutes(10);
     private readonly MemoryCache cache = new(new MemoryCacheOptions { SizeLimit = 2000 });
+    private readonly MemoryCache divisionCache = new(new MemoryCacheOptions { SizeLimit = 2000 });
 
     public async Task<IReadOnlySet<string>> GetFacilityIdsAsync(int portalCompanyId, CancellationToken cancellationToken)
     {
@@ -45,5 +62,31 @@ public sealed class ProviderDivisionDirectory(IWarehouse warehouse, IWarehousePr
         return ids;
     }
 
-    public void Dispose() => cache.Dispose();
+    public async Task<IReadOnlyList<ReportingDivision>> GetReportingDivisionsAsync(int portalCompanyId, CancellationToken cancellationToken)
+    {
+        if (divisionCache.TryGetValue(portalCompanyId, out IReadOnlyList<ReportingDivision>? cached) && cached is not null)
+        {
+            return cached;
+        }
+
+        int warehouseId = await providers.ResolveAsync(portalCompanyId, cancellationToken);
+        if (warehouseId == IWarehouseProviderResolver.Unmapped)
+        {
+            return [];
+        }
+
+        IReadOnlyList<string> names = await warehouse.QueryAsync(
+            new WarehouseQuery(ReportingDivisionsSql, new Dictionary<string, object?> { [WarehouseQuery.ProviderParameter] = warehouseId }) { Name = "ProviderDivisionDirectory#2" },
+            reader => reader.GetString(0),
+            cancellationToken);
+        IReadOnlyList<ReportingDivision> divisions = ReportingDivision.FromNames(names);
+        divisionCache.Set(portalCompanyId, divisions, new MemoryCacheEntryOptions { Size = 1, AbsoluteExpirationRelativeToNow = Lifetime });
+        return divisions;
+    }
+
+    public void Dispose()
+    {
+        cache.Dispose();
+        divisionCache.Dispose();
+    }
 }

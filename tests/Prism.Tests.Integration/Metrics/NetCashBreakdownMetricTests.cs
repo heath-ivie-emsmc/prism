@@ -1,3 +1,4 @@
+using Prism.Application.Warehouse;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Npgsql;
@@ -86,7 +87,7 @@ public sealed class NetCashBreakdownMetricTests(PostgresFixture postgres) : ICla
     {
         NetCashBreakdownMetric metric = await NewMetricAsync();
 
-        NetCashBreakdown result = await metric.GetBreakdownAsync(2026, new ApPeriod(2026, 10), ServiceLineFilter.Both, TestContext.Current.CancellationToken);
+        NetCashBreakdown result = await metric.GetBreakdownAsync(2026, new ApPeriod(2026, 10), ServiceLineFilter.Both, null, TestContext.Current.CancellationToken);
 
         // Oct: 1000 - 50 + 100 (enc 11) + 200 + 3000 + 400 + 70 = 4720. Sep: 600 + 250 = 850.
         Assert.Equal(4720m, result.Groups.Sum(g => g.Current.Cash));
@@ -111,7 +112,7 @@ public sealed class NetCashBreakdownMetricTests(PostgresFixture postgres) : ICla
         Assert.Equal([(new ApPeriod(2026, 9), 850m), (new ApPeriod(2026, 10), 4250m)], air.Points.Select(p => (p.Period, p.Value)));
         Assert.Equal([(new ApPeriod(2026, 10), 470m)], ground.Points.Select(p => (p.Period, p.Value)));
         Assert.Equal(ServiceLineFilter.Air, air.ServiceLine);
-        NetCashBreakdown air2 = await breakdown.GetBreakdownAsync(2026, new ApPeriod(2026, 10), ServiceLineFilter.Air, ct);
+        NetCashBreakdown air2 = await breakdown.GetBreakdownAsync(2026, new ApPeriod(2026, 10), ServiceLineFilter.Air, null, ct);
         Assert.Equal(air.Points[^1].Value, air2.Groups.Sum(g => g.Current.Cash));
         // Another Provider's 5,550 never leaks in.
         Assert.DoesNotContain(air.Points.Concat(ground.Points), p => p.Value > 5000m);
@@ -122,7 +123,7 @@ public sealed class NetCashBreakdownMetricTests(PostgresFixture postgres) : ICla
     {
         NetCashBreakdownMetric metric = await NewMetricAsync();
 
-        NetCashBreakdown result = await metric.GetBreakdownAsync(2026, new ApPeriod(2026, 10), ServiceLineFilter.Air, TestContext.Current.CancellationToken);
+        NetCashBreakdown result = await metric.GetBreakdownAsync(2026, new ApPeriod(2026, 10), ServiceLineFilter.Air, null, TestContext.Current.CancellationToken);
 
         Assert.Equal(["fixed-wing", "rotor-wing"], result.Groups.Select(g => g.Key));
         NetCashBreakdownGroup rotor = result.Groups.Single(g => g.Key == "rotor-wing");
@@ -140,7 +141,7 @@ public sealed class NetCashBreakdownMetricTests(PostgresFixture postgres) : ICla
     {
         NetCashBreakdownMetric metric = await NewMetricAsync();
 
-        NetCashBreakdown result = await metric.GetBreakdownAsync(2026, new ApPeriod(2026, 10), ServiceLineFilter.Air, TestContext.Current.CancellationToken);
+        NetCashBreakdown result = await metric.GetBreakdownAsync(2026, new ApPeriod(2026, 10), ServiceLineFilter.Air, null, TestContext.Current.CancellationToken);
 
         // N1 at "Mercy Air - Rotor": encounter 11 and encounter 12 (its "- Old AR Logis" division collapses to "Mercy Air - Rotor"). The Provider's name stays: it is the reporting division's name.
         NetCashBreakdownRow n1 = Assert.Single(result.Rows, r => r.Vehicle == "N1");
@@ -156,7 +157,7 @@ public sealed class NetCashBreakdownMetricTests(PostgresFixture postgres) : ICla
     {
         NetCashBreakdownMetric metric = await NewMetricAsync();
 
-        NetCashBreakdown result = await metric.GetBreakdownAsync(2026, new ApPeriod(2026, 10), ServiceLineFilter.Ground, TestContext.Current.CancellationToken);
+        NetCashBreakdown result = await metric.GetBreakdownAsync(2026, new ApPeriod(2026, 10), ServiceLineFilter.Ground, null, TestContext.Current.CancellationToken);
 
         Assert.Equal(["als", "not-recorded"], result.Groups.Select(g => g.Key));
         Assert.Equal(new BreakdownFigures(400m, 1, 5m, 1, 0), result.Groups[0].Current);
@@ -172,8 +173,8 @@ public sealed class NetCashBreakdownMetricTests(PostgresFixture postgres) : ICla
     {
         NetCashBreakdownMetric metric = await NewMetricAsync();
 
-        NetCashBreakdown other = await metric.GetBreakdownAsync(31337, new ApPeriod(2026, 10), ServiceLineFilter.Both, TestContext.Current.CancellationToken);
-        NetCashBreakdown mine = await metric.GetBreakdownAsync(2026, new ApPeriod(2026, 10), ServiceLineFilter.Both, TestContext.Current.CancellationToken);
+        NetCashBreakdown other = await metric.GetBreakdownAsync(31337, new ApPeriod(2026, 10), ServiceLineFilter.Both, null, TestContext.Current.CancellationToken);
+        NetCashBreakdown mine = await metric.GetBreakdownAsync(2026, new ApPeriod(2026, 10), ServiceLineFilter.Both, null, TestContext.Current.CancellationToken);
 
         Assert.Empty(other.Groups);
         Assert.DoesNotContain(mine.Rows, r => r.Vehicle == "X9");
@@ -185,9 +186,9 @@ public sealed class NetCashBreakdownMetricTests(PostgresFixture postgres) : ICla
     {
         NetCashBreakdownMetric metric = await NewMetricAsync();
 
-        NetCashBreakdown october = await metric.GetBreakdownAsync(2026, new ApPeriod(2026, 10), ServiceLineFilter.Both, TestContext.Current.CancellationToken);
-        NetCashBreakdown september = await metric.GetBreakdownAsync(2026, new ApPeriod(2026, 9), ServiceLineFilter.Both, TestContext.Current.CancellationToken);
-        NetCashBreakdown unknown = await metric.GetBreakdownAsync(2026, new ApPeriod(2030, 1), ServiceLineFilter.Both, TestContext.Current.CancellationToken);
+        NetCashBreakdown october = await metric.GetBreakdownAsync(2026, new ApPeriod(2026, 10), ServiceLineFilter.Both, null, TestContext.Current.CancellationToken);
+        NetCashBreakdown september = await metric.GetBreakdownAsync(2026, new ApPeriod(2026, 9), ServiceLineFilter.Both, null, TestContext.Current.CancellationToken);
+        NetCashBreakdown unknown = await metric.GetBreakdownAsync(2026, new ApPeriod(2030, 1), ServiceLineFilter.Both, null, TestContext.Current.CancellationToken);
 
         // October's adjustment period is open. Another Provider's open October does not count for this one.
         Assert.True(october.PeriodOpen);
@@ -200,7 +201,7 @@ public sealed class NetCashBreakdownMetricTests(PostgresFixture postgres) : ICla
     {
         NetCashBreakdownMetric metric = await NewMetricAsync();
 
-        NetCashBreakdown result = await metric.GetBreakdownAsync(2026, new ApPeriod(2030, 1), ServiceLineFilter.Both, TestContext.Current.CancellationToken);
+        NetCashBreakdown result = await metric.GetBreakdownAsync(2026, new ApPeriod(2030, 1), ServiceLineFilter.Both, null, TestContext.Current.CancellationToken);
 
         Assert.Empty(result.Groups);
         Assert.Empty(result.Rows);
@@ -211,8 +212,48 @@ public sealed class NetCashBreakdownMetricTests(PostgresFixture postgres) : ICla
     {
         NetCashBreakdownMetric standIn = await NewMetricAsync(new Dictionary<int, int> { [31337] = 2026 });
 
-        NetCashBreakdown result = await standIn.GetBreakdownAsync(31337, new ApPeriod(2026, 10), ServiceLineFilter.Air, TestContext.Current.CancellationToken);
+        NetCashBreakdown result = await standIn.GetBreakdownAsync(31337, new ApPeriod(2026, 10), ServiceLineFilter.Air, null, TestContext.Current.CancellationToken);
 
         Assert.Equal(["fixed-wing", "rotor-wing"], result.Groups.Select(g => g.Key));
+    }
+
+    private static readonly ReportingDivision Rotor = new("rotor", "Mercy Air - Rotor");
+    private static readonly ReportingDivision Fixed = new("fixed", "Mercy Air - Fixed");
+
+    private static async Task<int> TotalAsync(NetCashBreakdownMetric metric, ReportingDivision? division)
+    {
+        var mix = await metric.GetBreakdownAsync(2026, new ApPeriod(2026, 10), ServiceLineFilter.Both, division, TestContext.Current.CancellationToken);
+        return mix.Groups.Sum(g => g.Current.Transports + g.Prior.Transports);
+    }
+
+    [Fact]
+    public async Task A_division_narrows_the_figures_and_the_divisions_of_the_provider_add_up_to_no_division()
+    {
+        NetCashBreakdownMetric metric = await NewMetricAsync();
+
+        int all = await TotalAsync(metric, null);
+        int rotor = await TotalAsync(metric, Rotor);
+        // Encounter 12 is filed under a legacy "- Old AR" name and counts under Rotor. The ground trip has no division and the cash with no trip row has none either.
+        int fixedTrips = await TotalAsync(metric, Fixed);
+
+        Assert.True(rotor > 0);
+        Assert.True(fixedTrips > 0);
+        Assert.True(rotor < all);
+        Assert.True(rotor + fixedTrips <= all);
+    }
+
+    [Theory]
+    [InlineData("Other - Rotor")]
+    [InlineData("Mercy Air - Rotor - Old AR Logis")]
+    [InlineData("x' OR '1'='1")]
+    [InlineData("")]
+    public async Task A_division_name_that_is_not_the_providers_matches_nothing_and_is_only_ever_a_bound_value(string name)
+    {
+        NetCashBreakdownMetric metric = await NewMetricAsync();
+
+        int total = await TotalAsync(metric, new ReportingDivision("k", name));
+
+        // The empty name is "no division": it is the unfiltered figure, never an error and never a match on an empty division.
+        Assert.Equal(name.Length == 0 ? await TotalAsync(metric, null) : 0, total);
     }
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CleanClaimRateDto } from '../metrics/net-collections.service';
+import { CleanClaimRateDto } from '../metrics/clean-claim-rate/clean-claim-rate.dto';
 import { formatRate, toCleanClaimCard } from './clean-claims';
 
 const dto = (points: [string, number | null][]): CleanClaimRateDto => ({

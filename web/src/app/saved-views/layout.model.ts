@@ -76,6 +76,8 @@ export interface CatalogMetricDto {
   readonly dimensions: readonly string[];
   readonly presentations: readonly CatalogPresentationDto[];
   readonly options: readonly CatalogOptionDto[];
+  /** What the Metric applies of the page scope. Older responses omit it. */
+  readonly context?: { readonly divisionSupport?: 'supported' | 'none' };
 }
 
 export interface CatalogDto {

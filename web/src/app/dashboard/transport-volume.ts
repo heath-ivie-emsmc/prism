@@ -1,5 +1,5 @@
-import { monthName, priorMonthName, priorPeriod } from '../breakdown/net-cash-breakdown';
-import { TransportVolumeDto } from '../metrics/net-collections.service';
+import { monthName, priorMonthName, priorPeriod } from '../metrics/net-cash-breakdown/net-cash-breakdown';
+import { TransportVolumeDto } from '../metrics/transport-volume/transport-volume.dto';
 
 export type MileUnit = 'statute' | 'nautical';
 

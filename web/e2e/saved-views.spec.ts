@@ -46,7 +46,7 @@ test.describe('saved views', () => {
     await expect(page.getByRole('button', { name: 'Edit', exact: true })).toBeVisible();
     await expect(page.getByRole('form', { name: 'View filters' })).toBeVisible();
     await expect(page.getByText('Filters apply to every metric on this page.')).toBeVisible();
-    await expect(page.locator('.builder__subtitle')).toContainText('Data through 10/31/2026');
+    await expect(page.locator('.builder__subtitle')).toContainText('Data through 11/22/2026');
     expect(await page.locator('app-metric-widget app-chart [role="img"]').getAttribute('aria-label')).toMatch(/Net cash collected, 6 months to Oct 2026/);
     await expect(page.locator('#division-reason')).toContainText("can't be split by");
   });
@@ -110,33 +110,36 @@ test.describe('saved views', () => {
     await page.keyboard.press('ArrowRight');
     await expect.poll(() => lastAnnouncement(page)).toMatch(/^Row \d+, column \d+\.$/);
     await page.keyboard.press('Escape');
-    expect(await position(page, 'w2')).toEqual(start);
     await expect.poll(() => lastAnnouncement(page)).toMatch(/^Move cancelled\./);
+    await expect.poll(() => position(page, 'w2')).toEqual(start);
 
     await page.keyboard.press('Enter');
     await page.keyboard.press('ArrowRight');
     await page.keyboard.press('Enter');
     await expect.poll(() => lastAnnouncement(page)).toMatch(/dropped at row/);
-    expect(await position(page, 'w2')).not.toEqual(start);
+    await expect.poll(() => position(page, 'w2')).not.toEqual(start);
   });
 
   test('auto arrange fills the gaps a move leaves, and one undo puts it back', async ({ page }) => {
     await openView(page, 5, { edit: true });
     const move = page.getByRole('button', { name: 'Move Clean claim rate', exact: true });
+    const origin = await position(page, 'w2');
     await move.focus();
     await page.keyboard.press('Enter');
     for (let i = 0; i < 4; i += 1) {
       await page.keyboard.press('PageDown');
     }
     await page.keyboard.press('Enter');
+    await expect.poll(() => lastAnnouncement(page)).toMatch(/dropped at row/);
+    await expect.poll(() => position(page, 'w2')).not.toEqual(origin);
     const scattered = await position(page, 'w2');
 
     await page.getByRole('button', { name: 'Auto arrange' }).click();
     await expect.poll(() => lastAnnouncement(page)).toMatch(/arranged to fill the gaps/);
-    expect(await position(page, 'w2')).not.toEqual(scattered);
+    await expect.poll(() => position(page, 'w2')).not.toEqual(scattered);
 
     await page.getByRole('button', { name: /^Undo/ }).click();
-    expect(await position(page, 'w2')).toEqual(scattered);
+    await expect.poll(() => position(page, 'w2')).toEqual(scattered);
   });
 
   test('download image saves a real PNG named after the view, with no controls in it', async ({ page }) => {
@@ -186,7 +189,7 @@ test.describe('saved views', () => {
       await openView(page, 5);
       const box = await page.evaluate(() => {
         const card = document.querySelector('app-grid-canvas ems-card')!.getBoundingClientRect();
-        const foot = [...document.querySelectorAll('app-grid-canvas .widget__foot')].pop()!.getBoundingClientRect();
+        const foot = [...document.querySelectorAll('app-grid-canvas .widget__foot, app-grid-canvas app-freshness-stamp')].pop()!.getBoundingClientRect();
         return { chart: document.querySelector('app-grid-canvas app-chart')!.getBoundingClientRect().height, spare: card.bottom - foot.bottom };
       });
       heights.push(box.chart);
@@ -508,5 +511,42 @@ test.describe('saved views', () => {
     expect(columns).toBe(1);
     await expect(page.getByRole('button', { name: 'Move Net cash collected up' })).toBeVisible();
     expect((await layoutErrors(page)).errors).toEqual([]);
+  });
+
+  test('a payer mix widget with drill links is navigable by keyboard, opens the drill target page, and the layout still holds only keys and positions', async ({ page }) => {
+    await page.route(/\/api\/v1\/providers\/[^/]+\/saved-views\/5$/, async (route) => {
+      if (route.request().method() !== 'GET') return route.fallback();
+      await route.fulfill({
+        headers: { ETag: '"1"' },
+        json: { id: 5, name: 'Cash overview', description: null, ownerName: 'jdoe', isOwner: true, version: '1', updatedAt: '2026-11-22T10:00:00Z', layout: { version: 1, density: 'comfortable', widgets: [{ id: 'w1', metricKey: 'payer_mix', presentation: 'column', x: 0, y: 0, w: 12, h: 4 }] } },
+      });
+    });
+    const href = (key: string) => `/api/v1/providers/526/metrics/net-collections/payer-mix/${key}?group=rotor-wing&period=202610&serviceLine=air`;
+    const share = (key: string, name: string, current: number, prior: number, links: object[]) => ({ key, name, current, prior, links });
+    await page.route(/net-collections\/payer-mix/, (route) =>
+      route.fulfill({
+        json: {
+          metric: { key: 'payer_mix', name: 'Payer mix', description: 'd', unit: 'transports' },
+          providerId: '526',
+          dataThrough: '2026-11-22',
+          period: '202610',
+          priorPeriod: '202609',
+          serviceLine: 'air',
+          group: 'rotor-wing',
+          groupName: 'Rotor wing',
+          shares: [share('commercial', 'Commercial', 30, 26, [{ rel: 'drill', href: href('commercial'), title: 'Commercial payers' }]), share('patient', 'Patient responsibility', 2, 1, [])],
+        },
+      }),
+    );
+    await openView(page, 5);
+
+    const link = page.getByRole('link', { name: 'View Commercial breakdown' });
+    await expect(link).toHaveCount(1);
+    expect(await axeViolations(page, 'app-grid-canvas')).toEqual([]);
+    await link.focus();
+    await page.keyboard.press('Enter');
+
+    await expect(page).toHaveURL(/\/dashboard\/metrics\/payer-mix\/rotor-wing\/commercial\?period=202610&line=air$/);
+    await expect(page.locator('app-payer-mix-detail h1')).toBeFocused();
   });
 });

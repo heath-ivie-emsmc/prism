@@ -21,8 +21,8 @@ The single set of Metric definitions owned by the Prism API. It applies Provider
 _Avoid_: Semantic layer, dashboard config
 
 **Data Through**:
-The date through which a Provider's data in the warehouse is complete, recorded as a load watermark per Provider. It is shown with every Metric, along with when the data was last updated.
-_Avoid_: As-of date, last refresh, freshness
+The load date of a Provider's data in the warehouse: the one stamp shown with every Metric. It is a date, not a time of day.
+_Avoid_: As-of date, last refresh, freshness, last updated
 
 **Service Line**:
 The kind of transport service, either air or ground. Each Transport has one, and a Provider can have several enabled. It sets the default labels a Provider sees.
@@ -47,6 +47,14 @@ _Avoid_: AI summary, analysis, report
 **Attention Check**:
 One named rule over a Provider's claims that flags the ones needing customer action, such as Denied (a denial code and money still owed) or Needs attention (denied, on hold or in collections). The checks are the tabs on the review page. A count of flagged claims is an aggregate; the claims behind it are claim-level data that need the claims permission and leave an audit record.
 _Avoid_: Alert, exception, work queue
+
+**Drill**:
+A link from one element of a Metric, such as a payer or a month, to a more specific Metric view. It opens a new page and never changes the view the user is on.
+_Avoid_: Drill-through, detail link, zoom
+
+**Context Badge**:
+The scope a Metric actually applied, shown beside its figure: the Service Line and the Reporting Division. It says so when a filter the user chose was not applied.
+_Avoid_: Filter chip, scope label, tag
 
 **Label**:
 The display name a Provider sees for a renamable term, such as Reporting Division. It is set per Provider, with defaults by Service Line, and never changes the term's API key.

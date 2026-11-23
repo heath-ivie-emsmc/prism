@@ -34,6 +34,23 @@ export async function openDashboard(page: Page): Promise<void> {
   await page.waitForTimeout(400);
 }
 
+/** The payer breakdown (the drill target of the payer mix), waiting until its chart has drawn. */
+export async function openPayerDetail(page: Page, query = 'period=202610&line=air', group = 'rotor-wing', payer = 'commercial'): Promise<void> {
+  await page.goto(`/dashboard/metrics/payer-mix/${group}/${payer}?${query}`);
+  await page.locator('app-payer-mix-detail h1').waitFor();
+  await page.locator('app-payer-mix-detail app-chart canvas').waitFor();
+  await page.evaluate(() => document.fonts.ready);
+  await page.waitForTimeout(400);
+}
+
+/** The payer mix of one group, waiting until its chart has drawn. */
+export async function openPayerMixPage(page: Page, group = 'rotor-wing', query = 'period=202610&line=air'): Promise<void> {
+  await page.goto(`/dashboard/net-cash/${group}?${query}`);
+  await page.locator('app-payer-mix app-chart canvas').waitFor();
+  await page.evaluate(() => document.fonts.ready);
+  await page.waitForTimeout(400);
+}
+
 /** The saved views list, waiting until its rows are in. */
 export async function openSavedViews(page: Page): Promise<void> {
   await page.goto('/saved-views');
@@ -104,4 +121,52 @@ export async function layoutErrors(page: Page): Promise<{ errors: string[]; issu
   const issues: LayoutIssue[] = await page.evaluate(analyzeLayout);
   const errors = issues.filter((i) => i.severity === 'error').map((i) => `${i.kind}: ${i.message} [${i.selectors.join(' | ')}]`);
   return { errors, issues };
+}
+
+/** The page is open, then the warehouse "loads" again: the periods route now answers with a newer Data Through. */
+export const NEWER_DATA_THROUGH = '2026-11-23';
+export async function warehouseLoadsAgain(page: Page): Promise<void> {
+  await page.route(/net-collections\/periods(\?.*)?$/, (route) =>
+    route.fulfill({
+      json: { providerId: '526', dataThrough: NEWER_DATA_THROUGH, periods: [{ period: '202610', label: 'Oct 2026' }, { period: '202609', label: 'Sep 2026' }] },
+    }),
+  );
+}
+
+/** Tab regained focus: the page checks for newer data. */
+export const regainFocus = (page: Page): Promise<void> => page.evaluate(() => void window.dispatchEvent(new Event('focus')));
+
+/** Open the "What these numbers mean" panel of the first Metric help on the page and wait for its glossary. */
+export async function expandHelp(page: Page): Promise<void> {
+  const toggle = page.locator('app-metric-help button.help__toggle').first();
+  await toggle.scrollIntoViewIfNeeded();
+  await toggle.click();
+  await page.locator('app-metric-help .help__panel dl').first().waitFor();
+  await page.waitForTimeout(200);
+}
+
+/** Show the newer-data notice on the dashboard, with its Update view button. */
+export async function openDashboardWithNotice(page: Page): Promise<void> {
+  await openDashboard(page);
+  await warehouseLoadsAgain(page);
+  await regainFocus(page);
+  await page.locator('app-data-updated-notice').getByRole('button', { name: 'Update view' }).waitFor();
+  await page.waitForTimeout(200);
+}
+
+/** The generic Metric view (`/dashboard/metrics/:key`) for a Metric with no page of its own, waiting until its table or chart has drawn. */
+export async function openMetricView(page: Page, key = 'net_collections', query = 'period=202610&line=air'): Promise<void> {
+  await page.goto(`/dashboard/metrics/${key}?${query}`);
+  await page.locator('app-metric-view h1').waitFor();
+  await page.locator('app-metric-view app-chart canvas, app-metric-view table').first().waitFor();
+  await page.evaluate(() => document.fonts.ready);
+  await page.waitForTimeout(400);
+}
+
+/** The generic Metric view for a key the SPA does not know: the calm not-found state. */
+export async function openMetricViewNotFound(page: Page): Promise<void> {
+  await page.goto('/dashboard/metrics/no_such_metric');
+  await page.getByRole('heading', { level: 1, name: 'View not found' }).waitFor();
+  await page.evaluate(() => document.fonts.ready);
+  await page.waitForTimeout(200);
 }

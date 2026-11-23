@@ -13,6 +13,7 @@ import {
   EmsThemeService,
 } from '@ems-management-consultants/ui';
 import { AuthService } from '../auth/auth.service';
+import { DataUpdatedNoticeComponent } from '../shared/data-updated-notice.component';
 
 import { providerLogo as findProviderLogo } from './provider-logo';
 
@@ -39,7 +40,7 @@ const MODE_LABEL: Readonly<Record<string, string>> = {
 /** Signed-in frame: top navigation, profile and theme, around the routed page. */
 @Component({
   selector: 'app-shell',
-  imports: [EmsButtonDirective, EmsIconComponent, EmsLogoComponent, MatMenuModule, EmsNavBarComponent, EmsNavLogoDirective, EmsNavTabDirective, EmsNavTrailingDirective, EmsProfileComponent, RouterLink, RouterLinkActive, RouterOutlet],
+  imports: [EmsButtonDirective, EmsIconComponent, EmsLogoComponent, MatMenuModule, EmsNavBarComponent, EmsNavLogoDirective, EmsNavTabDirective, EmsNavTrailingDirective, EmsProfileComponent, DataUpdatedNoticeComponent, RouterLink, RouterLinkActive, RouterOutlet],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <a class="skip-link" href="#main" (click)="skipToMain($event)">Skip to main content</a>
@@ -85,6 +86,7 @@ const MODE_LABEL: Readonly<Record<string, string>> = {
       </span>
     </ems-nav-bar>
     </header>
+    <app-data-updated-notice />
     <router-outlet />
     <footer class="shell__footer">
       <span class="shell__powered">Powered by</span>
@@ -173,8 +175,8 @@ export class ShellComponent {
   private readonly auth = inject(AuthService);
   private readonly theme = inject(EmsThemeService);
 
-  protected readonly providerName = computed(() => this.auth.me()?.providers[0]?.name ?? 'Prism');
-  protected readonly providerLogo = computed(() => findProviderLogo(this.auth.me()?.providers[0]?.name));
+  protected readonly providerName = computed(() => this.auth.activeProvider()?.name ?? 'Prism');
+  protected readonly providerLogo = computed(() => findProviderLogo(this.auth.activeProvider()?.name));
   protected readonly displayName = computed(() => this.auth.me()?.displayName ?? '');
   protected readonly themeLabel = computed(() => MODE_LABEL[this.theme.colorMode()] ?? 'System');
 

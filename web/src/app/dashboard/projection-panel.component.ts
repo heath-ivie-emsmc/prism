@@ -1,6 +1,6 @@
 import { ChangeDetectionStrategy, Component, signal } from '@angular/core';
 import { EmsChipComponent } from '@ems-management-consultants/ui';
-import { payerColor } from '../payer-mix/payer-mix';
+import { payerColor } from '../metrics/payer-mix/payer-mix';
 import { SegmentOption, SegmentedControlComponent } from './segmented-control.component';
 
 type Month = 'nov' | 'dec' | 'jan';

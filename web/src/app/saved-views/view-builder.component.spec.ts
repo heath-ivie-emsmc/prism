@@ -102,6 +102,9 @@ describe('ViewBuilderComponent: a new view', () => {
     expect(body.name).toBe('My cash');
     expect(body.layout.widgets[0]).toMatchObject({ id: 'w1', metricKey: 'net_collections', presentation: 'line', x: 0, y: 0, w: 6, h: 3 });
     expect(JSON.stringify(body)).not.toContain('providerId');
+    // Layouts are layouts, not data (ADR 0004): no division, label, filter, Data Through or figure is stored with a widget.
+    expect(Object.keys(body.layout.widgets[0]!).sort()).toEqual(['h', 'id', 'metricKey', 'presentation', 'w', 'x', 'y']);
+    expect(JSON.stringify(body)).not.toMatch(/division|label|dataThrough|serviceLine|period|1100000|1000000/i);
     expect(h.navigate).toHaveBeenCalledWith(['/saved-views', 5], { replaceUrl: true });
     expect(h.announced).toContain('Cash overview saved.');
   });
@@ -552,5 +555,7 @@ describe('ViewBuilderComponent: filters', () => {
     const h = await open({ id: '5' });
 
     expect(h.root.querySelector('#division-reason')?.textContent).toContain("can't be split by");
+    expect(h.root.querySelector('#division-reason')?.textContent).toContain('Not applied yet: Net cash collected');
+    expect(h.root.querySelector('#division-reason')?.textContent).not.toContain('the metrics on this view');
   });
 });

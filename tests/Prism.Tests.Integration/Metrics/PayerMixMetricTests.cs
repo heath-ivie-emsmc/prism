@@ -1,3 +1,4 @@
+using Prism.Application.Warehouse;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Npgsql;
@@ -27,7 +28,7 @@ public sealed class PayerMixMetricTests(PostgresFixture postgres) : IClassFixtur
                 DROP TABLE IF EXISTS reporting.trip_detail_snapshot;
                 CREATE TABLE reporting.trip_detail_snapshot (
                     snapshot_date date NOT NULL, encounter_id bigint NOT NULL, provider_id int NOT NULL, level_of_service text,
-                    prim_pay text, prim_pay_category text, dos date);
+                    prim_pay text, prim_pay_category text, dos date, reporting_division text);
 
                 -- Provider 2026, latest load 2026-11-21. Oct is the chosen month, Sep the prior one.
                 INSERT INTO reporting.trip_detail_snapshot VALUES
@@ -49,6 +50,11 @@ public sealed class PayerMixMetricTests(PostgresFixture postgres) : IClassFixtur
                     ('2026-11-21', 18, 2026, 'Rotor Wing', 'AETNA', 'Insurance', '2026-11-01'),
                     ('2026-11-21', 15, 777,  'Rotor Wing', 'MEDICARE', 'Medicare', '2026-10-04'),
                     ('2026-10-01', 1,  2026, 'Rotor Wing', 'MEDICARE', 'Medicare', '2026-10-03');
+                
+
+                -- Reporting divisions: even encounters are the Rotor division, odd ones the Fixed division (filed under a legacy "- Old AR" name that counts as the current one).
+                -- Provider 777 has a division of its own that Provider 2026 must never see.
+                UPDATE reporting.trip_detail_snapshot SET reporting_division = CASE WHEN provider_id = 777 THEN 'Other Provider - Base' WHEN encounter_id % 2 = 0 THEN 'Mercy Flights - Rotor' ELSE 'Mercy Flights - Fixed - Old AR 2019' END;
                 """,
                 admin);
             await seed.ExecuteNonQueryAsync(ct);
@@ -70,7 +76,7 @@ public sealed class PayerMixMetricTests(PostgresFixture postgres) : IClassFixtur
     {
         PayerMixMetric metric = await NewMetricAsync();
 
-        PayerMix mix = await metric.GetPayerMixAsync(2026, new ApPeriod(2026, 10), ServiceLineFilter.Air, null, TestContext.Current.CancellationToken);
+        PayerMix mix = await metric.GetPayerMixAsync(2026, new ApPeriod(2026, 10), ServiceLineFilter.Air, null, null, TestContext.Current.CancellationToken);
 
         Assert.Equal("payer_mix", mix.Metric.Key);
         Assert.Equal(new ApPeriod(2026, 9), mix.PriorPeriod);
@@ -91,7 +97,7 @@ public sealed class PayerMixMetricTests(PostgresFixture postgres) : IClassFixtur
     {
         PayerMixMetric metric = await NewMetricAsync();
 
-        PayerMix mix = await metric.GetPayerMixAsync(2026, new ApPeriod(2026, 10), ServiceLineFilter.Air, null, TestContext.Current.CancellationToken);
+        PayerMix mix = await metric.GetPayerMixAsync(2026, new ApPeriod(2026, 10), ServiceLineFilter.Air, null, null, TestContext.Current.CancellationToken);
 
         // Insurance (IV-VA), Other Govt. (TRICARE, CHAMPVA). A name that only contains the letters, like AVA HEALTH, is not VA.
         Assert.Equal(3, Current(mix, "va"));
@@ -102,7 +108,7 @@ public sealed class PayerMixMetricTests(PostgresFixture postgres) : IClassFixtur
     {
         PayerMixMetric metric = await NewMetricAsync();
 
-        PayerMix mix = await metric.GetPayerMixAsync(2026, new ApPeriod(2026, 10), ServiceLineFilter.Air, "fixed-wing", TestContext.Current.CancellationToken);
+        PayerMix mix = await metric.GetPayerMixAsync(2026, new ApPeriod(2026, 10), ServiceLineFilter.Air, "fixed-wing", null, TestContext.Current.CancellationToken);
 
         Assert.Equal("fixed-wing", mix.GroupKey);
         Assert.Equal("Fixed Wing", mix.GroupName);
@@ -116,8 +122,8 @@ public sealed class PayerMixMetricTests(PostgresFixture postgres) : IClassFixtur
         PayerMixMetric metric = await NewMetricAsync();
         CancellationToken ct = TestContext.Current.CancellationToken;
 
-        PayerMix ground = await metric.GetPayerMixAsync(2026, new ApPeriod(2026, 10), ServiceLineFilter.Ground, null, ct);
-        PayerMix both = await metric.GetPayerMixAsync(2026, new ApPeriod(2026, 10), ServiceLineFilter.Both, null, ct);
+        PayerMix ground = await metric.GetPayerMixAsync(2026, new ApPeriod(2026, 10), ServiceLineFilter.Ground, null, null, ct);
+        PayerMix both = await metric.GetPayerMixAsync(2026, new ApPeriod(2026, 10), ServiceLineFilter.Both, null, null, ct);
 
         Assert.Equal(1, ground.Shares.Sum(s => s.Current));
         Assert.Equal("ALS", ground.GroupName);
@@ -129,7 +135,7 @@ public sealed class PayerMixMetricTests(PostgresFixture postgres) : IClassFixtur
     {
         PayerMixMetric metric = await NewMetricAsync();
 
-        PayerMix mix = await metric.GetPayerMixAsync(2026, new ApPeriod(2026, 10), ServiceLineFilter.Air, null, TestContext.Current.CancellationToken);
+        PayerMix mix = await metric.GetPayerMixAsync(2026, new ApPeriod(2026, 10), ServiceLineFilter.Air, null, null, TestContext.Current.CancellationToken);
 
         // Provider 777's Medicare transport and the old load's Medicare row for encounter 1 would make this 3 if they leaked in.
         Assert.Equal(2, Current(mix, "medicare"));
@@ -140,9 +146,49 @@ public sealed class PayerMixMetricTests(PostgresFixture postgres) : IClassFixtur
     {
         PayerMixMetric metric = await NewMetricAsync();
 
-        PayerMix mix = await metric.GetPayerMixAsync(2026, new ApPeriod(2026, 10), ServiceLineFilter.Air, "no-such-group", TestContext.Current.CancellationToken);
+        PayerMix mix = await metric.GetPayerMixAsync(2026, new ApPeriod(2026, 10), ServiceLineFilter.Air, "no-such-group", null, TestContext.Current.CancellationToken);
 
         Assert.Null(mix.GroupName);
         Assert.All(mix.Shares, s => Assert.Equal(0, s.Current + s.Prior));
+    }
+
+    private static readonly ReportingDivision Rotor = new("rotor", "Mercy Flights - Rotor");
+    private static readonly ReportingDivision Fixed = new("fixed", "Mercy Flights - Fixed");
+
+    private static async Task<int> TotalAsync(PayerMixMetric metric, ReportingDivision? division)
+    {
+        var mix = await metric.GetPayerMixAsync(2026, new ApPeriod(2026, 10), ServiceLineFilter.Both, null, division, TestContext.Current.CancellationToken);
+        return mix.Shares.Sum(s => s.Current + s.Prior);
+    }
+
+    [Fact]
+    public async Task A_division_narrows_the_figures_and_the_divisions_of_the_provider_add_up_to_no_division()
+    {
+        PayerMixMetric metric = await NewMetricAsync();
+
+        int all = await TotalAsync(metric, null);
+        int rotor = await TotalAsync(metric, Rotor);
+        // The Fixed trips are filed under a legacy "- Old AR" name, which counts under the current division.
+        int fixedTrips = await TotalAsync(metric, Fixed);
+
+        Assert.True(rotor > 0);
+        Assert.True(fixedTrips > 0);
+        Assert.True(rotor < all);
+        Assert.Equal(all, rotor + fixedTrips);
+    }
+
+    [Theory]
+    [InlineData("Other Provider - Base")]
+    [InlineData("Mercy Flights - Rotor - Old AR 2019")]
+    [InlineData("x' OR '1'='1")]
+    [InlineData("")]
+    public async Task A_division_name_that_is_not_the_providers_matches_nothing_and_is_only_ever_a_bound_value(string name)
+    {
+        PayerMixMetric metric = await NewMetricAsync();
+
+        int total = await TotalAsync(metric, new ReportingDivision("k", name));
+
+        // The empty name is "no division": it is the unfiltered figure, never an error and never a match on an empty division.
+        Assert.Equal(name.Length == 0 ? await TotalAsync(metric, null) : 0, total);
     }
 }

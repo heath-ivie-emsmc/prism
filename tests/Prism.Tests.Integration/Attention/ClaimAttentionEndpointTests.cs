@@ -19,6 +19,7 @@ public sealed class ClaimAttentionEndpointTests : IDisposable
     private const string Marker = "=cmd|' /C calc'!A0";
 
     private readonly FakeClaims claims = new();
+    private readonly FakeDataThrough dataThrough = new();
     private readonly AuthTestFactory factory;
 
     public ClaimAttentionEndpointTests()
@@ -29,6 +30,8 @@ public sealed class ClaimAttentionEndpointTests : IDisposable
             services.AddSingleton<IClaimAttention>(claims);
             services.RemoveAll<IProviderDivisionDirectory>();
             services.AddSingleton<IProviderDivisionDirectory>(new FakeDivisions());
+            services.RemoveAll<IDataThroughReader>();
+            services.AddSingleton<IDataThroughReader>(dataThrough);
         });
         // Provider 100 in full, 200 limited to one Facility.
         factory.Directory.Providers.Clear();
@@ -42,6 +45,19 @@ public sealed class ClaimAttentionEndpointTests : IDisposable
         using CookieClient client = factory.NewSignedInClient(permissions);
         HttpResponseMessage response = await client.GetAsync(url);
         return (response.StatusCode, await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken), response);
+    }
+
+    private sealed class FakeDataThrough : IDataThroughReader
+    {
+        public DateOnly? Date { get; set; } = new DateOnly(2026, 11, 21);
+
+        public List<IReadOnlyList<DataThroughSource>> Calls { get; } = [];
+
+        public Task<DateOnly?> GetAsync(int providerId, IReadOnlyList<DataThroughSource> sources, CancellationToken cancellationToken)
+        {
+            Calls.Add(sources);
+            return Task.FromResult(Date);
+        }
     }
 
     private static readonly string[] WithClaims = [Permissions.App, Permissions.DashboardView, Permissions.ClaimsView];
@@ -115,6 +131,23 @@ public sealed class ClaimAttentionEndpointTests : IDisposable
         Assert.DoesNotContain("FW-2610418", text, StringComparison.Ordinal);
         Assert.Equal(ServiceLineFilter.Air, claims.LastServiceLine);
         Assert.Empty(factory.Audit.Calls);
+    }
+
+    [Theory]
+    [InlineData("counts")]
+    [InlineData("denied")]
+    public async Task The_data_through_date_is_the_shared_readers_for_the_trip_table_and_the_response_is_never_cacheable(string route)
+    {
+        dataThrough.Date = new DateOnly(2026, 11, 19);
+
+        (HttpStatusCode status, string text, HttpResponseMessage response) = await GetAsync($"{Base}/{route}?period=202610", WithClaims);
+
+        Assert.Equal(HttpStatusCode.OK, status);
+        Assert.Equal("2026-11-19", JsonElement.Parse(text).GetProperty("dataThrough").GetString());
+        Assert.Equal([DataThroughSource.TripDetail], dataThrough.Calls[^1]);
+        Assert.True(response.Headers.CacheControl?.NoStore);
+        Assert.Null(response.Headers.ETag);
+        response.Dispose();
     }
 
     [Fact]
@@ -265,6 +298,9 @@ public sealed class ClaimAttentionEndpointTests : IDisposable
     {
         public Task<IReadOnlySet<string>> GetFacilityIdsAsync(int portalCompanyId, CancellationToken cancellationToken) =>
             Task.FromResult<IReadOnlySet<string>>(portalCompanyId == 200 ? new HashSet<string> { "9", "10" } : []);
+
+        public Task<IReadOnlyList<ReportingDivision>> GetReportingDivisionsAsync(int portalCompanyId, CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyList<ReportingDivision>>([]);
     }
 
     [Fact]
@@ -276,6 +312,7 @@ public sealed class ClaimAttentionEndpointTests : IDisposable
 
             Assert.Equal(HttpStatusCode.OK, status);
             Assert.Contains("no-store", response.Headers.CacheControl?.ToString(), StringComparison.Ordinal);
+            Assert.Null(response.Headers.ETag);
         }
     }
 
@@ -290,6 +327,8 @@ public sealed class ClaimAttentionEndpointTests : IDisposable
                 services.AddSingleton<IClaimAttention>(claims);
                 services.RemoveAll<IProviderDivisionDirectory>();
                 services.AddSingleton<IProviderDivisionDirectory>(new FakeDivisions());
+                services.RemoveAll<IDataThroughReader>();
+                services.AddSingleton<IDataThroughReader>(new FakeDataThrough());
             });
         limited.Directory.Providers.Clear();
         limited.Directory.Providers.Add(new ProviderScope("100", "Mercy Air", []));
@@ -363,6 +402,8 @@ public sealed class ClaimAttentionEndpointTests : IDisposable
                 services.AddSingleton<IClaimAttention>(claims);
                 services.RemoveAll<IProviderDivisionDirectory>();
                 services.AddSingleton<IProviderDivisionDirectory>(new FakeDivisions());
+                services.RemoveAll<IDataThroughReader>();
+                services.AddSingleton<IDataThroughReader>(new FakeDataThrough());
             });
         limited.Directory.Providers.Clear();
         limited.Directory.Providers.Add(new ProviderScope("100", "Mercy Air", []));

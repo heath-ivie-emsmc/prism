@@ -122,7 +122,7 @@ internal static class ClaimAttentionEndpoints
         return Results.Ok(new AttentionCountsResponse(
             providerId,
             scope.Period.ToString(),
-            counts.DataThrough?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+            await access.DataThroughAsync(id, MetricDataThrough.ClaimAttention, scope.ServiceLine, cancellationToken),
             counts.Counts.Select(c => new AttentionCountResponse(c.Key, AttentionCatalog.Find(c.Key)!.Name, c.Count)).ToArray(),
             counts.DeniedBalanceDue));
     }
@@ -167,7 +167,7 @@ internal static class ClaimAttentionEndpoints
         await audit.WriteAsync(id, portalUserId, new AuditRead(AuditActions.ClaimsList, check.Key, scope.Period, rows.Length, group), cancellationToken);
 
         return Results.Ok(new AttentionClaimsResponse(
-            providerId, check.Key, scope.Period.ToString(), result.DataThrough?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), result.Total, number, size, rows));
+            providerId, check.Key, scope.Period.ToString(), await access.DataThroughAsync(id, MetricDataThrough.ClaimAttention, scope.ServiceLine, cancellationToken), result.Total, number, size, rows));
     }
 
     public static async Task<IResult> Export(
@@ -255,25 +255,25 @@ internal static class ClaimAttentionEndpoints
 
     private static (ApPeriod Period, ServiceLineFilter ServiceLine)? Validate(string? period, string? serviceLine, string? group) =>
         period is not null && ApPeriod.TryParse(period, out ApPeriod parsed)
-        && NetCollectionsEndpoints.TryParseServiceLine(serviceLine, out ServiceLineFilter filter)
+        && MetricEndpointSupport.TryParseServiceLine(serviceLine, out ServiceLineFilter filter)
         && IsGroupKey(group)
             ? (parsed, filter)
             : null;
 
     // Length is capped before the pattern runs. The pattern is anchored at the very end (not before a trailing newline).
     private static bool IsGroupKey(string? group) =>
-        group is null || (group.Length <= MaxGroupKeyLength && NetCollectionsEndpoints.GroupKeyPattern().IsMatch(group));
+        group is null || (group.Length <= MaxGroupKeyLength && MetricEndpointSupport.GroupKeyPattern().IsMatch(group));
 
     private static IResult Invalid(string? period, string? group)
     {
         if (period is null || !ApPeriod.TryParse(period, out _))
         {
-            return NetCollectionsEndpoints.Invalid("period", "period must be a month written yyyyMM, for example 202610.");
+            return MetricEndpointSupport.Invalid("period", "period must be a month written yyyyMM, for example 202610.");
         }
 
         return !IsGroupKey(group)
-            ? NetCollectionsEndpoints.Invalid("group", "group must be a key from the breakdown route, such as fixed-wing.")
-            : NetCollectionsEndpoints.Invalid("serviceLine", "serviceLine must be all, air or ground.");
+            ? MetricEndpointSupport.Invalid("group", "group must be a key from the breakdown route, such as fixed-wing.")
+            : MetricEndpointSupport.Invalid("serviceLine", "serviceLine must be all, air or ground.");
     }
 
     private static IResult TooMany() =>

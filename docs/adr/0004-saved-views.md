@@ -35,8 +35,9 @@ rules still hold: the Provider comes from the route and is checked on every requ
 
 ## Consequences
 
-- The Reporting Division filter reaches no Metric query today. The catalog lists no Metric under the `division` dimension, the filter shows disabled with the
-  reason on the saved views page, and a test fails the day a Metric claims the dimension without the note being removed.
+- The Reporting Division filter reaches the Metrics that read `reporting.trip_detail_snapshot` (payer mix, transports, payment age, cash per transport, net cash breakdown, net cash by group),
+  which list the `division` dimension and say `DivisionSupport.Supported` in the catalog. The others (net cash, projection, clean claim rate) ignore it, and their widgets say so. A Saved View still
+  stores no division: the filter is the page's, and it is validated against the Provider's own divisions on every request. A test fails if a Metric claims the dimension without an integration test.
 - Planned Metrics are listed in the palette as "coming soon" and cannot be placed or saved.
 - Moving the layout to a semantic API changes the catalog and the widget data service, not stored views.
 - Using more of the shared UI library (dialogs, live announcer) from a lazy route adds that code to the initial chunk, because the library is one flat module:

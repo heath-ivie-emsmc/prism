@@ -58,7 +58,53 @@ public sealed record MetricCatalogEntry(
 {
     /// <summary>True when a layout may name this Metric.</summary>
     public bool CanBePlaced => Status == MetricStatus.Available && Placeable;
+
+    /// <summary>Where the Metric applies: Provider scoping, Service Lines, Reporting Division support, group-by dimensions and time grain.</summary>
+    public MetricContext Context { get; init; } = new(true, ServiceLines, DivisionSupport.None, [], "period");
+
+    /// <summary>How long a figure may be cached. A claim-level Metric is never cached.</summary>
+    public MetricFreshness Freshness { get; init; } = new(ClaimLevel ? FreshnessPolicy.NoCache : FreshnessPolicy.DailyLoad);
+
+    /// <summary>The key of the help entry for this Metric. Empty for a planned Metric.</summary>
+    public string HelpKey { get; init; } = Status == MetricStatus.Available ? Key : string.Empty;
+
+    /// <summary>Links from this Metric to another one: the target, and which of the target's dimensions the clicked value fills.</summary>
+    public IReadOnlyList<MetricDrill> Drills { get; init; } = [];
 }
+
+/// <summary>Whether a Metric honors the Reporting Division filter.</summary>
+public enum DivisionSupport
+{
+    /// <summary>Ignores the Reporting Division filter.</summary>
+    None,
+
+    /// <summary>Honors the Reporting Division filter.</summary>
+    Supported,
+}
+
+/// <summary>How a figure is cached.</summary>
+public enum FreshnessPolicy
+{
+    /// <summary>Cached against the Data Through watermark, so it changes once per daily load.</summary>
+    DailyLoad,
+
+    /// <summary>Never cached.</summary>
+    NoCache,
+}
+
+/// <summary>Where a Metric applies. <paramref name="TimeGrain"/> is <c>period</c> or <c>month</c>.</summary>
+public sealed record MetricContext(
+    bool ProviderScoped,
+    IReadOnlyList<string> ServiceLines,
+    DivisionSupport DivisionSupport,
+    IReadOnlyList<string> GroupDimensions,
+    string TimeGrain);
+
+/// <summary>The caching policy of a Metric.</summary>
+public sealed record MetricFreshness(FreshnessPolicy Policy);
+
+/// <summary>A link from a Metric to another: <paramref name="Rel"/> names the relation, and the target binds one of its dimensions to the clicked value.</summary>
+public sealed record MetricDrill(string Rel, string TargetKey, string BindsDimension);
 
 /// <summary>The filter names a Metric can list.</summary>
 public static class MetricDimensions
@@ -68,6 +114,9 @@ public static class MetricDimensions
     public const string ServiceLine = "serviceLine";
     public const string Group = "group";
     public const string Division = "division";
+
+    /// <summary>The payer group a drill binds in the target's path (see <see cref="MetricDrill"/>). Not a filter a Saved View sets.</summary>
+    public const string PayerGroup = "payerGroup";
 }
 
 /// <summary>
@@ -81,8 +130,13 @@ public static class MetricCatalog
     private static readonly string[] MediumUp = ["M", "L"];
     private static readonly string[] SeriesDimensions = [MetricDimensions.Period, MetricDimensions.Months, MetricDimensions.ServiceLine];
     private static readonly string[] PeriodAndLine = [MetricDimensions.Period, MetricDimensions.ServiceLine];
-    private static readonly string[] PeriodAndGroup = [MetricDimensions.Period, MetricDimensions.ServiceLine, MetricDimensions.Group];
-    private static readonly string[] PeriodOnly = [MetricDimensions.Period];
+
+    // Metrics that read reporting.trip_detail_snapshot honor the Reporting Division. Each one listed here needs an integration test (see MetricCatalogTests).
+    private static readonly string[] SeriesAndDivision = [MetricDimensions.Period, MetricDimensions.Months, MetricDimensions.ServiceLine, MetricDimensions.Division];
+    private static readonly string[] PeriodLineAndDivision = [MetricDimensions.Period, MetricDimensions.ServiceLine, MetricDimensions.Division];
+    private static readonly string[] PeriodGroupAndDivision = [MetricDimensions.Period, MetricDimensions.ServiceLine, MetricDimensions.Group, MetricDimensions.Division];
+    private static readonly string[] PayerMixDetailDimensions = [MetricDimensions.Period, MetricDimensions.ServiceLine, MetricDimensions.Group, MetricDimensions.Division, MetricDimensions.PayerGroup];
+    private static readonly string[] PeriodAndDivision = [MetricDimensions.Period, MetricDimensions.Division];
     private static readonly string[] PeriodAndMonths = [MetricDimensions.Period, MetricDimensions.Months];
     private static readonly string[] MonthChoices = ["6", "12"];
 
@@ -136,7 +190,15 @@ public static class MetricCatalog
             serviceLines,
             dimensions,
             presentations,
-            dimensions.Contains(MetricDimensions.Months) ? [MonthsShown(presentations)] : []);
+            dimensions.Contains(MetricDimensions.Months) ? [MonthsShown(presentations)] : [])
+        {
+            Context = new MetricContext(
+                true,
+                serviceLines,
+                dimensions.Contains(MetricDimensions.Division) ? DivisionSupport.Supported : DivisionSupport.None,
+                dimensions.Contains(MetricDimensions.Group) ? [MetricDimensions.Group] : [],
+                dimensions.Contains(MetricDimensions.Months) ? "month" : "period"),
+        };
 
     private static MetricCatalogEntry Planned(string key, string name, string description, string unit, string category, bool claimLevel = false) =>
         new(key, name, description, unit, category, MetricStatus.Planned, false, claimLevel, [], [], [], []);
@@ -145,20 +207,25 @@ public static class MetricCatalog
     [
         Available(INetCollectionsMetric.Definition, "cash", AllLines, SeriesDimensions, [Line(true), Column(false), Table]),
         Available(INetCashProjectionMetric.Definition, "cash", AllLines, PeriodAndLine, [Column(true), Line(false), Table]),
-        Available(INetCashBreakdownMetric.Definition, "cash", AllLines, PeriodAndLine, [Table with { IsDefault = true }, Column(false)]),
-        Available(INetCashByGroupMetric.Definition, "cash", AllLines, PeriodAndLine, [Stacked(), Column(true), Table]),
-        Available(ICashPerTransportMetric.Definition, "cash", AllLines, PeriodOnly, [Column(true), Table]),
-        Available(IPaymentAgeMetric.Definition, "payer", AllLines, PeriodAndGroup, [Table with { IsDefault = true }]),
-        Available(IPayerMixMetric.Definition, "payer", AllLines, PeriodAndGroup, [Column(true), Stacked(), Donut(), Table]),
-        Available(ITransportVolumeMetric.Definition, "transports", AllLines, SeriesDimensions, [Tile with { IsDefault = true }, Column(false), Table]),
+        Available(INetCashBreakdownMetric.Definition, "cash", AllLines, PeriodLineAndDivision, [Table with { IsDefault = true }, Column(false)])
+            with { Drills = [new MetricDrill("drill", "payer_mix", MetricDimensions.Group)] },
+        Available(INetCashByGroupMetric.Definition, "cash", AllLines, PeriodLineAndDivision, [Stacked(), Column(true), Table]),
+        Available(ICashPerTransportMetric.Definition, "cash", AllLines, PeriodAndDivision, [Column(true), Table]),
+        Available(IPaymentAgeMetric.Definition, "payer", AllLines, PeriodGroupAndDivision, [Table with { IsDefault = true }]),
+        Available(IPayerMixMetric.Definition, "payer", AllLines, PeriodGroupAndDivision, [Column(true), Stacked(), Donut(), Table])
+            with { Drills = [new MetricDrill("drill", "payer_mix_detail", MetricDimensions.PayerGroup)] },
+        Available(ITransportVolumeMetric.Definition, "transports", AllLines, SeriesAndDivision, [Tile with { IsDefault = true }, Column(false), Table]),
         Available(ICleanClaimRateMetric.Definition, "claims", AllLines, PeriodAndMonths, [Tile with { IsDefault = true }, Line(false), Table]),
+
+        // A drill target only: reached from a payer group on payer mix, never placed on a Saved View, so it has no presentations of its own.
+        Available(IPayerMixDetailMetric.Definition, "payer", AllLines, PayerMixDetailDimensions, []) with { Placeable = false },
 
         // Computed on the dashboard from other Metrics. Not placeable on a Saved View.
         new("what_changed", "What changed", "A written summary of the findings behind a change in net cash. Shown on the dashboard only.", "text", "insights", MetricStatus.Available, false, false, AllLines, PeriodAndLine, [], []),
 
         Planned("net_cash_by_aircraft_type", "Net cash by aircraft type", "Rotor wing and fixed wing cash, with the six-month trend.", "USD", "fleet"),
         Planned("aircraft_performance", "Aircraft performance", "Transports, loaded miles and net cash by tail number, with change from the prior month.", "USD", "fleet"),
-        Planned("base_analysis", "Base analysis", "Net cash and transport volume by base, and the aircraft operating from each.", "USD", "fleet"),
+        Planned("base_analysis", "Base analysis", "Net cash and transport volume by Reporting Division, and the aircraft operating from each.", "USD", "fleet"),
         Planned("loaded_miles_by_aircraft", "Loaded miles by aircraft", "Loaded miles for each tail number.", "miles", "fleet"),
         Planned("transport_mix_by_call_type", "Scene and interfacility mix", "Transports by call type, split by aircraft type.", "transports", "transports"),
         Planned("transports_by_pickup_location", "Transports by pickup location", "Transport counts by sending facility and scene response area.", "transports", "transports"),

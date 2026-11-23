@@ -14,7 +14,7 @@ public sealed class AgedPaymentsAnalysis(IPaymentAgeMetric paymentAge) : IInsigh
 
     public async Task<Finding?> RunAsync(InsightInput input, CancellationToken cancellationToken)
     {
-        PaymentAge age = await paymentAge.GetPaymentAgeAsync(input.ProviderId, input.Period, input.ServiceLine, input.GroupKey, cancellationToken);
+        PaymentAge age = await paymentAge.GetPaymentAgeAsync(input.ProviderId, input.Period, input.ServiceLine, input.GroupKey, null, cancellationToken);
         ApPeriod prior = input.PriorPeriod;
         ApPeriod[] baselineMonths = [.. Enumerable.Range(2, InsightThresholds.BaselineMonths).Select(i => input.Period.AddMonths(-i))];
 

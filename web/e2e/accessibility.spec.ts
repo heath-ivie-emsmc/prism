@@ -1,5 +1,6 @@
 import { expect, test } from './fixtures';
-import { axeViolations, chooseNetCashView, layoutErrors, openDashboard, openNeedsAttention, openSavedViews, openView } from './support';
+import type { Page } from '@playwright/test';
+import { axeViolations, chooseNetCashView, expandHelp, layoutErrors, openDashboard, openDashboardWithNotice, openMetricView, openMetricViewNotFound, openNeedsAttention, openPayerDetail, openPayerMixPage, openSavedViews, openView } from './support';
 
 /** WCAG 2.2 AA beyond the static page: other states, other pages, user settings. Every test also gates on axe. */
 test.describe('accessibility', () => {
@@ -403,5 +404,133 @@ test.describe('accessibility', () => {
       expect((await layoutErrors(page)).errors).toEqual([]);
       expect(await axeViolations(page)).toEqual([]);
     });
+  });
+});
+
+/**
+ * The payer breakdown, the payer mix, their trust cues (Data Through stamp, context badge, help panel) and the data-updated notice,
+ * under every user setting the other pages are checked with.
+ */
+const TRUST_STATES: { name: string; open: (p: Page) => Promise<void> }[] = [
+  { name: 'payer breakdown, bar', open: (p) => openPayerDetail(p) },
+  {
+    name: 'payer breakdown, donuts',
+    open: async (p) => {
+      await openPayerDetail(p);
+      await p.getByRole('radio', { name: 'Donut charts' }).click();
+      await p.locator('app-payer-donuts svg').first().waitFor();
+    },
+  },
+  {
+    name: 'payer breakdown, table',
+    open: async (p) => {
+      await openPayerDetail(p);
+      await p.getByRole('radio', { name: 'Table' }).click();
+      await p.locator('app-payer-mix-detail table').waitFor();
+    },
+  },
+  {
+    name: 'payer breakdown, help open',
+    open: async (p) => {
+      await openPayerDetail(p);
+      await expandHelp(p);
+    },
+  },
+  {
+    name: 'payer mix, help open',
+    open: async (p) => {
+      await openPayerMixPage(p);
+      await expandHelp(p);
+    },
+  },
+  { name: 'dashboard, update notice', open: (p) => openDashboardWithNotice(p) },
+  { name: 'metric view', open: (p) => openMetricView(p) },
+  { name: 'metric view, not found', open: (p) => openMetricViewNotFound(p) },
+];
+
+test.describe('accessibility: trust cues and the breakdown page', () => {
+  for (const state of TRUST_STATES) {
+    test.describe(state.name, () => {
+      test('passes axe and has no layout errors', async ({ page }) => {
+        await state.open(page);
+        expect(await axeViolations(page)).toEqual([]);
+        expect((await layoutErrors(page)).errors).toEqual([]);
+      });
+
+      test('forced colors keep everything visible', async ({ page }) => {
+        await page.emulateMedia({ forcedColors: 'active' });
+        await state.open(page);
+        expect(await axeViolations(page, undefined, ['color-contrast'])).toEqual([]);
+        expect((await layoutErrors(page)).errors).toEqual([]);
+      });
+
+      test('text spacing overrides do not cut off or overlap text', async ({ page }) => {
+        await state.open(page);
+        await page.addStyleTag({ content: '* { line-height: 1.5 !important; letter-spacing: 0.12em !important; word-spacing: 0.16em !important; } p { margin-bottom: 2em !important; }' });
+        await page.waitForTimeout(250);
+        expect((await layoutErrors(page)).errors).toEqual([]);
+      });
+
+      test('200% text size does not cut off or overlap text', async ({ page }) => {
+        await state.open(page);
+        await page.addStyleTag({ content: 'html { font-size: 200% !important; }' });
+        await page.waitForTimeout(250);
+        expect((await layoutErrors(page)).errors).toEqual([]);
+      });
+
+      test('400% zoom (a 320 by 256 window) reflows with no sideways scroll', async ({ page }) => {
+        await page.setViewportSize({ width: 320, height: 256 });
+        await state.open(page);
+        expect((await layoutErrors(page)).errors).toEqual([]);
+        expect(await axeViolations(page)).toEqual([]);
+      });
+
+      test('reduced motion leaves nothing animating', async ({ page }) => {
+        await page.emulateMedia({ reducedMotion: 'reduce' });
+        await state.open(page);
+        const running = await page.evaluate(() => document.getAnimations().filter((a) => a.playState === 'running' && (a.effect?.getTiming().iterations ?? 1) === Infinity).length);
+        expect(running).toBe(0);
+      });
+    });
+  }
+
+  test('the breakdown page has a title, one h1, one main, headings that do not skip and every control inside a landmark', async ({ page }) => {
+    await openPayerDetail(page);
+    await expandHelp(page);
+
+    await expect(page).toHaveTitle(/Prism/);
+    await expect(page.locator('h1')).toHaveCount(1);
+    await expect(page.locator('main')).toHaveCount(1);
+    const levels = await page.evaluate(() => [...document.querySelectorAll('h1, h2, h3, h4, h5, h6')].map((h) => Number(h.tagName[1])));
+    expect(levels.filter((level, i) => i > 0 && level - levels[i - 1]! > 1), `heading levels: ${levels.join(',')}`).toEqual([]);
+    const outside = await page.evaluate(() =>
+      [...document.querySelectorAll('h1, h2, button, a[href], input, [role="radio"]')]
+        .filter((el) => !el.closest('main, nav, header, footer, .skip-link, [role="main"], [role="navigation"], .cdk-overlay-container'))
+        .map((el) => el.tagName.toLowerCase() + ':' + (el.textContent ?? '').trim().slice(0, 20)),
+    );
+    expect(outside).toEqual([]);
+  });
+
+  test('the Data Through stamp and the context badge are visible text, not tooltips, and the help toggle says whether it is open', async ({ page }) => {
+    await openPayerDetail(page);
+
+    await expect(page.locator('app-freshness-stamp')).toContainText('Data through Nov 22');
+    await expect(page.locator('app-context-badge')).toBeVisible();
+    expect(((await page.locator('app-context-badge').innerText()) ?? '').trim().length).toBeGreaterThan(3);
+    expect(await page.locator('app-freshness-stamp, app-context-badge').evaluateAll((els) => els.some((e) => e.hasAttribute('title') || e.querySelector('[title]')))).toBe(false);
+    const toggle = page.locator('app-metric-help button.help__toggle');
+    await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    await toggle.click();
+    await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    const controls = await toggle.getAttribute('aria-controls');
+    await expect(page.locator(`#${controls}`)).toBeVisible();
+  });
+
+  test('the notice is a polite status, not an alert, and its button has a name', async ({ page }) => {
+    await openDashboardWithNotice(page);
+
+    await expect(page.locator('app-data-updated-notice [role="status"]')).toHaveAttribute('aria-live', 'polite');
+    await expect(page.locator('app-data-updated-notice [role="alert"]')).toHaveCount(0);
+    await expect(page.locator('app-data-updated-notice').getByRole('button', { name: 'Update view' })).toBeVisible();
   });
 });

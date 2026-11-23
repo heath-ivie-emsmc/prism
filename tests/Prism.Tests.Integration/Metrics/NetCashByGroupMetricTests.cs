@@ -1,3 +1,4 @@
+using Prism.Application.Warehouse;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Npgsql;
@@ -31,7 +32,7 @@ public sealed class NetCashByGroupMetricTests(PostgresFixture postgres) : IClass
                 CREATE TABLE ods.credit (id int PRIMARY KEY, credit_type_id int NOT NULL);
                 CREATE TABLE ods.encounter_transaction (id bigint PRIMARY KEY, encounter_id bigint NOT NULL, type text NOT NULL, user_source varchar, accounting_period_id int NOT NULL, balance_amount int NOT NULL);
                 CREATE TABLE ods.encounter_transaction_credit_attribute (id bigint PRIMARY KEY, encounter_transaction_id bigint NOT NULL, credit_id int NOT NULL);
-                CREATE TABLE reporting.trip_detail_snapshot (snapshot_date date NOT NULL, encounter_id bigint NOT NULL, provider_id int NOT NULL, level_of_service text);
+                CREATE TABLE reporting.trip_detail_snapshot (snapshot_date date NOT NULL, encounter_id bigint NOT NULL, provider_id int NOT NULL, level_of_service text, reporting_division text);
 
                 -- Provider 2026: Oct 2026 (1) with its adjustment (2), Sep 2026 (3), Oct 2025 (4, twelve months back, in the window), Sep 2025 (5, thirteen back, out).
                 -- Provider 777 has an Oct 2026 period (9).
@@ -61,6 +62,11 @@ public sealed class NetCashByGroupMetricTests(PostgresFixture postgres) : IClass
                     (11, 21, 'Credit', 'Posting', 9, 5550000);      -- another Provider
                 INSERT INTO ods.encounter_transaction_credit_attribute VALUES
                     (1, 1, 2), (2, 2, 5), (3, 3, 2), (4, 4, 2), (5, 5, 2), (6, 6, 2), (7, 7, 2), (8, 8, 2), (9, 9, 2), (10, 10, 2), (11, 11, 2);
+                
+
+                -- Reporting divisions: even encounters are the Rotor division, odd ones the Fixed division (filed under a legacy "- Old AR" name that counts as the current one).
+                -- Provider 777 has a division of its own that Provider 2026 must never see.
+                UPDATE reporting.trip_detail_snapshot SET reporting_division = CASE WHEN provider_id = 777 THEN 'Other Provider - Base' WHEN encounter_id % 2 = 0 THEN 'Mercy Flights - Rotor' ELSE 'Mercy Flights - Fixed - Old AR 2019' END;
                 """,
                 admin);
             await seed.ExecuteNonQueryAsync(ct);
@@ -80,7 +86,7 @@ public sealed class NetCashByGroupMetricTests(PostgresFixture postgres) : IClass
     {
         NetCashByGroupMetric metric = await NewMetricAsync();
 
-        NetCashByGroup result = await metric.GetNetCashByGroupAsync(2026, Oct, ServiceLineFilter.Air, TestContext.Current.CancellationToken);
+        NetCashByGroup result = await metric.GetNetCashByGroupAsync(2026, Oct, ServiceLineFilter.Air, null, TestContext.Current.CancellationToken);
 
         Assert.Equal("net_cash_by_group", result.Metric.Key);
         Assert.Equal(
@@ -99,7 +105,7 @@ public sealed class NetCashByGroupMetricTests(PostgresFixture postgres) : IClass
     {
         NetCashByGroupMetric metric = await NewMetricAsync();
 
-        NetCashByGroup result = await metric.GetNetCashByGroupAsync(2026, Oct, ServiceLineFilter.Air, TestContext.Current.CancellationToken);
+        NetCashByGroup result = await metric.GetNetCashByGroupAsync(2026, Oct, ServiceLineFilter.Air, null, TestContext.Current.CancellationToken);
 
         // Rotor, Oct: $1,000 less the $50 refund posted in the adjustment period, plus $200.
         NetCashByGroupPoint rotor = result.Points.Single(p => p.GroupKey == "rotor-wing");
@@ -111,12 +117,52 @@ public sealed class NetCashByGroupMetricTests(PostgresFixture postgres) : IClass
     {
         NetCashByGroupMetric metric = await NewMetricAsync();
 
-        NetCashByGroup ground = await metric.GetNetCashByGroupAsync(2026, Oct, ServiceLineFilter.Ground, TestContext.Current.CancellationToken);
-        NetCashByGroup both = await metric.GetNetCashByGroupAsync(2026, Oct, ServiceLineFilter.Both, TestContext.Current.CancellationToken);
+        NetCashByGroup ground = await metric.GetNetCashByGroupAsync(2026, Oct, ServiceLineFilter.Ground, null, TestContext.Current.CancellationToken);
+        NetCashByGroup both = await metric.GetNetCashByGroupAsync(2026, Oct, ServiceLineFilter.Both, null, TestContext.Current.CancellationToken);
 
         NetCashByGroupPoint only = Assert.Single(ground.Points);
         Assert.Equal(("als", 400m, false), (only.GroupKey, only.Cash, only.IsAir));
         // Air 10,650 + ground 400. The $70 with no trip row, the import, the Sep 2025 cash and the other Provider's $55,500 never appear.
         Assert.Equal(1150m + 3000m + 2500m + 4000m + 400m, both.Points.Sum(p => p.Cash));
+    }
+
+    private static readonly ReportingDivision Rotor = new("rotor", "Mercy Flights - Rotor");
+    private static readonly ReportingDivision Fixed = new("fixed", "Mercy Flights - Fixed");
+
+    private static async Task<int> TotalAsync(NetCashByGroupMetric metric, ReportingDivision? division)
+    {
+        var mix = await metric.GetNetCashByGroupAsync(2026, new ApPeriod(2026, 10), ServiceLineFilter.Both, division, TestContext.Current.CancellationToken);
+        return mix.Points.Sum(p => p.Transports);
+    }
+
+    [Fact]
+    public async Task A_division_narrows_the_figures_and_the_divisions_of_the_provider_add_up_to_no_division()
+    {
+        NetCashByGroupMetric metric = await NewMetricAsync();
+
+        int all = await TotalAsync(metric, null);
+        int rotor = await TotalAsync(metric, Rotor);
+        // The Fixed trips are filed under a legacy "- Old AR" name, which counts under the current division.
+        int fixedTrips = await TotalAsync(metric, Fixed);
+
+        Assert.True(rotor > 0);
+        Assert.True(fixedTrips > 0);
+        Assert.True(rotor < all);
+        Assert.Equal(all, rotor + fixedTrips);
+    }
+
+    [Theory]
+    [InlineData("Other Provider - Base")]
+    [InlineData("Mercy Flights - Rotor - Old AR 2019")]
+    [InlineData("x' OR '1'='1")]
+    [InlineData("")]
+    public async Task A_division_name_that_is_not_the_providers_matches_nothing_and_is_only_ever_a_bound_value(string name)
+    {
+        NetCashByGroupMetric metric = await NewMetricAsync();
+
+        int total = await TotalAsync(metric, new ReportingDivision("k", name));
+
+        // The empty name is "no division": it is the unfiltered figure, never an error and never a match on an empty division.
+        Assert.Equal(name.Length == 0 ? await TotalAsync(metric, null) : 0, total);
     }
 }

@@ -11,6 +11,7 @@ internal static class CatalogEndpoints
     {
         RouteGroupBuilder group = v1.MapGroup("/providers/{providerId}/metrics")
             .RequireAuthorization(Permissions.DashboardView)
+            .AddEndpointFilter(MetricCacheHeaders.Catalog)
             .WithTags("Metrics");
 
         group.MapGet("/catalog", Catalog)
@@ -21,6 +22,8 @@ internal static class CatalogEndpoints
                 + "`placeable` is false for something computed on the dashboard only, such as `what_changed`. `dimensions` are the filters the Metric honors (`period`, `months`, `serviceLine`, `group`, `division`); "
                 + "a Metric that does not list `division` ignores the Reporting Division filter. `presentations` are the ways it can be drawn, each with the preset sizes (`S`, `M`, `L`) that suit it and its bounds in columns and rows of the 12-column grid. "
                 + "`options` are the settings a widget exposes, as `choice` or `toggle`. `claimLevel` marks a Metric that would carry claim detail and so stays planned until it has its own permission and an audit record. "
+                + "`context` says where the Metric applies: `providerScoped`, `serviceLines`, `divisionSupport` (`none` or `supported`), `groupDimensions` and `timeGrain` (`period` or `month`). "
+                + "`freshness.policy` is `dailyLoad` (cached against Data Through) or `noCache` (claim-level). `helpKey` names the Metric's help entry, and `drills` lists links to other Metrics. "
                 + "Definitions only: no figures, and the same for every Provider the caller can read.")
             .Produces<MetricCatalogResponse>()
             .ProducesProblem(StatusCodes.Status401Unauthorized)
@@ -52,7 +55,16 @@ internal static class CatalogEndpoints
         entry.ServiceLines,
         entry.Dimensions,
         entry.Presentations.Select(p => new CatalogPresentationResponse(p.Key, p.Name, p.Icon, p.Sizes, p.MinWidth, p.MinHeight, p.MaxWidth, p.MaxHeight, p.IsDefault)).ToArray(),
-        entry.Options.Select(o => new CatalogOptionResponse(o.Key, o.Name, o.Type, o.Choices, o.Default, o.AppliesTo)).ToArray());
+        entry.Options.Select(o => new CatalogOptionResponse(o.Key, o.Name, o.Type, o.Choices, o.Default, o.AppliesTo)).ToArray(),
+        new CatalogContextResponse(
+            entry.Context.ProviderScoped,
+            entry.Context.ServiceLines,
+            entry.Context.DivisionSupport == DivisionSupport.Supported ? "supported" : "none",
+            entry.Context.GroupDimensions,
+            entry.Context.TimeGrain),
+        new CatalogFreshnessResponse(entry.Freshness.Policy == FreshnessPolicy.NoCache ? "noCache" : "dailyLoad"),
+        entry.HelpKey,
+        entry.Drills.Select(d => new CatalogDrillResponse(d.Rel, d.TargetKey, d.BindsDimension)).ToArray());
 }
 
 /// <summary>The catalog: <c>Categories</c> in palette order and every <c>Metrics</c> entry.</summary>
@@ -74,7 +86,20 @@ public sealed record CatalogMetricResponse(
     IReadOnlyList<string> ServiceLines,
     IReadOnlyList<string> Dimensions,
     IReadOnlyList<CatalogPresentationResponse> Presentations,
-    IReadOnlyList<CatalogOptionResponse> Options);
+    IReadOnlyList<CatalogOptionResponse> Options,
+    CatalogContextResponse Context,
+    CatalogFreshnessResponse Freshness,
+    string HelpKey,
+    IReadOnlyList<CatalogDrillResponse> Drills);
+
+/// <summary>Where a Metric applies. <c>DivisionSupport</c> is <c>none</c> or <c>supported</c>, <c>TimeGrain</c> is <c>period</c> or <c>month</c>.</summary>
+public sealed record CatalogContextResponse(bool ProviderScoped, IReadOnlyList<string> ServiceLines, string DivisionSupport, IReadOnlyList<string> GroupDimensions, string TimeGrain);
+
+/// <summary>Caching policy. <c>Policy</c> is <c>dailyLoad</c> or <c>noCache</c>.</summary>
+public sealed record CatalogFreshnessResponse(string Policy);
+
+/// <summary>A link to another Metric: <c>Rel</c> names it, <c>TargetKey</c> is the Metric, <c>BindsDimension</c> is the dimension the clicked value fills.</summary>
+public sealed record CatalogDrillResponse(string Rel, string TargetKey, string BindsDimension);
 
 /// <summary>A way to draw a Metric, with its preset sizes and its bounds on the 12-column grid.</summary>
 public sealed record CatalogPresentationResponse(

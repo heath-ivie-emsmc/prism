@@ -1,3 +1,4 @@
+using Prism.Application.Warehouse;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Npgsql;
@@ -32,7 +33,7 @@ public sealed class PaymentAgeMetricTests(PostgresFixture postgres) : IClassFixt
                 CREATE TABLE ods.encounter_transaction_credit_attribute (id bigint PRIMARY KEY, encounter_transaction_id bigint NOT NULL, credit_id int NOT NULL);
                 CREATE TABLE reporting.trip_detail_snapshot (
                     snapshot_date date NOT NULL, encounter_id bigint NOT NULL, provider_id int NOT NULL, level_of_service text,
-                    prim_pay text, prim_pay_category text, dos date);
+                    prim_pay text, prim_pay_category text, dos date, reporting_division text);
 
                 -- Provider 2026: Oct (1) with its adjustment period (2), Sep (3), and a Sep 2025 period (4), thirteen months back and outside the window. Provider 777 has an Oct period (9).
                 INSERT INTO ods.accounting_period VALUES (1, 2026, '202610', false), (2, 2026, '-202610', true), (3, 2026, '202609', false), (4, 2026, '202509', false), (9, 777, '202610', true);
@@ -68,6 +69,11 @@ public sealed class PaymentAgeMetricTests(PostgresFixture postgres) : IClassFixt
                 INSERT INTO ods.encounter_transaction_credit_attribute VALUES
                     (1, 1, 2), (2, 2, 5), (3, 3, 2), (4, 4, 2), (5, 5, 2), (6, 6, 2), (7, 7, 2), (8, 8, 2), (9, 9, 2),
                     (10, 10, 2), (11, 11, 2), (12, 12, 2), (13, 13, 2), (14, 13, 5);
+                
+
+                -- Reporting divisions: even encounters are the Rotor division, odd ones the Fixed division (filed under a legacy "- Old AR" name that counts as the current one).
+                -- Provider 777 has a division of its own that Provider 2026 must never see.
+                UPDATE reporting.trip_detail_snapshot SET reporting_division = CASE WHEN provider_id = 777 THEN 'Other Provider - Base' WHEN encounter_id % 2 = 0 THEN 'Mercy Flights - Rotor' ELSE 'Mercy Flights - Fixed - Old AR 2019' END;
                 """,
                 admin);
             await seed.ExecuteNonQueryAsync(ct);
@@ -89,7 +95,7 @@ public sealed class PaymentAgeMetricTests(PostgresFixture postgres) : IClassFixt
     {
         PaymentAgeMetric metric = await NewMetricAsync();
 
-        PaymentAge result = await metric.GetPaymentAgeAsync(2026, Oct, ServiceLineFilter.Air, null, TestContext.Current.CancellationToken);
+        PaymentAge result = await metric.GetPaymentAgeAsync(2026, Oct, ServiceLineFilter.Air, null, null, TestContext.Current.CancellationToken);
 
         Assert.Equal("payment_age", result.Metric.Key);
         Assert.Equal(
@@ -108,7 +114,7 @@ public sealed class PaymentAgeMetricTests(PostgresFixture postgres) : IClassFixt
     {
         PaymentAgeMetric metric = await NewMetricAsync();
 
-        PaymentAge result = await metric.GetPaymentAgeAsync(2026, Oct, ServiceLineFilter.Air, null, TestContext.Current.CancellationToken);
+        PaymentAge result = await metric.GetPaymentAgeAsync(2026, Oct, ServiceLineFilter.Air, null, null, TestContext.Current.CancellationToken);
 
         // Encounters 12 and 13 are both commercial, age 6: $200 + $100 (two credit attributes, counted once) + $3,000 = $3,300, two transports.
         PaymentAgeCell commercialSix = result.Cells.Single(c => c.PayerKey == "commercial" && c.AgeMonths == 6);
@@ -123,7 +129,7 @@ public sealed class PaymentAgeMetricTests(PostgresFixture postgres) : IClassFixt
     {
         PaymentAgeMetric metric = await NewMetricAsync();
 
-        PaymentAge result = await metric.GetPaymentAgeAsync(2026, Oct, ServiceLineFilter.Air, null, TestContext.Current.CancellationToken);
+        PaymentAge result = await metric.GetPaymentAgeAsync(2026, Oct, ServiceLineFilter.Air, null, null, TestContext.Current.CancellationToken);
 
         Assert.Equal(IPaymentAgeMetric.MaxAgeMonths, result.Cells.Max(c => c.AgeMonths));
     }
@@ -133,7 +139,7 @@ public sealed class PaymentAgeMetricTests(PostgresFixture postgres) : IClassFixt
     {
         PaymentAgeMetric metric = await NewMetricAsync();
 
-        PaymentAge result = await metric.GetPaymentAgeAsync(2026, Oct, ServiceLineFilter.Air, "fixed-wing", TestContext.Current.CancellationToken);
+        PaymentAge result = await metric.GetPaymentAgeAsync(2026, Oct, ServiceLineFilter.Air, "fixed-wing", null, TestContext.Current.CancellationToken);
 
         Assert.Equal("fixed-wing", result.GroupKey);
         Assert.DoesNotContain(result.Cells, c => c.PayerKey == "medicare");
@@ -145,7 +151,7 @@ public sealed class PaymentAgeMetricTests(PostgresFixture postgres) : IClassFixt
     {
         PaymentAgeMetric metric = await NewMetricAsync();
 
-        PaymentAge result = await metric.GetPaymentAgeAsync(2026, Oct, ServiceLineFilter.Ground, null, TestContext.Current.CancellationToken);
+        PaymentAge result = await metric.GetPaymentAgeAsync(2026, Oct, ServiceLineFilter.Ground, null, null, TestContext.Current.CancellationToken);
 
         PaymentAgeCell only = Assert.Single(result.Cells);
         Assert.Equal(("commercial", 0, 500m), (only.PayerKey, only.AgeMonths, only.Cash));
@@ -156,7 +162,7 @@ public sealed class PaymentAgeMetricTests(PostgresFixture postgres) : IClassFixt
     {
         PaymentAgeMetric metric = await NewMetricAsync();
 
-        PaymentAge result = await metric.GetPaymentAgeAsync(2026, Oct, ServiceLineFilter.Both, null, TestContext.Current.CancellationToken);
+        PaymentAge result = await metric.GetPaymentAgeAsync(2026, Oct, ServiceLineFilter.Both, null, null, TestContext.Current.CancellationToken);
 
         // Everything except: Provider 777's $55,500, the $9,999 import, the $900 with no date of service and the $8,888 posted in Sep 2025.
         Assert.Equal(950m + 3300m + 700m + 400m + 100m + 500m, result.Cells.Sum(c => c.Cash));
@@ -167,8 +173,48 @@ public sealed class PaymentAgeMetricTests(PostgresFixture postgres) : IClassFixt
     {
         PaymentAgeMetric metric = await NewMetricAsync();
 
-        PaymentAge result = await metric.GetPaymentAgeAsync(2026, Oct, ServiceLineFilter.Air, new string('x', 5000), TestContext.Current.CancellationToken);
+        PaymentAge result = await metric.GetPaymentAgeAsync(2026, Oct, ServiceLineFilter.Air, new string('x', 5000), null, TestContext.Current.CancellationToken);
 
         Assert.Empty(result.Cells);
+    }
+
+    private static readonly ReportingDivision Rotor = new("rotor", "Mercy Flights - Rotor");
+    private static readonly ReportingDivision Fixed = new("fixed", "Mercy Flights - Fixed");
+
+    private static async Task<int> TotalAsync(PaymentAgeMetric metric, ReportingDivision? division)
+    {
+        var mix = await metric.GetPaymentAgeAsync(2026, new ApPeriod(2026, 10), ServiceLineFilter.Both, null, division, TestContext.Current.CancellationToken);
+        return mix.Cells.Sum(c => c.Transports);
+    }
+
+    [Fact]
+    public async Task A_division_narrows_the_figures_and_the_divisions_of_the_provider_add_up_to_no_division()
+    {
+        PaymentAgeMetric metric = await NewMetricAsync();
+
+        int all = await TotalAsync(metric, null);
+        int rotor = await TotalAsync(metric, Rotor);
+        // The Fixed trips are filed under a legacy "- Old AR" name, which counts under the current division.
+        int fixedTrips = await TotalAsync(metric, Fixed);
+
+        Assert.True(rotor > 0);
+        Assert.True(fixedTrips > 0);
+        Assert.True(rotor < all);
+        Assert.Equal(all, rotor + fixedTrips);
+    }
+
+    [Theory]
+    [InlineData("Other Provider - Base")]
+    [InlineData("Mercy Flights - Rotor - Old AR 2019")]
+    [InlineData("x' OR '1'='1")]
+    [InlineData("")]
+    public async Task A_division_name_that_is_not_the_providers_matches_nothing_and_is_only_ever_a_bound_value(string name)
+    {
+        PaymentAgeMetric metric = await NewMetricAsync();
+
+        int total = await TotalAsync(metric, new ReportingDivision("k", name));
+
+        // The empty name is "no division": it is the unfiltered figure, never an error and never a match on an empty division.
+        Assert.Equal(name.Length == 0 ? await TotalAsync(metric, null) : 0, total);
     }
 }

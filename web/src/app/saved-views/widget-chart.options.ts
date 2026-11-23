@@ -1,6 +1,6 @@
 import type { EChartsCoreOption } from 'echarts/core';
 import type { ChartColors } from '../charts/chart.component';
-import { payerColor } from '../payer-mix/payer-mix';
+import { payerColor } from '../metrics/payer-mix/payer-mix';
 import { WidgetData, money, whole } from './widget-data';
 
 export type ChartKind = 'line' | 'column' | 'stacked' | 'donut';

@@ -84,5 +84,8 @@ public sealed class MetricCatalogEndpointTests : IDisposable
     {
         public Task<IReadOnlySet<string>> GetFacilityIdsAsync(int portalCompanyId, CancellationToken cancellationToken) =>
             Task.FromResult<IReadOnlySet<string>>(portalCompanyId == 200 ? new HashSet<string> { "9", "10" } : []);
+
+        public Task<IReadOnlyList<ReportingDivision>> GetReportingDivisionsAsync(int portalCompanyId, CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyList<ReportingDivision>>([]);
     }
 }

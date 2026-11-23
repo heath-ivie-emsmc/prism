@@ -20,6 +20,9 @@ export class AuthService {
 
   readonly me = this.meSignal.asReadonly();
   readonly isAuthenticated = computed(() => this.meSignal() !== null);
+  /** The Provider whose data is shown. Until a switcher exists it is the first one the user was assigned. The one place that choice is made; the API checks it again on every request. */
+  readonly activeProvider = computed(() => this.meSignal()?.providers[0] ?? null);
+  readonly activeProviderId = computed(() => this.activeProvider()?.id ?? null);
 
   /** Always issues a new GET /api/v1/me. */
   refreshMe(): Observable<MeDto | null> {

@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Text.Json;
 using Prism.Application.Metrics;
 
 namespace Prism.Tests.Metrics;
@@ -17,8 +18,9 @@ public sealed class MetricCatalogTests
             .OfType<MetricDefinition>()];
 
     [Fact]
-    public void Every_metric_the_api_serves_has_an_available_placeable_catalog_entry()
+    public void Every_metric_the_api_serves_has_an_available_catalog_entry_that_is_placeable_unless_it_is_a_drill_target()
     {
+        HashSet<string> drillTargets = [.. MetricCatalog.Entries.SelectMany(e => e.Drills).Select(d => d.TargetKey)];
         List<MetricDefinition> served = ServedMetrics();
 
         Assert.NotEmpty(served);
@@ -27,7 +29,8 @@ public sealed class MetricCatalogTests
             MetricCatalogEntry? entry = MetricCatalog.Find(definition.Key);
             Assert.NotNull(entry);
             Assert.Equal(MetricStatus.Available, entry.Status);
-            Assert.True(entry.CanBePlaced, definition.Key);
+            // A drill target with nothing to draw is reached by a link from another Metric and never placed on a Saved View. One that has its own presentations (payer mix) is both.
+            Assert.Equal(!(drillTargets.Contains(definition.Key) && entry.Presentations.Count == 0), entry.CanBePlaced);
             Assert.Equal(definition.Name, entry.Name);
             Assert.Equal(definition.Unit, entry.Unit);
         }
@@ -135,11 +138,131 @@ public sealed class MetricCatalogTests
         }
     }
 
-    [Fact]
-    public void No_metric_claims_to_honor_the_reporting_division_filter_yet()
+    // Metrics that honor the Reporting Division filter, and the integration test class that proves the filter narrows their figures against a real PostgreSQL.
+    // A Metric may list the division dimension, or say DivisionSupport.Supported, only if it is here and its test exists.
+    private static readonly Dictionary<string, string> DivisionCoverage = new(StringComparer.Ordinal)
     {
-        // The Reporting Division filter reaches no Metric query today. When one does, list it here and drop the widget's "not filtered" note.
-        Assert.All(MetricCatalog.Entries, entry => Assert.DoesNotContain(MetricDimensions.Division, entry.Dimensions));
+        ["payer_mix"] = "PayerMixMetricTests",
+        ["payer_mix_detail"] = "PayerMixDetailMetricTests",
+        ["transport_volume"] = "TransportVolumeMetricTests",
+        ["payment_age"] = "PaymentAgeMetricTests",
+        ["cash_per_transport_by_payer"] = "CashPerTransportMetricTests",
+        ["net_cash_breakdown"] = "NetCashBreakdownMetricTests",
+        ["net_cash_by_group"] = "NetCashByGroupMetricTests",
+    };
+
+    [Fact]
+    public void A_metric_claims_the_division_filter_only_when_an_integration_test_proves_it()
+    {
+        string[] claimed = [.. MetricCatalog.Entries.Where(e => e.Dimensions.Contains(MetricDimensions.Division) || e.Context.DivisionSupport == DivisionSupport.Supported).Select(e => e.Key).Order(StringComparer.Ordinal)];
+
+        Assert.Equal([.. DivisionCoverage.Keys.Order(StringComparer.Ordinal)], claimed);
+        Assert.All(MetricCatalog.Entries, e => Assert.Equal(e.Dimensions.Contains(MetricDimensions.Division), e.Context.DivisionSupport == DivisionSupport.Supported));
+        foreach ((string key, string testClass) in DivisionCoverage)
+        {
+            string path = Path.Combine(Architecture.RepoFiles.Root, "tests", "Prism.Tests.Integration", "Metrics", testClass + ".cs");
+            Assert.True(File.Exists(path), $"{key} claims the division filter but {testClass} does not exist.");
+            string source = File.ReadAllText(path);
+            Assert.Contains("A_division_narrows_the_figures", source, StringComparison.Ordinal);
+            Assert.Contains("A_division_name_that_is_not_the_providers_matches_nothing", source, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
+    public void Metrics_that_do_not_read_the_trip_table_do_not_claim_the_division_filter()
+    {
+        string[] unsupported = ["net_collections", "net_cash_projection", "clean_claim_rate", "what_changed"];
+
+        Assert.All(unsupported, key =>
+        {
+            MetricCatalogEntry entry = MetricCatalog.Find(key)!;
+            Assert.DoesNotContain(MetricDimensions.Division, entry.Dimensions);
+            Assert.Equal(DivisionSupport.None, entry.Context.DivisionSupport);
+        });
+    }
+
+    [Fact]
+    public void Every_available_metric_has_a_help_key_equal_to_its_key()
+    {
+        Assert.All(MetricCatalog.Entries.Where(e => e.Status == MetricStatus.Available), e => Assert.Equal(e.Key, e.HelpKey));
+        Assert.All(MetricCatalog.Entries.Where(e => e.Status == MetricStatus.Planned), e => Assert.Empty(e.HelpKey));
+    }
+
+    [Fact]
+    public void Freshness_is_no_cache_exactly_for_claim_level_metrics()
+    {
+        Assert.All(MetricCatalog.Entries, e =>
+            Assert.Equal(e.ClaimLevel ? FreshnessPolicy.NoCache : FreshnessPolicy.DailyLoad, e.Freshness.Policy));
+    }
+
+    [Fact]
+    public void Every_metric_is_provider_scoped()
+    {
+        Assert.All(MetricCatalog.Entries, e => Assert.True(e.Context.ProviderScoped));
+    }
+
+    [Fact]
+    public void Drills_target_an_available_entry_and_bind_one_of_its_dimensions()
+    {
+        MetricCatalogEntry[] withDrills = [.. MetricCatalog.Entries.Where(e => e.Drills.Count > 0)];
+
+        Assert.NotEmpty(withDrills);
+        foreach (MetricDrill drill in withDrills.SelectMany(e => e.Drills))
+        {
+            MetricCatalogEntry? target = MetricCatalog.Find(drill.TargetKey);
+            Assert.NotNull(target);
+            Assert.Equal(MetricStatus.Available, target.Status);
+            Assert.False(string.IsNullOrWhiteSpace(drill.Rel));
+            Assert.Contains(drill.BindsDimension, target.Dimensions);
+        }
+    }
+
+    [Fact]
+    public void The_payer_mix_drills_to_the_payer_detail_by_payer_group()
+    {
+        MetricDrill drill = Assert.Single(MetricCatalog.Find("payer_mix")!.Drills);
+
+        Assert.Equal(new MetricDrill("drill", "payer_mix_detail", "payerGroup"), drill);
+        MetricCatalogEntry target = MetricCatalog.Find("payer_mix_detail")!;
+        Assert.Equal(("payer", "transports", DivisionSupport.Supported, FreshnessPolicy.DailyLoad, "payer_mix_detail"), (target.Category, target.Unit, target.Context.DivisionSupport, target.Freshness.Policy, target.HelpKey));
+        Assert.Empty(target.Presentations);
+        Assert.Equal(["air", "ground", "both"], target.ServiceLines);
+    }
+
+    [Fact]
+    public void The_breakdown_drills_to_the_payer_mix_by_group()
+    {
+        MetricDrill drill = Assert.Single(MetricCatalog.Find("net_cash_breakdown")!.Drills);
+
+        Assert.Equal(new MetricDrill("drill", "payer_mix", "group"), drill);
+        MetricCatalogEntry target = MetricCatalog.Find("payer_mix")!;
+        Assert.Equal(MetricStatus.Available, target.Status);
+        Assert.Contains(MetricDimensions.Group, target.Dimensions);
+        Assert.Contains(MetricDimensions.ServiceLine, target.Dimensions);
+        Assert.Equal(["air", "ground", "both"], target.ServiceLines);
+    }
+
+    [Fact]
+    public void A_drill_chain_is_at_most_three_metrics_long()
+    {
+        Assert.Equal(3, Depth("net_cash_breakdown"));
+
+        static int Depth(string key) => 1 + MetricCatalog.Find(key)!.Drills.Select(d => Depth(d.TargetKey)).DefaultIfEmpty(0).Max();
+    }
+
+    [Fact]
+    public void Drills_form_no_cycle()
+    {
+        foreach (MetricCatalogEntry entry in MetricCatalog.Entries)
+        {
+            Assert.False(Reaches(entry.Key, entry.Key, 0), $"{entry.Key} drills back to itself.");
+        }
+
+        static bool Reaches(string from, string goal, int depth)
+        {
+            Assert.True(depth < 5, "Drills chain deeper than a handful of steps.");
+            return MetricCatalog.Find(from)!.Drills.Any(d => d.TargetKey == goal || Reaches(d.TargetKey, goal, depth + 1));
+        }
     }
 
     [Theory]

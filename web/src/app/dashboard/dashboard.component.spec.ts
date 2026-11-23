@@ -40,6 +40,13 @@ describe('DashboardComponent header', () => {
       { period: '202510', label: 'Oct', year: 2025, value: 1_100_240 },
     ],
   };
+  const entry = (key: string, name: string, divisionSupport: 'supported' | 'none') => ({ key, name, description: 'd', unit: 'x', category: 'cash', status: 'available', placeable: true, claimLevel: false, serviceLines: ['air', 'ground', 'both'], dimensions: [], presentations: [], options: [], context: { divisionSupport } });
+  const CATALOG_METRICS = [
+    entry('net_collections', 'Net cash collected', 'none'),
+    entry('net_cash_projection', 'Projected net cash', 'none'),
+    entry('transport_volume', 'Transports and loaded miles', 'supported'),
+    entry('clean_claim_rate', 'Clean claim rate', 'none'),
+  ];
   const PROVIDER = { providers: [{ id: '526', name: 'Seminole County Fire Department', facilityCount: 0 }] };
 
   const VOLUME = {
@@ -77,6 +84,10 @@ describe('DashboardComponent header', () => {
 
   /** Answers any transports request the page has made. The two tiles share one request, and most tests are about something else. */
   function answerVolume(): void {
+    // The page reads the Metric Catalog for what each card does with the Reporting Division.
+    for (const request of TestBed.inject(HttpTestingController).match((r) => r.url === '/api/v1/providers/526/metrics/catalog')) {
+      request.flush({ categories: [], metrics: CATALOG_METRICS });
+    }
     if (volumeAnswer.hold) return;
     for (const request of TestBed.inject(HttpTestingController).match((r) => r.url === `${BASE}/transports`)) {
       if (volumeAnswer.fails) request.flush({ title: 'x' }, { status: 503, statusText: 'Service Unavailable' });
@@ -116,7 +127,8 @@ describe('DashboardComponent header', () => {
     const { root } = await createWithData();
 
     expect(root.querySelector('h1')?.textContent).toBe('Seminole County Fire Department');
-    expect(root.querySelector('.dashboard__subtitle')?.textContent).toContain('Data through 10/31/2026');
+    expect(root.querySelector('app-freshness-stamp')?.textContent).toContain('Data through');
+    expect(root.querySelector('app-freshness-stamp')?.textContent).toContain('Updates once a day');
   });
 
   it('fills the Period drop-down from the warehouse periods and starts on the newest', async () => {
@@ -214,6 +226,7 @@ describe('DashboardComponent header', () => {
       { title: 'The data warehouse is not available. Try again shortly.', traceId: '00-77114806214001843f6761e5254e96e3-cfc570a3d3f659d3-03' },
       { status: 503, statusText: 'Service Unavailable' },
     );
+    answerVolume();
     await result.fixture.whenStable();
     result.fixture.detectChanges();
 

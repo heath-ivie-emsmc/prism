@@ -1,6 +1,8 @@
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using Prism.Api.Http;
 using Prism.Application.Attention;
+using Prism.Application.Auth;
 using Prism.Application.Insights;
 using Prism.Application.Metrics;
 using Prism.Application.Warehouse;
@@ -17,16 +19,15 @@ public static class MetricsServiceCollectionExtensions
     {
         services.AddSingleton<IWarehouseProviderResolver, WarehouseProviderResolver>();
         services.AddSingleton<IProviderDivisionDirectory, ProviderDivisionDirectory>();
+        services.TryAddSingleton(TimeProvider.System);
+        services.AddSingleton<IDataThroughReader, DataThroughReader>();
+        services.AddSingleton<IMetricCache, MemoryMetricCache>();
         services.AddScoped<ProviderAccess>();
-        services.AddSingleton<INetCollectionsMetric, NetCollectionsMetric>();
-        services.AddSingleton<INetCashProjectionMetric, NetCashProjectionMetric>();
-        services.AddSingleton<INetCashBreakdownMetric, NetCashBreakdownMetric>();
-        services.AddSingleton<IPayerMixMetric, PayerMixMetric>();
-        services.AddSingleton<IPaymentAgeMetric, PaymentAgeMetric>();
-        services.AddSingleton<ICashPerTransportMetric, CashPerTransportMetric>();
-        services.AddSingleton<INetCashByGroupMetric, NetCashByGroupMetric>();
-        services.AddSingleton<ITransportVolumeMetric, TransportVolumeMetric>();
-        services.AddSingleton<ICleanClaimRateMetric, CleanClaimRateMetric>();
+        foreach (IMetricModule module in MetricModules.Current)
+        {
+            module.AddServices(services);
+        }
+
         services.AddSingleton<IInsightAnalysis, AgedPaymentsAnalysis>();
         services.AddSingleton<IInsightAnalysis, VolumeAnalysis>();
         services.AddSingleton<IInsightAnalysis, PayerMixAnalysis>();
@@ -41,7 +42,15 @@ public static class MetricsServiceCollectionExtensions
 
     public static void MapMetricEndpoints(this RouteGroupBuilder v1)
     {
-        NetCollectionsEndpoints.Map(v1);
+        RouteGroupBuilder group = v1.MapGroup("/providers/{providerId}/metrics/net-collections")
+            .RequireAuthorization(Permissions.DashboardView)
+            .AddEndpointFilter(MetricCacheHeaders.Revalidate)
+            .WithTags("Metrics");
+        foreach (IMetricModule module in MetricModules.Current)
+        {
+            module.MapRoutes(group);
+        }
+
         CatalogEndpoints.Map(v1);
         InsightsEndpoints.Map(v1);
         Attention.ClaimAttentionEndpoints.Map(v1);

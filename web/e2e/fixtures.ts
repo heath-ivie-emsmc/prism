@@ -1,4 +1,4 @@
-import { test as base, expect } from '@playwright/test';
+import { test as base, expect, type Page } from '@playwright/test';
 
 /** What `GET /api/v1/me` returns for a signed-in user with one Provider. Used only when no real session is supplied. */
 const MOCK_ME = {
@@ -7,6 +7,9 @@ const MOCK_ME = {
   providers: [{ id: '526', name: 'Seminole County Fire Department', facilityCount: 3 }],
   permissions: ['prism.app', 'prism.dashboard.view', 'prism.claims.view', 'prism.views.manage'],
 };
+
+/** The Data Through date every mocked Metric answers with, unless a test overrides the route. */
+export const DATA_THROUGH = '2026-11-22';
 
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -53,7 +56,13 @@ function breakdownFor(line: 'air' | 'ground', period: string) {
         ['C-02', 2, 'Station 31', fig(96_750, 38, 3_960, 3, 35), fig(118_300, 47, 4_200, 4, 43)],
       ];
   return {
-    groups: groups.map((g) => ({ ...g, serviceLine: line, current: scaled(g.current) })),
+    // Each group card leads to that group's payer mix: the API sends the drill link, and the page draws no link without one.
+    groups: groups.map((g) => ({
+      ...g,
+      serviceLine: line,
+      current: scaled(g.current),
+      links: [{ rel: 'drill', href: `/api/v1/providers/526/metrics/net-collections/payer-mix?group=${g.key}&period=${period}&serviceLine=${line}`, title: `${g.name} payer mix` }],
+    })),
     rows: rows.map(([vehicle, group, base, current, prior]) => ({
       groupKey: groups[group as number]!.key,
       groupName: groups[group as number]!.name,
@@ -67,7 +76,7 @@ function breakdownFor(line: 'air' | 'ground', period: string) {
 }
 
 /** Payer counts for a group: 100 transports in Sep (prior) and 100 in Oct (current), with Medicaid rising from 18% to 23%, as in the mockup. */
-function payerMixFor(): { key: string; name: string; prior: number; current: number }[] {
+function payerMixFor(providerId: string, group: string | null, period: string, line: string): { key: string; name: string; prior: number; current: number; links?: { rel: string; href: string; title: string }[] }[] {
   const rows: [string, string, number, number][] = [
     ['commercial', 'Commercial', 30, 26],
     ['medicare', 'Medicare', 40, 38],
@@ -77,7 +86,15 @@ function payerMixFor(): { key: string; name: string; prior: number; current: num
     ['facility', 'Facility', 2, 1],
     ['patient', 'Patient responsibility', 1, 2],
   ];
-  return rows.map(([key, name, prior, current]) => ({ key, name, prior, current }));
+  // Patient responsibility and Facility have no breakdown, so the API sends no link for them.
+  const noDrill = new Set(['facility', 'patient']);
+  return rows.map(([key, name, prior, current]) => ({
+    key,
+    name,
+    prior,
+    current,
+    ...(noDrill.has(key) ? {} : { links: [{ rel: 'drill', href: `/api/v1/providers/${providerId}/metrics/net-collections/payer-mix/${key}?group=${group ?? ''}&period=${period}&serviceLine=${line}&division=`, title: `${name} payers` }] }),
+  }));
 }
 
 /** Six months of transports and loaded miles ending at the asked-for period: the last two are 146 then 140, 19,000 then 18,420 miles, as in the mockup. */
@@ -115,7 +132,7 @@ function cleanClaimsFor(end: string) {
 /** Answers the net cash routes the way the API does, for the provider the mocked user has. */
 async function mockNetCollections(page: import('@playwright/test').Page): Promise<void> {
   await page.route('**/api/v1/providers/*/metrics/net-collections/periods', (route) =>
-    route.fulfill({ json: { providerId: '526', periods: [...MONTHS].reverse().map((m) => ({ period: m.period, label: `${m.label} ${m.year}` })) } }),
+    route.fulfill({ json: { providerId: '526', dataThrough: DATA_THROUGH, periods: [...MONTHS].reverse().map((m) => ({ period: m.period, label: `${m.label} ${m.year}` })) } }),
   );
   await page.route(/\/api\/v1\/providers\/[^/]+\/metrics\/net-collections\/projection(\?.*)?$/, (route) => {
     const months = [
@@ -130,6 +147,7 @@ async function mockNetCollections(page: import('@playwright/test').Page): Promis
         afterPeriod: '202610',
         serviceLine: 'air',
         snapshotDate: '2026-11-05',
+        dataThrough: DATA_THROUGH,
         total: 3_610_000,
         low: 3_350_000,
         high: 3_890_000,
@@ -148,6 +166,7 @@ async function mockNetCollections(page: import('@playwright/test').Page): Promis
         period,
         priorPeriod: String(Number(period) - 1),
         serviceLine: line,
+        dataThrough: DATA_THROUGH,
         // September is still open in the mock, the earlier months are closed.
         periodOpen: period >= '202609',
         ...breakdownFor(line, period),
@@ -166,6 +185,7 @@ async function mockNetCollections(page: import('@playwright/test').Page): Promis
         endPeriod: end,
         months: 6,
         serviceLine: line,
+        dataThrough: DATA_THROUGH,
         periodOpen: end >= '202609',
         ...transportsFor(end, line),
       },
@@ -180,6 +200,7 @@ async function mockNetCollections(page: import('@playwright/test').Page): Promis
         endPeriod: end,
         months: 6,
         snapshotDate: '2026-04-07',
+        dataThrough: DATA_THROUGH,
         points: cleanClaimsFor(end),
       },
     });
@@ -196,8 +217,38 @@ async function mockNetCollections(page: import('@playwright/test').Page): Promis
         priorPeriod: String(Number(period) - 1),
         serviceLine: url.searchParams.get('serviceLine') === 'ground' ? 'ground' : 'air',
         group,
-        groupName: group === 'fixed-wing' ? 'Fixed Wing' : group === 'als' ? 'ALS' : group,
-        shares: payerMixFor(),
+        groupName: group === 'fixed-wing' ? 'Fixed Wing' : group === 'als' ? 'ALS' : group === 'rotor-wing' ? 'Rotor wing' : group,
+        dataThrough: DATA_THROUGH,
+        shares: payerMixFor('526', group, period, url.searchParams.get('serviceLine') === 'ground' ? 'ground' : 'air'),
+      },
+    });
+  });
+  await page.route(/\/api\/v1\/providers\/[^/]+\/metrics\/net-collections\/payer-mix\/[a-z-]+(\?.*)?$/, (route) => {
+    const url = new URL(route.request().url());
+    const period = url.searchParams.get('period') ?? '202610';
+    const group = url.searchParams.get('group') ?? 'rotor-wing';
+    const payerKey = /payer-mix\/([a-z-]+)/.exec(url.pathname)![1]!;
+    const names: Record<string, string> = { commercial: 'Commercial', medicare: 'Medicare', medicaid: 'Medicaid', 'other-gov': 'Other government', va: 'VA' };
+    return route.fulfill({
+      json: {
+        providerId: '526',
+        metric: { key: 'payer_mix_detail', name: 'Payers in a payer group', description: 'The payers inside one payer group.', unit: 'transports' },
+        group,
+        groupName: group === 'rotor-wing' ? 'Rotor wing' : group === 'fixed-wing' ? 'Fixed wing' : group,
+        payerGroup: { key: payerKey, name: names[payerKey] ?? payerKey },
+        period,
+        priorPeriod: String(Number(period) - 1),
+        serviceLine: url.searchParams.get('serviceLine') ?? 'air',
+        division: url.searchParams.get('division') || null,
+        divisionName: null,
+        dataThrough: DATA_THROUGH,
+        payers: [
+          { name: 'Meridian Health Plan', current: 9, prior: 8 },
+          { name: 'Northstar Health', current: 6, prior: 8 },
+          { name: 'Coastal Mutual', current: 4, prior: 5 },
+          { name: 'Pioneer Assurance', current: 3, prior: 3 },
+          { name: 'Other', current: 4, prior: 6 },
+        ],
       },
     });
   });
@@ -257,6 +308,7 @@ async function mockNetCollections(page: import('@playwright/test').Page): Promis
         endPeriod: end,
         months,
         snapshotDate: '2026-11-05',
+        dataThrough: DATA_THROUGH,
         points,
       },
     });
@@ -272,10 +324,13 @@ const COLUMN = (d: boolean) => pres('column', 'Column', 'bar_chart', d);
 const TABLE = (d: boolean) => pres('table', 'Table', 'table_rows', d);
 const TILE = (d: boolean) => pres('tile', 'Tile', 'pin', d, ['S', 'M', 'L'], [3, 2, 6, 3]);
 
+const DIVISION_SUPPORTED = new Set(['payer_mix', 'transport_volume']);
+
 function available(key: string, name: string, description: string, unit: string, category: string, presentations: Pres[], months = false) {
   return {
     key, name, description, unit, category, status: 'available', placeable: true, claimLevel: false,
     serviceLines: ['air', 'ground', 'both'], dimensions: months ? ['period', 'months', 'serviceLine'] : ['period', 'serviceLine'], presentations,
+    context: { divisionSupport: DIVISION_SUPPORTED.has(key) ? 'supported' : 'none' },
     options: months ? [{ key: 'months', name: 'Months shown', type: 'choice', choices: ['6', '12'], default: '6', appliesTo: presentations.map((p) => p.key) }] : [],
   };
 }

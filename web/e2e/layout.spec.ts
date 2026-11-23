@@ -1,7 +1,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, test } from './fixtures';
-import { REPORT_DIR, SCHEMES, SIZES, axeViolations, chooseNetCashView, layoutErrors, openDashboard, openNeedsAttention, openSavedViews, openView } from './support';
+import { REPORT_DIR, SCHEMES, SIZES, axeViolations, chooseNetCashView, layoutErrors, expandHelp, openDashboard, openDashboardWithNotice, openMetricView, openMetricViewNotFound, openNeedsAttention, openPayerDetail, openPayerMixPage, openSavedViews, openView } from './support';
 
 /**
  * Responsive layout and accessibility of the dashboard at every window size, light and dark. In a real browser it checks that:
@@ -131,3 +131,80 @@ test.describe('app icons', () => {
     }
   });
 });
+
+// The payer mix and its drill target: every size, light and dark. The detail page also in its table view, which has the widest content.
+const PAYER_PAGES = [
+  { name: 'payer-mix', open: (p: import('@playwright/test').Page) => openPayerMixPage(p) },
+  { name: 'payer-detail', open: (p: import('@playwright/test').Page) => openPayerDetail(p) },
+  {
+    name: 'payer-detail-table',
+    open: async (p: import('@playwright/test').Page) => {
+      await openPayerDetail(p);
+      await p.getByRole('radio', { name: 'Table' }).click();
+      await p.locator('app-payer-mix-detail table').waitFor();
+    },
+  },
+  {
+    name: 'payer-detail-donut',
+    open: async (p: import('@playwright/test').Page) => {
+      await openPayerDetail(p);
+      await p.getByRole('radio', { name: 'Donut charts' }).click();
+      await p.locator('app-payer-donuts svg').first().waitFor();
+    },
+  },
+  {
+    name: 'payer-detail-help',
+    open: async (p: import('@playwright/test').Page) => {
+      await openPayerDetail(p);
+      await expandHelp(p);
+    },
+  },
+  {
+    name: 'payer-mix-help',
+    open: async (p: import('@playwright/test').Page) => {
+      await openPayerMixPage(p);
+      await expandHelp(p);
+    },
+  },
+  {
+    name: 'payer-mix-table',
+    open: async (p: import('@playwright/test').Page) => {
+      await openPayerMixPage(p);
+      await p.getByRole('radio', { name: 'Table' }).click();
+      await p.locator('app-payer-mix table').waitFor();
+    },
+  },
+  {
+    name: 'payer-mix-donut',
+    open: async (p: import('@playwright/test').Page) => {
+      await openPayerMixPage(p);
+      await p.getByRole('radio', { name: 'Donut charts' }).click();
+      await p.locator('app-payer-donuts svg').first().waitFor();
+    },
+  },
+  { name: 'dashboard-notice', open: (p: import('@playwright/test').Page) => openDashboardWithNotice(p) },
+  { name: 'metric-view', open: (p: import('@playwright/test').Page) => openMetricView(p) },
+  { name: 'metric-view-not-found', open: (p: import('@playwright/test').Page) => openMetricViewNotFound(p) },
+] as const;
+for (const state of PAYER_PAGES) {
+  for (const scheme of SCHEMES) {
+    for (const size of SIZES) {
+      test(`${state.name} layout: ${size.name} ${size.width}px, ${scheme}`, async ({ page }) => {
+        await page.setViewportSize({ width: size.width, height: size.height });
+        await page.emulateMedia({ colorScheme: scheme });
+        await state.open(page);
+
+        mkdirSync(REPORT_DIR, { recursive: true });
+        const label = `${state.name}-${size.name}-${size.width}-${scheme}`;
+        await page.screenshot({ path: join(REPORT_DIR, `${label}.png`), fullPage: true });
+
+        const { errors, issues } = await layoutErrors(page);
+        const axe = await axeViolations(page);
+        writeFileSync(join(REPORT_DIR, `${label}.json`), JSON.stringify({ size, scheme, issues, axe }, null, 2));
+
+        expect(errors, `layout errors at ${label} (screenshot: ${REPORT_DIR}/${label}.png)`).toEqual([]);
+        expect(axe, `axe violations at ${label}`).toEqual([]);
+      });
+    }
+  }
+}

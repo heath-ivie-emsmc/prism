@@ -1,3 +1,4 @@
+using Prism.Application.Warehouse;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Npgsql;
@@ -33,7 +34,7 @@ public sealed class CashPerTransportMetricTests(PostgresFixture postgres) : ICla
                 CREATE TABLE ods.encounter_transaction_credit_attribute (id bigint PRIMARY KEY, encounter_transaction_id bigint NOT NULL, credit_id int NOT NULL);
                 CREATE TABLE reporting.trip_detail_snapshot (
                     snapshot_date date NOT NULL, encounter_id bigint NOT NULL, provider_id int NOT NULL, level_of_service text,
-                    prim_pay text, prim_pay_category text, dos date);
+                    prim_pay text, prim_pay_category text, dos date, reporting_division text);
 
                 -- Provider 2026, asked about Oct 2026: the cohorts are flown May 2025 to Apr 2026. Periods: Nov 2025 (1), Apr 2026 (2) with its adjustment (4), Oct 2026 (3), Nov 2026 (5, after the chosen period).
                 -- Provider 777 has an Apr 2026 period (9).
@@ -66,6 +67,11 @@ public sealed class CashPerTransportMetricTests(PostgresFixture postgres) : ICla
                     (8, 21, 'Credit', 'Posting', 9, 500000);        -- another Provider
                 INSERT INTO ods.encounter_transaction_credit_attribute VALUES
                     (1, 1, 2), (2, 2, 2), (3, 3, 5), (4, 4, 2), (5, 5, 2), (6, 6, 2), (7, 7, 2), (8, 8, 2);
+                
+
+                -- Reporting divisions: even encounters are the Rotor division, odd ones the Fixed division (filed under a legacy "- Old AR" name that counts as the current one).
+                -- Provider 777 has a division of its own that Provider 2026 must never see.
+                UPDATE reporting.trip_detail_snapshot SET reporting_division = CASE WHEN provider_id = 777 THEN 'Other Provider - Base' WHEN encounter_id % 2 = 0 THEN 'Mercy Flights - Rotor' ELSE 'Mercy Flights - Fixed - Old AR 2019' END;
                 """,
                 admin);
             await seed.ExecuteNonQueryAsync(ct);
@@ -85,7 +91,7 @@ public sealed class CashPerTransportMetricTests(PostgresFixture postgres) : ICla
     {
         CashPerTransportMetric metric = await NewMetricAsync();
 
-        CashPerTransport result = await metric.GetCashPerTransportAsync(2026, Oct, ServiceLineFilter.Air, null, TestContext.Current.CancellationToken);
+        CashPerTransport result = await metric.GetCashPerTransportAsync(2026, Oct, ServiceLineFilter.Air, null, null, TestContext.Current.CancellationToken);
 
         Assert.Equal("cash_per_transport_by_payer", result.Metric.Key);
         Assert.Equal((new ApPeriod(2025, 5), new ApPeriod(2026, 4)), (result.CohortFrom, result.CohortThrough));
@@ -102,7 +108,7 @@ public sealed class CashPerTransportMetricTests(PostgresFixture postgres) : ICla
     {
         CashPerTransportMetric metric = await NewMetricAsync();
 
-        CashPerTransport result = await metric.GetCashPerTransportAsync(2026, Oct, ServiceLineFilter.Air, null, TestContext.Current.CancellationToken);
+        CashPerTransport result = await metric.GetCashPerTransportAsync(2026, Oct, ServiceLineFilter.Air, null, null, TestContext.Current.CancellationToken);
 
         Assert.Equal(2000m / 3, result.Payers.Single(p => p.Key == "commercial").CashPerTransport);
         Assert.Null(result.Payers.Single(p => p.Key == "va").CashPerTransport);
@@ -113,8 +119,8 @@ public sealed class CashPerTransportMetricTests(PostgresFixture postgres) : ICla
     {
         CashPerTransportMetric metric = await NewMetricAsync();
 
-        CashPerTransport air = await metric.GetCashPerTransportAsync(2026, Oct, ServiceLineFilter.Air, null, TestContext.Current.CancellationToken);
-        CashPerTransport ground = await metric.GetCashPerTransportAsync(2026, Oct, ServiceLineFilter.Ground, null, TestContext.Current.CancellationToken);
+        CashPerTransport air = await metric.GetCashPerTransportAsync(2026, Oct, ServiceLineFilter.Air, null, null, TestContext.Current.CancellationToken);
+        CashPerTransport ground = await metric.GetCashPerTransportAsync(2026, Oct, ServiceLineFilter.Ground, null, null, TestContext.Current.CancellationToken);
 
         Assert.Equal(["commercial", "medicare", "medicaid", "other-gov", "va", "facility", "patient", "not-recorded"], air.Payers.Select(p => p.Key));
         Assert.DoesNotContain(ground.Payers, p => p.Key == "not-recorded");
@@ -125,7 +131,7 @@ public sealed class CashPerTransportMetricTests(PostgresFixture postgres) : ICla
     {
         CashPerTransportMetric metric = await NewMetricAsync();
 
-        CashPerTransport result = await metric.GetCashPerTransportAsync(2026, Oct, ServiceLineFilter.Air, "fixed-wing", TestContext.Current.CancellationToken);
+        CashPerTransport result = await metric.GetCashPerTransportAsync(2026, Oct, ServiceLineFilter.Air, "fixed-wing", null, TestContext.Current.CancellationToken);
 
         Assert.Equal("fixed-wing", result.GroupKey);
         Assert.Equal((1, 800m), Pair(result, "medicare"));
@@ -137,7 +143,7 @@ public sealed class CashPerTransportMetricTests(PostgresFixture postgres) : ICla
     {
         CashPerTransportMetric metric = await NewMetricAsync();
 
-        CashPerTransport result = await metric.GetCashPerTransportAsync(2026, Oct, ServiceLineFilter.Ground, null, TestContext.Current.CancellationToken);
+        CashPerTransport result = await metric.GetCashPerTransportAsync(2026, Oct, ServiceLineFilter.Ground, null, null, TestContext.Current.CancellationToken);
 
         Assert.Equal((1, 100m), Pair(result, "commercial"));
         Assert.Equal(1, result.Payers.Sum(p => p.Transports));
@@ -148,7 +154,7 @@ public sealed class CashPerTransportMetricTests(PostgresFixture postgres) : ICla
     {
         CashPerTransportMetric metric = await NewMetricAsync();
 
-        CashPerTransport november = await metric.GetCashPerTransportAsync(2026, new ApPeriod(2026, 11), ServiceLineFilter.Air, "rotor-wing", TestContext.Current.CancellationToken);
+        CashPerTransport november = await metric.GetCashPerTransportAsync(2026, new ApPeriod(2026, 11), ServiceLineFilter.Air, "rotor-wing", null, TestContext.Current.CancellationToken);
 
         // For Nov the cohorts are Jun 2025 to May 2026 and encounter 19's $400 has posted.
         Assert.Equal((3, 2400m), Pair(november, "commercial"));
@@ -159,7 +165,7 @@ public sealed class CashPerTransportMetricTests(PostgresFixture postgres) : ICla
     {
         CashPerTransportMetric metric = await NewMetricAsync();
 
-        CashPerTransport result = await metric.GetCashPerTransportAsync(2026, Oct, ServiceLineFilter.Air, new string('x', 5000), TestContext.Current.CancellationToken);
+        CashPerTransport result = await metric.GetCashPerTransportAsync(2026, Oct, ServiceLineFilter.Air, new string('x', 5000), null, TestContext.Current.CancellationToken);
 
         Assert.All(result.Payers, p => Assert.Equal(0, p.Transports));
     }
@@ -168,5 +174,45 @@ public sealed class CashPerTransportMetricTests(PostgresFixture postgres) : ICla
     {
         PayerCashPerTransport payer = result.Payers.Single(p => p.Key == key);
         return (payer.Transports, payer.Cash);
+    }
+
+    private static readonly ReportingDivision Rotor = new("rotor", "Mercy Flights - Rotor");
+    private static readonly ReportingDivision Fixed = new("fixed", "Mercy Flights - Fixed");
+
+    private static async Task<int> TotalAsync(CashPerTransportMetric metric, ReportingDivision? division)
+    {
+        var mix = await metric.GetCashPerTransportAsync(2026, new ApPeriod(2026, 10), ServiceLineFilter.Both, null, division, TestContext.Current.CancellationToken);
+        return mix.Payers.Sum(p => p.Transports);
+    }
+
+    [Fact]
+    public async Task A_division_narrows_the_figures_and_the_divisions_of_the_provider_add_up_to_no_division()
+    {
+        CashPerTransportMetric metric = await NewMetricAsync();
+
+        int all = await TotalAsync(metric, null);
+        int rotor = await TotalAsync(metric, Rotor);
+        // The Fixed trips are filed under a legacy "- Old AR" name, which counts under the current division.
+        int fixedTrips = await TotalAsync(metric, Fixed);
+
+        Assert.True(rotor > 0);
+        Assert.True(fixedTrips > 0);
+        Assert.True(rotor < all);
+        Assert.Equal(all, rotor + fixedTrips);
+    }
+
+    [Theory]
+    [InlineData("Other Provider - Base")]
+    [InlineData("Mercy Flights - Rotor - Old AR 2019")]
+    [InlineData("x' OR '1'='1")]
+    [InlineData("")]
+    public async Task A_division_name_that_is_not_the_providers_matches_nothing_and_is_only_ever_a_bound_value(string name)
+    {
+        CashPerTransportMetric metric = await NewMetricAsync();
+
+        int total = await TotalAsync(metric, new ReportingDivision("k", name));
+
+        // The empty name is "no division": it is the unfiltered figure, never an error and never a match on an empty division.
+        Assert.Equal(name.Length == 0 ? await TotalAsync(metric, null) : 0, total);
     }
 }

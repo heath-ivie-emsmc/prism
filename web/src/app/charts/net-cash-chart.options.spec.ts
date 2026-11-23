@@ -1,3 +1,4 @@
+import { escapeHtml } from '../shared/escape-html';
 import { ChartColors } from './chart.component';
 import { NetCashMonth } from './net-cash';
 import { buildNetCashOption, niceStep } from './net-cash-chart.options';
@@ -89,5 +90,16 @@ describe('niceStep', () => {
     expect(niceStep(1_500_000)).toBe(500_000);
     expect(niceStep(300_000)).toBe(100_000);
     expect(niceStep(0.9)).toBe(0.2);
+  });
+});
+
+describe('net cash tooltip escaping', () => {
+  it.each(['<img src=x onerror=alert(1)>', '"><script>alert(1)</script>'])('escapes a hostile month label %s', (hostile) => {
+    const months: NetCashMonth[] = [{ label: hostile, year: 2026, value: 1, kind: 'actual' }];
+    const tooltip = (buildNetCashOption(months, 'line', COLORS) as unknown as { tooltip: { formatter: (p: unknown) => string } }).tooltip;
+    const html = tooltip.formatter([{ dataIndex: 0, seriesName: 'Net cash collected' }]);
+    expect(html).not.toContain('<img');
+    expect(html).not.toContain('<script');
+    expect(html).toContain(escapeHtml(hostile));
   });
 });

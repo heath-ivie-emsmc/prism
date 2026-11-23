@@ -11,7 +11,8 @@ import {
 import { AuthService } from '../auth/auth.service';
 import { apPeriodEnd, apPeriodLabel, formatDate } from '../dashboard/dashboard-format';
 import { SegmentedControlComponent } from '../dashboard/segmented-control.component';
-import { NetCollectionsPeriodsDto, NetCollectionsService } from '../metrics/net-collections.service';
+import { NetCollectionsService } from '../metrics/net-collections.service';
+import { NetCollectionsPeriodsDto } from '../metrics/net-collections/net-collections.dto';
 import { LoadProblemComponent } from '../shared/load-problem.component';
 import { SkeletonComponent } from '../shared/skeleton.component';
 import { saveBlob } from '../saved-views/view-image';
@@ -363,8 +364,8 @@ export class NeedsAttentionComponent {
   protected readonly check = computed(() => this.query().check);
   protected readonly line = computed<'air' | 'ground'>(() => (this.query().line === 'ground' ? 'ground' : 'air'));
   private readonly group = computed(() => this.query().group);
-  protected readonly providerName = computed(() => this.auth.me()?.providers[0]?.name ?? '');
-  private readonly providerId = computed(() => this.auth.me()?.providers[0]?.id ?? null);
+  protected readonly providerName = computed(() => this.auth.activeProvider()?.name ?? '');
+  private readonly providerId = computed(() => this.auth.activeProviderId());
   protected readonly allowed = computed(() => this.auth.me()?.permissions.includes(CLAIMS_PERMISSION) ?? false);
 
   private readonly periodsResource = rxResource<NetCollectionsPeriodsDto | null, string | null>({

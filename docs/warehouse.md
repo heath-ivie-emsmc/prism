@@ -94,7 +94,17 @@ It uses the rule behind `kpi_net_collections_ap__prov`, so the groups add up to 
 - **Groups:** Commercial is `Insurance` and `TPL`. Medicare is `Medicare` and `Medicare Advantage`. Medicaid is `Medicaid` and `Medicaid MCO`. `Other Govt. Payers` is Other government. `Facility` and `Patient` are their own groups. A transport with no payer shows as Not recorded, and only when there is one.
 - **VA:** the warehouse has no VA category. A payer whose name contains the word VA, CHAMPVA (any `CHAMP...`) or TRICARE is VA, whatever financial class it has. For Mercy that is mostly `IV-VA COMMUNITY CLAIMS`, filed under Insurance. The match is on whole words, so a name that only contains the letters (AVA HEALTH) is not VA.
 - **Open months:** the newest months have few transports until billing catches up on payers, so their shares move.
-- Only counts leave the query. Payer names are used inside it and never returned.
+- Only counts leave the query. The payer mix route never returns payer names (the payer detail below does, see there).
+
+### Payer mix detail
+
+`GET /api/v1/providers/{providerId}/metrics/net-collections/payer-mix/{payerKey}` (Metric `payer_mix_detail`) lists the payers inside one payer group of the payer mix. Each payer mix share has a `drill` link to it, issued by the server with the Provider from the route and the filters in effect (`group`, `period`, `serviceLine`, `division`). It reads the same `reporting.trip_detail_snapshot` rows, with the same latest load, service line, `group` and `division` filters and the same `PayerGroupSql` case, so its rows add up to the group's share on the payer mix.
+
+- **Groups with detail:** `commercial`, `medicare`, `medicaid`, `other-gov` and `va`. `patient`, `facility`, `not-recorded` and any other key are a 404 (the key is never echoed): those groups have no payers worth comparing, and Facility and Patient are billing parties.
+- **Rows:** payers are grouped by `prim_pay`. The 10 with the most transports in the month and the month before together are listed (ties by name), and one `Other` row sums the rest, so at most 11 rows come back whatever the number of payer names. The ranking and the cut are in SQL. A real payer called Other is shown as `Other payer`.
+- **Names:** control characters and runs of spaces become one space, the name is trimmed and cut to 120 characters in SQL before grouping, and an empty or missing name is `Unknown payer`. A name is returned as text only; it is not written to logs.
+- **Counts only:** no patient, claim or encounter detail leaves the query. The route needs the dashboard permission like every Metric route, and a Facility-limited user gets a 404 as on the other Metric routes.
+- **Cache:** an answer is cached against Data Through like the other Metrics, keyed on period, service line, group, division and payer group.
 
 ## Transports and loaded miles
 
@@ -149,6 +159,31 @@ Three Metrics feed the "What changed" panel. Each is also a public API Metric un
 - **Bounds:** list pages of at most 100; the warehouse row cap (10,000) applies, and more matching claims returns 422 instead of a truncated list. Claim rows are never cached.
 - Facility-restricted users get 404, as on every Metric route.
 
-## Not yet done
+## Data Through
 
-- Caching results by Provider, query and the Data Through watermark.
+`snapshot_date` is the load date: a date with no time of day. Prism shows it as Data Through and does not claim a "last updated" time. Per-Metric tables and folders are listed in `metrics.md`.
+
+- **One reader.** `IDataThroughReader` (`DataThroughReader`) returns the newest `snapshot_date` a Provider has in a table, through `IWarehouse` with the Provider filter, the standard timeout and row cap. Every aggregate Metric response carries it as `dataThrough` (`yyyy-MM-dd`, null when the Provider has no data in the table). The Metric cache key and the Insights use the same load date, so the figure on screen, the cache and the validators agree.
+- **Which table.** `MetricDataThrough` names the source of each Metric. Trip-table Metrics (payer mix, transports, payment age, cash per transport, net cash by group) read `reporting.trip_detail_snapshot`. The ledger Metrics (net cash breakdown, and the air or ground series of net cash) read the transaction ledger, which has no load date, and join the trip table, so the trip table's date is theirs. Net cash for all Service Lines reads `reporting.kpi_net_collections_ap__prov` (current load), the projection `reporting.forecast_cash_per_trip` (current load) and the clean claim rate `reporting.kpi_clean_claim_rate__prov`. No Metric reads two load-dated tables today. If one does, its Data Through is the oldest of their dates (the most cautious claim), and null if any of them has none.
+- **Cached for 60 seconds** per warehouse Provider id and table, in a cache of at most 2,000 entries, using the injected `TimeProvider`. A new load shows within a minute.
+- Claim-level routes (Claims needing attention) read their own `snapshot_date` with the rows and are not cached.
+
+## Reporting Division filter
+
+The trip-table Metrics (`payer_mix`, `transport_volume`, `payment_age`, `cash_per_transport_by_payer`, `net_cash_breakdown`, `net_cash_by_group`) take an optional `division` query parameter. All six read `reporting.trip_detail_snapshot`, whose `reporting_division` column holds the division name. `net_collections`, `net_cash_projection` and `clean_claim_rate` read tables with no division and ignore the parameter.
+
+- **Keys.** The warehouse names a division in text; the API uses a stable key. Name rule (`DivisionSql.NormalizedName`): a "- Old AR ..." suffix is removed (a legacy division counts under its current one), and an empty value or `<none>` is no division. Key rule (`ReportingDivision.FromNames`): lower case, each run of characters other than letters and digits becomes one hyphen, no hyphen at the ends, at most 60 characters, `division` if nothing is left. Two names with the same key are numbered `-2`, `-3` in name order. `GET .../metrics/net-collections/divisions` lists the keys and names of the Provider (latest load, at most 500, cached 10 minutes).
+- **Validation.** The value must be at most 60 characters of `a-z`, `0-9` and `-`, or the answer is a 400 before anything is looked up. It must then be one of the route Provider's own keys from the directory, or it is a 400. A key is never resolved from a display name, and another Provider's key is unknown to this Provider. An empty value means every division.
+- **Filter.** The name behind a key goes to the query as a bound parameter (`@division`, empty for all divisions) and is compared with the normalized `reporting_division` of the Provider's latest load. The Provider filter stays in the Catalog query. The ledger Metrics (breakdown, payment age, by group) join the trip table, so a division keeps only cash for encounters that have a trip row in that division.
+- **Facility scope.** A Facility-limited user never reaches the division check: every aggregate route is a 404 for them, as for the whole Provider, so a sibling division is refused too. The portal's Facility ids (`ods.location.integration_id`) have no known link to the division names in the trip table, so the filter cannot be intersected with a user's Facilities. Narrow access would need that link first.
+- **Response.** Each of those responses also carries `division` (the key, or null) and `divisionName`. The cache key includes the division key.
+
+## Metric cache
+
+Aggregate Metrics are wrapped by a caching decorator (`Cached*Metric`, registered through `AddCachedMetric` in each Metric's module) over `IMetricCache` (`MemoryMetricCache`).
+
+- **Key:** the portal Provider id the route access check returned, the Metric key, its normalized parameters (period, months, Service Line, group, division) and the Data Through date. A new load changes the key, so old figures are never served for new data. The route checks the Provider against the user's assignments before any Metric is called, and the key includes the Provider, so one Provider can never read another's entry.
+- **Bounds:** at most 1,000 answers (one size unit each), a 10 minute ceiling on the lifetime, judged by the injected clock, and at most 8 answers computed at once overall and 2 per Provider (`ProviderGate`: a request waits on its own Provider's gate before it takes a global slot, so one Provider cannot starve the others, and waiting honors cancellation). The table of Provider gates holds only Providers with a request in flight. A second caller of the same key waits and then hits. A Provider with no Data Through date is computed every time and not kept. A failed computation is not kept.
+- **Not cached:** claim-level reads (`IClaimAttention`) are never wrapped. A guard test fails if a decorator implements it.
+- **Logs** say the Metric key and hit or miss at Debug level, never a parameter value or a Provider id.
+- The Insights service keeps its own cache (10 minutes, 500 entries), keyed on the same Data Through watermark from `IDataThroughReader` (trip table), and reads the Metrics through this cache as well. The `dataThrough` of the Insight and of the claim Attention Checks (trip table, never cached) also comes from the shared reader.

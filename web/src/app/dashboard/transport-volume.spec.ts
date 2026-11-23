@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { TransportVolumeDto } from '../metrics/net-collections.service';
+import { TransportVolumeDto } from '../metrics/transport-volume/transport-volume.dto';
 import { cardMonths, groupsText, milesIn, toMilesCard, toTransportsCard } from './transport-volume';
 
 const volume = (end: string, points: [string, number, number][], groups: [string, string, number][] = []): TransportVolumeDto => ({

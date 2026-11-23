@@ -1,6 +1,6 @@
 import type { ElementHandle } from '@playwright/test';
 import { expect, test } from './fixtures';
-import { lastAnnouncement, openDashboard, openNeedsAttention, openView } from './support';
+import { lastAnnouncement, openDashboard, expandHelp, openDashboardWithNotice, openMetricView, openMetricViewNotFound, openNeedsAttention, openPayerDetail, openPayerMixPage, openView } from './support';
 
 /** Everything works without a mouse (WCAG 2.1.1, 2.1.2, 2.4.3, 2.4.7, 2.4.11). */
 /**
@@ -320,5 +320,126 @@ test.describe('keyboard', () => {
 
       await expect(page.locator('h1')).toBeFocused();
     });
+  });
+});
+
+test.describe('keyboard: payer mix and its drill target', () => {
+  for (const [name, open, least = 3] of [['payer mix', openPayerMixPage], ['payer breakdown', openPayerDetail], ['metric view', openMetricView, 1], ['metric view, not found', openMetricViewNotFound, 1]] as const) {
+    test(`${name}: Tab reaches every control with a visible focus indicator and nothing traps focus`, async ({ page }) => {
+      await open(page);
+
+      const seen: string[] = [];
+      const missing: string[] = [];
+      for (let i = 0; i < 60; i++) {
+        await page.keyboard.press('Tab');
+        const focused = page.locator(':focus');
+        if ((await focused.count()) === 0) break;
+        const id = await focused.evaluate((n) => `${n.tagName.toLowerCase()}|${n.getAttribute('aria-label') ?? (n.textContent ?? '').trim().slice(0, 30)}|${n.className}`);
+        if (seen.includes(id) && seen[0] === id) break;
+        seen.push(id);
+        const indicator = await focusIndicator((await focused.elementHandle()) as ElementHandle<Element>);
+        if (!indicator.visible) missing.push(indicator.description);
+      }
+
+      expect(seen.length, 'controls reached by Tab (focus starts on the heading, so only what follows it)').toBeGreaterThan(least - 1);
+      expect(seen.length, 'a keyboard trap would run to the limit').toBeLessThan(60);
+      expect(missing, 'controls with no visible focus indicator').toEqual([]);
+    });
+  }
+});
+
+test.describe('keyboard: help panel, drill and notice', () => {
+  for (const [name, open] of [['payer mix', openPayerMixPage], ['payer breakdown', openPayerDetail]] as const) {
+    test(`${name}: the help disclosure is one Tab stop, opens and closes with Enter and Space, and Escape closes the panel without losing focus`, async ({ page }) => {
+      await open(page);
+      const toggle = page.locator('app-metric-help button.help__toggle');
+      const panel = page.locator('app-metric-help .help__panel');
+      await toggle.focus();
+
+      await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+      await page.keyboard.press('Enter');
+      await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+      await expect(panel).toBeVisible();
+      await expect(toggle).toBeFocused();
+      await page.keyboard.press('Space');
+      await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+      await expect(panel).toHaveCount(0);
+      await page.keyboard.press('Space');
+      await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+
+      // Escape closes the open panel and focus stays on the toggle; it is not a trap, and Tab carries on past it.
+      await page.keyboard.press('Escape');
+      await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+      await expect(panel).toHaveCount(0);
+      await expect(toggle).toBeFocused();
+      await page.keyboard.press('Tab');
+      await page.keyboard.press('Shift+Tab');
+      await expect(toggle).toBeFocused();
+      const indicator = await focusIndicator((await toggle.elementHandle()) as ElementHandle<Element>);
+      expect(indicator.visible, 'help toggle focus indicator').toBe(true);
+    });
+  }
+
+  test('the help panel is read in order: the toggle comes before its glossary and the glossary is not a Tab stop', async ({ page }) => {
+    await openPayerDetail(page);
+    await expandHelp(page);
+
+    const order = await page.evaluate(() => {
+      const toggle = document.querySelector('app-metric-help button.help__toggle')!;
+      const dl = document.querySelector('app-metric-help .help__panel dl')!;
+      return { after: !!(toggle.compareDocumentPosition(dl) & Node.DOCUMENT_POSITION_FOLLOWING), tabbable: dl.querySelectorAll('[tabindex]:not([tabindex="-1"])').length };
+    });
+    expect(order).toEqual({ after: true, tabbable: 0 });
+  });
+
+  test('Tab then Enter follows the drill link into the breakdown, focus lands on its heading, and Back brings the reader to the same link and scroll position', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 500 });
+    await openPayerMixPage(page);
+    const link = page.getByRole('link', { name: 'View Commercial breakdown' });
+    await link.focus();
+    await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(300);
+    const before = await page.evaluate(() => window.scrollY);
+    await page.keyboard.press('Enter');
+
+    await expect(page).toHaveURL(/rotor-wing\/commercial\?period=202610&line=air$/);
+    await expect(page.getByRole('heading', { level: 1 })).toBeFocused();
+    await page.goBack();
+
+    await expect(page).toHaveURL(/\/dashboard\/net-cash\/rotor-wing/);
+    await page.locator('app-payer-mix app-chart canvas').waitFor();
+    await expect.poll(async () => Math.abs((await page.evaluate(() => window.scrollY)) - before)).toBeLessThan(60);
+    // Focus is somewhere sensible (the page, its heading or the link), never lost to a hidden element.
+    await expect.poll(() => page.evaluate(() => { const a = document.activeElement; return !!a && (a === document.body || a.getBoundingClientRect().width > 0); })).toBe(true);
+  });
+
+  test('the breadcrumb on the breakdown page is reachable by Tab and works with Enter', async ({ page }) => {
+    await openPayerDetail(page);
+    const crumb = page.getByRole('navigation', { name: /breadcrumb/i }).getByRole('link', { name: 'Rotor wing payer mix' });
+    await crumb.focus();
+    await page.keyboard.press('Enter');
+
+    await expect(page).toHaveURL(/\/dashboard\/net-cash\/rotor-wing\?period=202610&line=air$/);
+  });
+
+  test('the Update view notice is reached by Tab, never takes focus on its own, and Enter updates and announces', async ({ page }) => {
+    await openDashboardWithNotice(page);
+    const button = page.locator('app-data-updated-notice').getByRole('button', { name: 'Update view' });
+
+    expect(await page.evaluate(() => document.activeElement?.closest('app-data-updated-notice') === null)).toBe(true);
+    let reached = false;
+    for (let i = 0; i < 30 && !reached; i++) {
+      await page.keyboard.press('Tab');
+      reached = await button.evaluate((el) => el === document.activeElement);
+    }
+    expect(reached, 'Update view reachable by Tab').toBe(true);
+    const indicator = await focusIndicator((await button.elementHandle()) as ElementHandle<Element>);
+    expect(indicator.visible, 'Update view focus indicator').toBe(true);
+
+    await page.keyboard.press('Space');
+
+    await expect(page.locator('app-data-updated-notice')).not.toContainText('Data updated');
+    await expect.poll(() => lastAnnouncement(page)).toBe('Updated to Nov 23');
+    // The button went away; focus must not be stranded on a removed element.
+    await expect.poll(() => page.evaluate(() => document.activeElement !== null)).toBe(true);
   });
 });

@@ -1,3 +1,4 @@
+using Prism.Application.Warehouse;
 using Prism.Application.Insights;
 using Prism.Application.Metrics;
 using Prism.Infrastructure.Insights;
@@ -31,7 +32,7 @@ public sealed class CachedInsightServiceTests : IDisposable
 
         public bool Empty { get; set; }
 
-        public async Task<NetCashByGroup> GetNetCashByGroupAsync(int providerId, ApPeriod period, ServiceLineFilter serviceLine, CancellationToken cancellationToken)
+        public async Task<NetCashByGroup> GetNetCashByGroupAsync(int providerId, ApPeriod period, ServiceLineFilter serviceLine, ReportingDivision? division, CancellationToken cancellationToken)
         {
             Interlocked.Increment(ref calls);
             int now = Interlocked.Increment(ref active);
@@ -51,14 +52,11 @@ public sealed class CachedInsightServiceTests : IDisposable
         }
     }
 
-    private sealed class Loads : INetCollectionsMetric
+    private sealed class Loads : IDataThroughReader
     {
         public DateOnly? Snapshot { get; set; } = new DateOnly(2026, 11, 5);
 
-        public Task<IReadOnlyList<ApPeriod>> GetPeriodsAsync(int providerId, CancellationToken cancellationToken) => Task.FromResult<IReadOnlyList<ApPeriod>>([]);
-
-        public Task<NetCollectionsSeries> GetSeriesAsync(int providerId, ApPeriod endPeriod, int months, ServiceLineFilter serviceLine, CancellationToken cancellationToken) =>
-            Task.FromResult(new NetCollectionsSeries(INetCollectionsMetric.Definition, endPeriod, months, Snapshot, []));
+        public Task<DateOnly?> GetAsync(int providerId, IReadOnlyList<DataThroughSource> sources, CancellationToken cancellationToken) => Task.FromResult(Snapshot);
     }
 
     [Fact]

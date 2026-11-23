@@ -1,4 +1,3 @@
-using System.Globalization;
 using System.Security.Claims;
 using Prism.Application.Auth;
 using Prism.Application.Insights;
@@ -13,6 +12,7 @@ internal static class InsightsEndpoints
     {
         RouteGroupBuilder group = v1.MapGroup("/providers/{providerId}/insights")
             .RequireAuthorization(Permissions.DashboardView)
+            .AddEndpointFilter(MetricCacheHeaders.Revalidate)
             .WithTags("Insights");
 
         group.MapGet("/what-changed", WhatChanged)
@@ -49,14 +49,14 @@ internal static class InsightsEndpoints
         }
 
         ServiceLineFilter filter = ServiceLineFilter.Air;
-        if (serviceLine is not null && !NetCollectionsEndpoints.TryParseServiceLine(serviceLine, out filter))
+        if (serviceLine is not null && !MetricEndpointSupport.TryParseServiceLine(serviceLine, out filter))
         {
-            return NetCollectionsEndpoints.Invalid("serviceLine", "serviceLine must be all, air or ground.");
+            return MetricEndpointSupport.Invalid("serviceLine", "serviceLine must be all, air or ground.");
         }
 
-        if (groupKey is not null && !NetCollectionsEndpoints.GroupKeyPattern().IsMatch(groupKey))
+        if (groupKey is not null && !MetricEndpointSupport.GroupKeyPattern().IsMatch(groupKey))
         {
-            return NetCollectionsEndpoints.Invalid("group", "group must be a key from the breakdown route, such as fixed-wing.");
+            return MetricEndpointSupport.Invalid("group", "group must be a key from the breakdown route, such as fixed-wing.");
         }
 
         ApPeriod chosen;
@@ -68,15 +68,22 @@ internal static class InsightsEndpoints
                 return Results.NoContent();
             }
 
-            chosen = available.OrderDescending(Comparer<ApPeriod>.Create(NetCollectionsEndpoints.ComparePeriods)).First();
+            chosen = available.OrderDescending(Comparer<ApPeriod>.Create(MetricEndpointSupport.ComparePeriods)).First();
         }
         else if (!ApPeriod.TryParse(period, out chosen))
         {
-            return NetCollectionsEndpoints.Invalid("period", "period must be a month written yyyyMM, for example 202610.");
+            return MetricEndpointSupport.Invalid("period", "period must be a month written yyyyMM, for example 202610.");
         }
 
         InsightResult? result = await insights.GetWhatChangedAsync(id, chosen, filter, groupKey, cancellationToken);
-        return result is null ? Results.NoContent() : Results.Ok(ToResponse(providerId, filter, result));
+        if (result is null)
+        {
+            return Results.NoContent();
+        }
+
+        // The date comes from the shared reader, like every Metric response, not from the Insight's own computation.
+        string? through = await access.DataThroughAsync(id, MetricDataThrough.WhatChanged, filter, cancellationToken);
+        return Results.Ok(ToResponse(providerId, filter, result) with { DataThrough = through });
     }
 
     private static WhatChangedResponse ToResponse(string providerId, ServiceLineFilter filter, InsightResult result)
@@ -87,10 +94,10 @@ internal static class InsightsEndpoints
             providerId,
             h.Period.ToString(),
             h.PriorPeriod.ToString(),
-            NetCollectionsEndpoints.ServiceLineName(filter),
+            MetricEndpointSupport.ServiceLineName(filter),
             h.GroupKey,
             h.GroupName,
-            result.DataThrough?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+            null,
             result.Narrative.Headline,
             h.CashNow,
             h.CashPrior,

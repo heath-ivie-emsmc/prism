@@ -18,6 +18,14 @@ class HostComponent {
   readonly expandable = signal(true);
 }
 
+@Component({
+  imports: [DataFrameComponent],
+  template: `<app-data-frame heading="Stamped" [dataThrough]="through()" serviceLine="ground"><p>Body</p></app-data-frame>`,
+})
+class StampedHostComponent {
+  readonly through = signal<string | null>('2026-11-22');
+}
+
 /** jsdom has no Fullscreen API, so stand one in: the document remembers which element is full screen and tells the frame with the same event the browser sends. */
 function installFullscreen(supported: boolean) {
   let current: Element | null = null;
@@ -62,6 +70,20 @@ describe('DataFrameComponent', () => {
     delete (document as unknown as Record<string, unknown>)['fullscreenEnabled'];
     delete (document as unknown as Record<string, unknown>)['fullscreenElement'];
     delete (HTMLElement.prototype as unknown as Record<string, unknown>)['requestFullscreen'];
+  });
+
+  it('shows the freshness stamp and what the figures cover only when it is given a date, and passes axe', async () => {
+    installFullscreen(true);
+    const fixture = TestBed.createComponent(StampedHostComponent);
+    fixture.detectChanges();
+    const root = fixture.nativeElement as HTMLElement;
+    expect(root.querySelector('.frame__foot')?.textContent).toContain('Data through Nov 22');
+    expect(root.querySelector('.frame__foot')?.textContent).toContain('Ground');
+    expect(await axeViolations(root)).toEqual([]);
+
+    fixture.componentInstance.through.set(null);
+    fixture.detectChanges();
+    expect(root.querySelector('.frame__foot')).toBeNull();
   });
 
   it('draws the heading, the actions and the content in one card', () => {

@@ -1,6 +1,7 @@
 import type { CustomSeriesRenderItem } from 'echarts';
 import type { EChartsCoreOption } from 'echarts/core';
 import type { ChartColors } from './chart.component';
+import { escapeHtml } from '../shared/escape-html';
 import { NetCashMonth, boundedMonths, changeFromPrior, formatCompact, formatExact, formatLabel } from './net-cash';
 
 export type NetCashChartKind = 'line' | 'bar';
@@ -66,7 +67,7 @@ export function buildNetCashOption(allMonths: readonly NetCashMonth[], kind: Net
         const first = items[0];
         const month = first ? months[first.dataIndex] : undefined;
         if (!first || !month) return '';
-        const title = `${month.label} ${month.year}`;
+        const title = escapeHtml(`${month.label} ${month.year}`);
         const range = month.low !== undefined && month.high !== undefined ? `<br/>Likely ${formatExact(month.low)} to ${formatExact(month.high)}` : '';
         return `${title}<br/>${month.kind === 'projected' ? 'Projected' : 'Net cash collected'}: <b>${formatExact(month.value)}</b>${range}`;
       },

@@ -6,8 +6,14 @@ import {
   EmsButtonDirective,
   EmsBreadcrumb,
 } from '@ems-management-consultants/ui';
+import { ContextBadgeComponent } from '../shared/context-badge.component';
+import { FreshnessStampComponent } from '../shared/freshness-stamp.component';
+import { DataFreshnessService } from '../shared/data-freshness.service';
+import { MetricCatalogService } from '../metrics/metric-catalog.service';
 import { DashboardFilterContext } from './dashboard-filter-context';
-import { CleanClaimRateDto, NetCollectionsService, TransportVolumeDto } from '../metrics/net-collections.service';
+import { NetCollectionsService } from '../metrics/net-collections.service';
+import { CleanClaimRateDto } from '../metrics/clean-claim-rate/clean-claim-rate.dto';
+import { TransportVolumeDto } from '../metrics/transport-volume/transport-volume.dto';
 import { FilterBarComponent } from './filter-bar.component';
 import { frameContext } from '../shared/fullscreen';
 import { KpiCardComponent } from './kpi-card.component';
@@ -23,7 +29,7 @@ const CRUMBS: EmsBreadcrumb[] = [{ label: 'Dashboard' }];
 /** The top of the dashboard: Provider, Data Through, and the filters. The metrics below it arrive with the first Metric Catalog slice. */
 @Component({
   selector: 'app-dashboard',
-  imports: [EmsBreadcrumbsComponent, EmsButtonDirective, FilterBarComponent, KpiCardComponent, NetCashPanelComponent, ProjectionPanelComponent, SegmentedControlComponent, SkeletonComponent],
+  imports: [ContextBadgeComponent, FreshnessStampComponent, EmsBreadcrumbsComponent, EmsButtonDirective, FilterBarComponent, KpiCardComponent, NetCashPanelComponent, ProjectionPanelComponent, SegmentedControlComponent, SkeletonComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <main class="dashboard">
@@ -33,19 +39,21 @@ const CRUMBS: EmsBreadcrumb[] = [{ label: 'Dashboard' }];
         <div class="dashboard__title">
           <h1>{{ providerName() }}</h1>
           <p class="dashboard__subtitle">
-            Revenue overview@if (dataThrough()) { · Data through {{ dataThrough() }} }
+            Revenue overview
           </p>
+          <app-freshness-stamp [dataThrough]="dataThroughIso()" />
+          <app-context-badge [serviceLine]="badgeLine()" [divisionApplied]="pageDivisionApplied()" [labels]="labels()" />
         </div>
 
-        <app-filter-bar label="Dashboard filters" />
+        <app-filter-bar label="Dashboard filters" [divisionIgnoredBy]="divisionIgnoredBy()" />
       </header>
 
       <!-- Net cash, transports and loaded miles are real. The other tiles and the projection panel below are layout only: placeholder content until the Metric Catalog serves them. -->
       <section class="dashboard__overview" aria-label="Key metrics">
-        <app-net-cash-panel class="dashboard__cash" [periodsLoading]="periodsLoading()" [providerId]="providerId()" [endPeriod]="endPeriod()" [serviceLine]="serviceLine()" [periodsError]="periodsError()" (retryPeriods)="retryPeriods()" />
+        <app-net-cash-panel class="dashboard__cash" [dataThrough]="dataThroughIso()" [division]="divisionKey() ?? null" [labels]="labels()" [periodsLoading]="periodsLoading()" [providerId]="providerId()" [endPeriod]="endPeriod()" [serviceLine]="serviceLine()" [periodsError]="periodsError()" (retryPeriods)="retryPeriods()" />
 
         <div class="dashboard__tiles">
-        <app-kpi-card title="Transports" [value]="transportsCard().value" [delta]="transportsCard().delta" [footnote]="transportsCard().footnote" [caveat]="volumeCaveat()" [loading]="volumeLoading()" [expandable]="!volumeLoading() && !volumeFailed() && transportsCard().bars.length > 0" [context]="tileContext()">
+        <app-kpi-card [dataThrough]="dataThroughIso()" [serviceLine]="badgeLine()" [labels]="labels()" [divisionApplied]="transportsDivisionApplied()" title="Transports" [value]="transportsCard().value" [delta]="transportsCard().delta" [footnote]="transportsCard().footnote" [caveat]="volumeCaveat()" [loading]="volumeLoading()" [expandable]="!volumeLoading() && !volumeFailed() && transportsCard().bars.length > 0" [context]="tileContext()">
           @if (volumeLoading()) {
             <app-skeleton height="4.75rem" />
           } @else if (volumeFailed()) {
@@ -65,7 +73,7 @@ const CRUMBS: EmsBreadcrumb[] = [{ label: 'Dashboard' }];
           }
         </app-kpi-card>
 
-        <app-kpi-card title="Loaded miles" [value]="milesCard().value" [unit]="milesCard().unit" [unitHidden]="true" [delta]="milesCard().delta" footnote="Billed miles, patient on board" [caveat]="volumeCaveat()" [loading]="volumeLoading()" [expandable]="!volumeLoading() && !volumeFailed() && !!milesCard().line" [context]="tileContext()">
+        <app-kpi-card [dataThrough]="dataThroughIso()" [serviceLine]="badgeLine()" [labels]="labels()" [divisionApplied]="transportsDivisionApplied()" title="Loaded miles" [value]="milesCard().value" [unit]="milesCard().unit" [unitHidden]="true" [delta]="milesCard().delta" footnote="Billed miles, patient on board" [caveat]="volumeCaveat()" [loading]="volumeLoading()" [expandable]="!volumeLoading() && !volumeFailed() && !!milesCard().line" [context]="tileContext()">
           @if (volumeLoading()) {
             <app-skeleton height="4.75rem" />
           } @else if (volumeFailed()) {
@@ -88,7 +96,7 @@ const CRUMBS: EmsBreadcrumb[] = [{ label: 'Dashboard' }];
           }
         </app-kpi-card>
 
-        <app-kpi-card title="Clean claim rate" [value]="cleanCard().value" [delta]="cleanCard().delta" footnote="First-pass resolution" [caveat]="cleanCaveat()" [loading]="cleanLoading()">
+        <app-kpi-card [dataThrough]="dataThroughIso()" [serviceLine]="badgeLine()" [labels]="labels()" title="Clean claim rate" [value]="cleanCard().value" [delta]="cleanCard().delta" footnote="First-pass resolution" [caveat]="cleanCaveat()" [loading]="cleanLoading()">
           @if (cleanLoading()) {
             <app-skeleton height="1.5rem" />
           } @else if (cleanFailed()) {
@@ -300,6 +308,22 @@ export class DashboardComponent {
   private readonly netCollections = inject(NetCollectionsService);
 
   private readonly filters = inject(DashboardFilterContext);
+  private readonly freshness = inject(DataFreshnessService);
+  private readonly catalog = inject(MetricCatalogService);
+  protected readonly divisionKey = this.filters.divisionKey;
+
+  /** The Metrics the dashboard cards show, whose catalog entries say how each treats the Reporting Division filter. */
+  private static readonly METRICS = ['net_collections', 'net_cash_projection', 'transport_volume', 'clean_claim_rate'] as const;
+  /** The Transports and Loaded miles tiles share one Metric. They are narrowed only when it honors the Division and one is selected. */
+  protected readonly transportsDivisionApplied = computed(() => this.divisionKey() !== undefined && this.catalog.honorsDivision('transport_volume'));
+  protected readonly pageDivisionApplied = computed(() => this.divisionKey() !== undefined);
+  /** Names of the cards that ignore the Division, for the note beside the control. Empty until the catalog loads, so no wrong claim is made early. */
+  protected readonly divisionIgnoredBy = computed(() =>
+    DashboardComponent.METRICS.flatMap((key) => {
+      const metric = this.catalog.metrics().get(key);
+      return metric && this.catalog.divisionSupport(key) === 'none' ? [metric.name] : [];
+    }),
+  );
 
   protected readonly crumbs = CRUMBS;
 
@@ -319,6 +343,8 @@ export class DashboardComponent {
   protected readonly periodsError = this.filters.periodsError;
   protected readonly periodsLoading = this.filters.periodsLoading;
   protected readonly dataThrough = this.filters.dataThrough;
+  protected readonly dataThroughIso = this.filters.dataThroughIso;
+  protected readonly badgeLine = computed<'all' | 'air' | 'ground'>(() => (this.serviceLine() === 'both' ? 'all' : this.serviceLine() === 'air' ? 'air' : 'ground'));
   protected readonly labels = this.filters.labels;
   protected readonly endPeriod = this.filters.endPeriod;
 
@@ -327,14 +353,14 @@ export class DashboardComponent {
   }
 
   /** Transports and loaded miles for the six months ending at the chosen period, for the Service Line on screen. One request feeds both tiles. */
-  private readonly volume = rxResource<TransportVolumeDto | null, { providerId: string; endPeriod: string; line: 'all' | 'air' | 'ground' } | null>({
+  private readonly volume = rxResource<TransportVolumeDto | null, { providerId: string; endPeriod: string; line: 'all' | 'air' | 'ground'; division: string | undefined; rev: number } | null>({
     params: () => {
       const providerId = this.providerId();
       const endPeriod = this.endPeriod();
       const line = this.serviceLine();
-      return providerId && endPeriod ? { providerId, endPeriod, line: line === 'both' ? 'all' : line } : null;
+      return providerId && endPeriod ? { providerId, endPeriod, line: line === 'both' ? 'all' : line, division: this.divisionKey(), rev: this.freshness.revision() } : null;
     },
-    stream: ({ params }) => (params ? this.netCollections.transports(params.providerId, params.endPeriod, 6, params.line) : of(null)),
+    stream: ({ params }) => (params ? this.netCollections.transports(params.providerId, params.endPeriod, 6, params.line, params.division) : of(null)),
   });
   private readonly volumeValue = computed(() => (this.volume.hasValue() ? this.volume.value() : null));
   protected readonly volumeLoading = computed(() => this.periodsLoading() || this.volume.isLoading());
@@ -350,11 +376,11 @@ export class DashboardComponent {
   protected readonly goal = CLEAN_CLAIM_GOAL;
 
   /** The clean claim rate for the six months up to the chosen period. The warehouse table is not split by Service Line, so the toggle does not change it. */
-  private readonly clean = rxResource<CleanClaimRateDto | null, { providerId: string; endPeriod: string } | null>({
+  private readonly clean = rxResource<CleanClaimRateDto | null, { providerId: string; endPeriod: string; rev: number } | null>({
     params: () => {
       const providerId = this.providerId();
       const endPeriod = this.endPeriod();
-      return providerId && endPeriod ? { providerId, endPeriod } : null;
+      return providerId && endPeriod ? { providerId, endPeriod, rev: this.freshness.revision() } : null;
     },
     stream: ({ params }) => (params ? this.netCollections.cleanClaims(params.providerId, params.endPeriod, 6) : of(null)),
   });

@@ -6,8 +6,12 @@ import { FormControl, ReactiveFormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { ChartComponent, ChartOptionBuilder } from '../charts/chart.component';
 import { NetCashMonth, boundedMonths, changeFromPrior, formatExact, formatLabel, summarizeNetCash } from '../charts/net-cash';
-import { NetCashProjectionDto, NetCollectionsDto, NetCollectionsService } from '../metrics/net-collections.service';
+import { NetCollectionsService } from '../metrics/net-collections.service';
+import { NetCashProjectionDto } from '../metrics/net-cash-projection/net-cash-projection.dto';
+import { NetCollectionsDto } from '../metrics/net-collections/net-collections.dto';
+import { Labels } from './service-line';
 import { DataFrameComponent } from '../shared/data-frame.component';
+import { DataFreshnessService } from '../shared/data-freshness.service';
 import { frameContext } from '../shared/fullscreen';
 import { LoadProblemComponent } from '../shared/load-problem.component';
 import { SkeletonComponent } from '../shared/skeleton.component';
@@ -53,7 +57,7 @@ interface TableRow {
   imports: [DataFrameComponent, SkeletonComponent, ChartComponent, EmsButtonDirective, LoadProblemComponent, EmsChipComponent, EmsIconComponent, EmsMessageComponent, EmsSelectComponent, ReactiveFormsModule, RouterLink, SegmentedControlComponent, SwitchComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    <app-data-frame heading="Net cash collected" [context]="context()">
+    <app-data-frame heading="Net cash collected" [context]="context()" [dataThrough]="dataThrough()" [serviceLine]="frameLine()" [labels]="labels()">
       <app-segmented-control frameActions label="Chart type" [options]="chartKinds" [(value)]="chartKind" [iconOnly]="true" />
       <div class="panel" [attr.aria-busy]="series.isLoading()">
       <div class="panel__filters">
@@ -309,6 +313,7 @@ interface TableRow {
 })
 export class NetCashPanelComponent {
   private readonly netCollections = inject(NetCollectionsService);
+  private readonly freshness = inject(DataFreshnessService);
 
   /** The Provider whose figures to show, from the signed-in user's own Providers. The API checks it again. */
   readonly providerId = input.required<string | null>();
@@ -318,6 +323,13 @@ export class NetCashPanelComponent {
 
   /** Which Service Line the projection covers, from the dashboard toggle. */
   readonly serviceLine = input<'air' | 'ground' | 'both'>('both');
+
+  /** yyyy-MM-dd the data is complete through, for the footer stamp. */
+  readonly dataThrough = input<string | null>(null);
+  /** The selected Reporting Division key, carried to the breakdown page so it shows the same scope. Null for all divisions. */
+  readonly division = input<string | null>(null);
+  readonly labels = input<Labels | null>(null);
+  protected readonly frameLine = computed<'all' | 'air' | 'ground'>(() => (this.serviceLine() === 'both' ? 'all' : this.serviceLine() === 'air' ? 'air' : 'ground'));
 
   /** The error from loading the list of periods, when it failed: without it there is no month to ask for, so the panel has nothing to show. */
   readonly periodsError = input<unknown>(undefined);
@@ -350,10 +362,10 @@ export class NetCashPanelComponent {
   });
 
   /** The figures follow the Service Line toggle: air or ground alone, or both added together. */
-  protected readonly series = rxResource<NetCollectionsDto | null, { providerId: string; endPeriod: string; months: number; serviceLine: 'all' | 'air' | 'ground' } | null>({
+  protected readonly series = rxResource<NetCollectionsDto | null, { providerId: string; endPeriod: string; months: number; serviceLine: 'all' | 'air' | 'ground'; rev: number } | null>({
     params: () =>
       this.providerId() && this.endPeriod()
-        ? { providerId: this.providerId()!, endPeriod: this.endPeriod(), months: Number(this.range()), serviceLine: this.apiServiceLine() }
+        ? { providerId: this.providerId()!, endPeriod: this.endPeriod(), months: Number(this.range()), serviceLine: this.apiServiceLine(), rev: this.freshness.revision() }
         : null,
     stream: ({ params }) => (params ? this.netCollections.series(params.providerId, params.endPeriod, params.months, params.serviceLine) : of(null)),
   });
@@ -377,16 +389,16 @@ export class NetCashPanelComponent {
   );
 
   /** The month and Service Line the breakdown page opens on: the same ones this panel shows. `both` opens on air. */
-  protected readonly breakdownParams = computed(() => ({ period: this.endPeriod(), line: this.serviceLine() === 'ground' ? 'ground' : 'air' }));
+  protected readonly breakdownParams = computed(() => ({ period: this.endPeriod(), line: this.serviceLine() === 'ground' ? 'ground' : 'air', ...(this.division() ? { division: this.division() } : {}) }));
   protected readonly breakdownLabel = computed(() => (this.serviceLine() === 'ground' ? 'level of service' : 'aircraft type'));
 
   protected readonly showProjection = signal(false);
 
   /** Asked for only while the switch is on and a chart (not the table) is showing. */
-  protected readonly projection = rxResource<NetCashProjectionDto | null, { providerId: string; endPeriod: string; serviceLine: 'all' | 'air' | 'ground' } | null>({
+  protected readonly projection = rxResource<NetCashProjectionDto | null, { providerId: string; endPeriod: string; serviceLine: 'all' | 'air' | 'ground'; rev: number } | null>({
     params: () =>
       this.showProjection() && this.chartKind() !== 'table' && this.providerId() && this.endPeriod()
-        ? { providerId: this.providerId()!, endPeriod: this.endPeriod(), serviceLine: this.apiServiceLine() }
+        ? { providerId: this.providerId()!, endPeriod: this.endPeriod(), serviceLine: this.apiServiceLine(), rev: this.freshness.revision() }
         : null,
     stream: ({ params }) => (params ? this.netCollections.projection(params.providerId, params.endPeriod, params.serviceLine) : of(null)),
   });

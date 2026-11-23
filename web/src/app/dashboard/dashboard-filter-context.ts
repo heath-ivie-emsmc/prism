@@ -4,7 +4,9 @@ import { FormControl } from '@angular/forms';
 import { EmsPickerOption } from '@ems-management-consultants/ui';
 import { of } from 'rxjs';
 import { AuthService } from '../auth/auth.service';
-import { NetCollectionsPeriodsDto, NetCollectionsService } from '../metrics/net-collections.service';
+import { DataFreshnessService } from '../shared/data-freshness.service';
+import { NetCollectionsService } from '../metrics/net-collections.service';
+import { NetCollectionsPeriodsDto } from '../metrics/net-collections/net-collections.dto';
 import { DashboardContext, MOCK_CONTEXT, divisionsFor } from './dashboard-context';
 import { apPeriodEnd, apPeriodLabel, formatDate } from './dashboard-format';
 import { MileUnit } from './transport-volume';
@@ -33,14 +35,19 @@ export class DashboardFilterContext {
   readonly division = new FormControl<string>(ALL_DIVISIONS, { nonNullable: true });
 
   /** The first Provider name in the session, exactly as the token carries it. The mock name shows only when the user has no Provider. */
-  readonly providerName = computed(() => this.auth.me()?.providers[0]?.name || this.context().providerName);
+  readonly providerName = computed(() => this.auth.activeProvider()?.name || this.context().providerName);
 
   /** The Provider whose data is shown: the first one the user was assigned. A switcher comes later. The API checks it again. */
-  readonly providerId = computed(() => this.auth.me()?.providers[0]?.id ?? null);
+  readonly providerId = computed(() => this.auth.activeProviderId());
 
-  private readonly periodsResource = rxResource<NetCollectionsPeriodsDto | null, string | null>({
-    params: () => this.providerId(),
-    stream: ({ params }) => (params ? this.netCollections.periods(params) : of(null)),
+  private readonly freshness = inject(DataFreshnessService);
+
+  private readonly periodsResource = rxResource<NetCollectionsPeriodsDto | null, { providerId: string; rev: number } | null>({
+    params: () => {
+      const providerId = this.providerId();
+      return providerId ? { providerId, rev: this.freshness.revision() } : null;
+    },
+    stream: ({ params }) => (params ? this.netCollections.periods(params.providerId) : of(null)),
   });
 
   readonly periodsError = computed<unknown>(() => this.periodsResource.error());
@@ -54,8 +61,11 @@ export class DashboardFilterContext {
 
   /** The newest accounting period that has data. The data is complete through the end of it. */
   private readonly newestPeriod = computed(() => (this.periodsResource.hasValue() ? this.periodsResource.value() : undefined)?.periods[0]?.period ?? '');
+  private readonly periodsDataThrough = computed(() => (this.periodsResource.hasValue() ? this.periodsResource.value() : undefined)?.dataThrough ?? '');
+  /** yyyy-MM-dd, or null before the periods load. The response's own Data Through when it has one, else the end of the newest period. */
+  readonly dataThroughIso = computed(() => this.periodsDataThrough() || apPeriodEnd(this.newestPeriod()) || null);
   readonly dataThrough = computed(() => {
-    const end = apPeriodEnd(this.newestPeriod());
+    const end = this.dataThroughIso();
     return end ? formatDate(end) : '';
   });
 
@@ -74,23 +84,28 @@ export class DashboardFilterContext {
   ]);
 
   readonly selectedDivision = toSignal(this.division.valueChanges, { initialValue: this.division.value });
+  /** The Reporting Division key to send to Metrics that honor it, or undefined for all divisions. */
+  readonly divisionKey = computed(() => (this.selectedDivision() === ALL_DIVISIONS ? undefined : this.selectedDivision()));
+
+  /** The period to switch to when the chosen one is not in the list (the list changed with the Provider), else null. A derived value, so the effect below only reacts to it. */
+  private readonly periodCorrection = computed(() => {
+    const options = this.periods();
+    const selected = this.endPeriod();
+    return options.length > 0 && !options.some((option) => option.value === selected) ? options[0]!.value : null;
+  });
+  /** "all" when the chosen Reporting Division is no longer in the list (a Service Line change removed it), else null. */
+  private readonly divisionCorrection = computed(() => (this.divisionOptions().some((option) => option.value === this.selectedDivision()) ? null : ALL_DIVISIONS));
 
   constructor() {
-    // Start on the newest period once the list arrives, and again if the chosen one is no longer in the list (a different Provider).
+    // Start on the newest period once the list arrives, and again if the chosen one is no longer in the list. The effect tracks only the correction and writes inside untracked().
     effect(() => {
-      const options = this.periods();
-      const selected = this.endPeriod();
-      if (options.length > 0 && !options.some((option) => option.value === selected)) {
-        untracked(() => this.period.setValue(options[0]!.value));
-      }
+      const period = this.periodCorrection();
+      if (period !== null) untracked(() => this.period.setValue(period));
     });
     // Changing the Service Line can remove the chosen Reporting Division from the list. Fall back to "all" instead of leaving a dead choice.
     effect(() => {
-      const options = this.divisionOptions();
-      const selected = this.selectedDivision();
-      if (!options.some((option) => option.value === selected)) {
-        untracked(() => this.division.setValue(ALL_DIVISIONS));
-      }
+      const division = this.divisionCorrection();
+      if (division !== null) untracked(() => this.division.setValue(division));
     });
   }
 

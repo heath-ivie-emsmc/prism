@@ -1,6 +1,6 @@
 import { apPeriodLabel } from './dashboard-format';
-import { monthName, priorPeriod } from '../breakdown/net-cash-breakdown';
-import { CleanClaimRateDto } from '../metrics/net-collections.service';
+import { monthName, priorPeriod } from '../metrics/net-cash-breakdown/net-cash-breakdown';
+import { CleanClaimRateDto } from '../metrics/clean-claim-rate/clean-claim-rate.dto';
 import { CardDelta } from './transport-volume';
 
 /**

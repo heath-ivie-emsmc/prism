@@ -1,5 +1,6 @@
 import { ChangeDetectionStrategy, Component, input, signal } from '@angular/core';
 import { EmsIconComponent } from '@ems-management-consultants/ui';
+import { Labels } from './service-line';
 import { DataFrameComponent } from '../shared/data-frame.component';
 import { SkeletonComponent } from '../shared/skeleton.component';
 
@@ -14,7 +15,7 @@ export interface KpiDelta {
   imports: [DataFrameComponent, EmsIconComponent, SkeletonComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    <app-data-frame [heading]="title()" [expandable]="expandable()" [context]="context()" [attr.aria-busy]="loading()" (expandedChange)="expanded.set($event)">
+    <app-data-frame [heading]="title()" [expandable]="expandable()" [context]="context()" [dataThrough]="dataThrough()" [serviceLine]="serviceLine()" [divisionApplied]="divisionApplied()" [labels]="labels()" [attr.aria-busy]="loading()" (expandedChange)="expanded.set($event)">
       @if (loading()) {
         <span class="cdk-visually-hidden" role="status">Loading {{ title() }}</span>
       }
@@ -136,6 +137,13 @@ export class KpiCardComponent {
   readonly expandable = input(false);
   /** What the figure covers, shown when the tile is full screen and the page filters are out of sight. */
   readonly context = input('');
+
+  /** yyyy-MM-dd; when given the tile shows a freshness stamp and what it covers. */
+  readonly dataThrough = input<string | null>(null);
+  readonly serviceLine = input<'all' | 'air' | 'ground'>('all');
+  readonly labels = input<Labels | null>(null);
+  /** True when the figures are narrowed to the selected Reporting Division: the Metric honors it and one is selected. */
+  readonly divisionApplied = input(false);
 
   protected readonly expanded = signal(false);
 }

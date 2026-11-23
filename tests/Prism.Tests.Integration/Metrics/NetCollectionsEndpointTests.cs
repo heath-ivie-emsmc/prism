@@ -26,6 +26,8 @@ public sealed class NetCollectionsEndpointTests : IDisposable
     private readonly FakeInsights insights = new();
     private readonly FakeTransportVolume transports = new();
     private readonly FakeCleanClaims cleanClaims = new();
+    private readonly FakeDataThrough dataThrough = new();
+    private readonly FakeDivisions divisions = new();
     private readonly AuthTestFactory factory;
 
     public NetCollectionsEndpointTests()
@@ -37,7 +39,7 @@ public sealed class NetCollectionsEndpointTests : IDisposable
             services.RemoveAll<INetCashProjectionMetric>();
             services.AddSingleton<INetCashProjectionMetric>(projection);
             services.RemoveAll<IProviderDivisionDirectory>();
-            services.AddSingleton<IProviderDivisionDirectory>(new FakeDivisions());
+            services.AddSingleton<IProviderDivisionDirectory>(divisions);
             services.RemoveAll<INetCashBreakdownMetric>();
             services.AddSingleton<INetCashBreakdownMetric>(breakdown);
             services.RemoveAll<IPayerMixMetric>();
@@ -54,6 +56,8 @@ public sealed class NetCollectionsEndpointTests : IDisposable
             services.AddSingleton<ITransportVolumeMetric>(transports);
             services.RemoveAll<ICleanClaimRateMetric>();
             services.AddSingleton<ICleanClaimRateMetric>(cleanClaims);
+            services.RemoveAll<IDataThroughReader>();
+            services.AddSingleton<IDataThroughReader>(dataThrough);
         });
         // Provider 100 in full, 200 limited to one Facility, 300 not numeric.
         factory.Directory.Providers.Clear();
@@ -68,6 +72,139 @@ public sealed class NetCollectionsEndpointTests : IDisposable
         using HttpResponseMessage response = await client.GetAsync(url);
         string text = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
         return (response.StatusCode, text.Length > 0 ? JsonElement.Parse(text) : default);
+    }
+
+    private async Task<HttpResponseMessage> SendAsync(string url, string? ifNoneMatch = null, params string[] permissions)
+    {
+        using CookieClient client = factory.NewSignedInClient(permissions);
+        return await SendAsync(client, url, ifNoneMatch);
+    }
+
+    private static Task<HttpResponseMessage> SendAsync(CookieClient client, string url, string? ifNoneMatch) =>
+        client.SendAsync(HttpMethod.Get, url, headers: ifNoneMatch is null ? null : new Dictionary<string, string> { ["If-None-Match"] = ifNoneMatch });
+
+    [Fact]
+    public async Task A_repeat_request_with_the_etag_gets_304_with_no_body()
+    {
+        using HttpResponseMessage first = await SendAsync($"{Series}?endPeriod=202610&months=3");
+        string etag = first.Headers.ETag!.Tag;
+        using HttpResponseMessage second = await SendAsync($"{Series}?endPeriod=202610&months=3", etag);
+
+        Assert.Equal(HttpStatusCode.OK, first.StatusCode);
+        Assert.True(first.Headers.CacheControl?.Private);
+        Assert.True(first.Headers.CacheControl?.NoCache);
+        Assert.False(first.Headers.CacheControl?.NoStore);
+        Assert.False(first.Headers.ETag.IsWeak);
+        Assert.Equal(HttpStatusCode.NotModified, second.StatusCode);
+        Assert.Equal(etag, second.Headers.ETag!.Tag);
+        Assert.Empty(await second.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task Different_query_parameters_give_a_different_etag_and_a_stale_etag_gets_the_full_body()
+    {
+        using HttpResponseMessage three = await SendAsync($"{Series}?endPeriod=202610&months=3");
+        using HttpResponseMessage four = await SendAsync($"{Series}?endPeriod=202610&months=4", three.Headers.ETag!.Tag);
+
+        Assert.Equal(HttpStatusCode.OK, four.StatusCode);
+        Assert.NotEqual(three.Headers.ETag.Tag, four.Headers.ETag!.Tag);
+        Assert.NotEmpty(await four.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
+    }
+
+    [Theory]
+    [InlineData("/api/v1/providers/200/metrics/net-collections?endPeriod=202610&months=3")]
+    [InlineData("/api/v1/providers/999/metrics/net-collections?endPeriod=202610&months=3")]
+    public async Task A_caller_who_may_not_read_the_provider_gets_404_not_304_even_with_a_valid_etag(string url)
+    {
+        using HttpResponseMessage allowed = await SendAsync($"{Series}?endPeriod=202610&months=3");
+        using HttpResponseMessage denied = await SendAsync(url, allowed.Headers.ETag!.Tag);
+
+        Assert.Equal(HttpStatusCode.NotFound, denied.StatusCode);
+        Assert.Null(denied.Headers.ETag);
+    }
+
+    [Fact]
+    public async Task A_caller_without_the_dashboard_permission_gets_403_not_304_even_with_a_valid_etag()
+    {
+        using HttpResponseMessage allowed = await SendAsync($"{Series}?endPeriod=202610&months=3");
+        using HttpResponseMessage denied = await SendAsync($"{Series}?endPeriod=202610&months=3", allowed.Headers.ETag!.Tag, Permissions.App);
+        using CookieClient anonymous = factory.NewClient();
+        using HttpResponseMessage unauthenticated = await SendAsync(anonymous, $"{Series}?endPeriod=202610&months=3", allowed.Headers.ETag.Tag);
+
+        Assert.Equal(HttpStatusCode.Forbidden, denied.StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, unauthenticated.StatusCode);
+    }
+
+    [Fact]
+    public async Task The_catalog_is_cacheable_for_five_minutes_privately()
+    {
+        using HttpResponseMessage response = await SendAsync("/api/v1/providers/100/metrics/catalog");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.True(response.Headers.CacheControl?.Private);
+        Assert.Equal(TimeSpan.FromSeconds(300), response.Headers.CacheControl?.MaxAge);
+    }
+
+    [Theory]
+    [InlineData("/api/v1/providers/999/metrics/catalog")]
+    [InlineData("/api/v1/providers/200/metrics/catalog")]
+    public async Task A_catalog_404_is_not_cacheable(string url)
+    {
+        using HttpResponseMessage response = await SendAsync(url);
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.Null(response.Headers.CacheControl?.MaxAge);
+        Assert.False(response.Headers.TryGetValues("Cache-Control", out IEnumerable<string>? values) && values.Any(v => v.Contains("max-age", StringComparison.OrdinalIgnoreCase)));
+    }
+
+    [Fact]
+    public async Task A_catalog_403_for_a_caller_without_the_dashboard_permission_is_not_cacheable()
+    {
+        using HttpResponseMessage response = await SendAsync("/api/v1/providers/100/metrics/catalog", null, Permissions.App);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Null(response.Headers.CacheControl?.MaxAge);
+    }
+
+    [Fact]
+    public async Task An_oversized_if_none_match_is_ignored_even_when_it_holds_the_current_etag()
+    {
+        using HttpResponseMessage first = await SendAsync($"{Series}?endPeriod=202610&months=3");
+        string etag = first.Headers.ETag!.Tag;
+        string padding = new('x', 2100);
+        using HttpResponseMessage second = await SendAsync($"{Series}?endPeriod=202610&months=3", $"{etag}, \"{padding}\"");
+        string body = await second.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.OK, second.StatusCode);
+        Assert.Equal(etag, second.Headers.ETag!.Tag);
+        Assert.DoesNotContain(padding, body, StringComparison.Ordinal);
+        Assert.DoesNotContain(padding, string.Join(';', second.Headers.SelectMany(h => h.Value)), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task More_than_32_if_none_match_tags_are_ignored_past_the_limit()
+    {
+        using HttpResponseMessage first = await SendAsync($"{Series}?endPeriod=202610&months=3");
+        string etag = first.Headers.ETag!.Tag;
+        string header = string.Join(", ", Enumerable.Range(0, 39).Select(i => $"\"t{i}\"").Append(etag));
+        using HttpResponseMessage second = await SendAsync($"{Series}?endPeriod=202610&months=3", header);
+
+        Assert.True(header.Length < 2048);
+        Assert.Equal(HttpStatusCode.OK, second.StatusCode);
+        Assert.NotEmpty(await second.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task What_changed_reports_the_shared_readers_date_for_the_trip_table_not_its_own()
+    {
+        dataThrough.Date = new DateOnly(2026, 11, 19);
+        dataThrough.Calls.Clear();
+
+        (HttpStatusCode status, JsonElement body) = await GetAsync($"{Insights}?period=202610&serviceLine=air&group=fixed-wing");
+
+        Assert.Equal(HttpStatusCode.OK, status);
+        Assert.Equal("2026-11-19", body.GetProperty("dataThrough").GetString());
+        Assert.Contains((100, DataThroughSource.TripDetail), dataThrough.Calls);
     }
 
     [Fact]
@@ -683,7 +820,7 @@ public sealed class NetCollectionsEndpointTests : IDisposable
         (HttpStatusCode status, JsonElement body) = await GetAsync($"{Insights}?period=202610&serviceLine=air&group=fixed-wing");
 
         Assert.Equal(HttpStatusCode.OK, status);
-        Assert.Equal(("202610", "202609", "air", "fixed-wing", "Fixed wing", "2026-11-05"), (body.GetProperty("period").GetString(), body.GetProperty("priorPeriod").GetString(), body.GetProperty("serviceLine").GetString(), body.GetProperty("group").GetString(), body.GetProperty("groupName").GetString(), body.GetProperty("dataThrough").GetString()));
+        Assert.Equal(("202610", "202609", "air", "fixed-wing", "Fixed wing", "2026-11-21"), (body.GetProperty("period").GetString(), body.GetProperty("priorPeriod").GetString(), body.GetProperty("serviceLine").GetString(), body.GetProperty("group").GetString(), body.GetProperty("groupName").GetString(), body.GetProperty("dataThrough").GetString()));
         Assert.Equal("Fixed wing cash fell $137,770.00 (22%) from September.", body.GetProperty("headline").GetString());
         Assert.Equal((-137_770m, -0.22m), (body.GetProperty("delta").GetDecimal(), body.GetProperty("deltaRatio").GetDecimal()));
         JsonElement driver = body.GetProperty("drivers")[0];
@@ -940,6 +1077,251 @@ public sealed class NetCollectionsEndpointTests : IDisposable
         Assert.DoesNotContain("hunter2", body.GetRawText(), StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData("")]
+    [InlineData("/projection")]
+    [InlineData("/breakdown")]
+    [InlineData("/payer-mix")]
+    [InlineData("/payment-age")]
+    [InlineData("/cash-per-transport")]
+    [InlineData("/by-group")]
+    [InlineData("/transports")]
+    [InlineData("/clean-claims")]
+    public async Task Every_metric_response_carries_the_data_through_date_of_the_providers_load(string route)
+    {
+        (HttpStatusCode status, JsonElement body) = await GetAsync($"{Series}{route}");
+
+        Assert.Equal(HttpStatusCode.OK, status);
+        Assert.Equal("2026-11-21", body.GetProperty("dataThrough").GetString());
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("/projection")]
+    [InlineData("/breakdown")]
+    [InlineData("/payer-mix")]
+    [InlineData("/payment-age")]
+    [InlineData("/cash-per-transport")]
+    [InlineData("/by-group")]
+    [InlineData("/transports")]
+    [InlineData("/clean-claims")]
+    public async Task Data_through_is_null_when_the_provider_has_no_data(string route)
+    {
+        dataThrough.Date = null;
+
+        (HttpStatusCode status, JsonElement body) = await GetAsync($"{Series}{route}");
+
+        Assert.Equal(HttpStatusCode.OK, status);
+        Assert.Equal(JsonValueKind.Null, body.GetProperty("dataThrough").ValueKind);
+    }
+
+    [Fact]
+    public async Task Data_through_is_read_from_the_table_each_metric_reads_and_only_for_a_provider_the_caller_may_read()
+    {
+        await GetAsync($"{Series}/projection");
+        await GetAsync($"{Series}/clean-claims");
+        await GetAsync($"{Series}?serviceLine=air");
+        await GetAsync($"{Series}?serviceLine=all");
+        await GetAsync($"{Series}/payer-mix");
+        await GetAsync("/api/v1/providers/200/metrics/net-collections/payer-mix");
+        await GetAsync("/api/v1/providers/999/metrics/net-collections/payer-mix");
+
+        Assert.Equal(
+            [
+                (100, DataThroughSource.CashForecast),
+                (100, DataThroughSource.CleanClaims),
+                (100, DataThroughSource.TripDetail),
+                (100, DataThroughSource.NetCollectionsKpi),
+                (100, DataThroughSource.TripDetail),
+            ],
+            dataThrough.Calls);
+    }
+
+    private ReportingDivision? LastDivision(string route) => route switch
+    {
+        "/payer-mix" => payerMix.LastDivision,
+        "/payment-age" => paymentAge.LastDivision,
+        "/cash-per-transport" => cashPerTransport.LastDivision,
+        "/breakdown" => breakdown.LastDivision,
+        "/by-group" => byGroup.LastDivision,
+        "/transports" => transports.LastDivision,
+        _ => throw new ArgumentOutOfRangeException(nameof(route)),
+    };
+
+    private int MetricCalls(string route) => route switch
+    {
+        "/payer-mix" => payerMix.Calls,
+        "/payment-age" => paymentAge.Calls,
+        "/cash-per-transport" => cashPerTransport.Calls,
+        "/breakdown" => breakdown.Calls,
+        "/by-group" => byGroup.Calls,
+        "/transports" => transports.Calls,
+        _ => throw new ArgumentOutOfRangeException(nameof(route)),
+    };
+
+    [Theory]
+    [InlineData("/payer-mix")]
+    [InlineData("/payment-age")]
+    [InlineData("/cash-per-transport")]
+    [InlineData("/breakdown")]
+    [InlineData("/by-group")]
+    [InlineData("/transports")]
+    public async Task A_division_key_of_the_provider_is_passed_to_the_metric_and_echoed_in_the_response(string route)
+    {
+        (HttpStatusCode status, JsonElement body) = await GetAsync($"{Series}{route}?division=rotor-base");
+
+        Assert.Equal(HttpStatusCode.OK, status);
+        Assert.Equal(("rotor-base", "Mercy Flights - Rotor"), (body.GetProperty("division").GetString(), body.GetProperty("divisionName").GetString()));
+        Assert.Equal(new ReportingDivision("rotor-base", "Mercy Flights - Rotor"), LastDivision(route));
+        Assert.Equal([100], divisions.Lookups);
+    }
+
+    [Theory]
+    [InlineData("/payer-mix")]
+    [InlineData("/payment-age")]
+    [InlineData("/cash-per-transport")]
+    [InlineData("/breakdown")]
+    [InlineData("/by-group")]
+    [InlineData("/transports")]
+    public async Task Without_a_division_or_with_an_empty_one_the_metric_is_asked_for_every_division_and_nothing_is_looked_up(string route)
+    {
+        (_, JsonElement none) = await GetAsync($"{Series}{route}");
+        (_, JsonElement empty) = await GetAsync($"{Series}{route}?division=");
+
+        Assert.Null(LastDivision(route));
+        Assert.Equal(JsonValueKind.Null, none.GetProperty("division").ValueKind);
+        Assert.Equal(JsonValueKind.Null, empty.GetProperty("division").ValueKind);
+        Assert.Empty(divisions.Lookups);
+    }
+
+    [Theory]
+    [InlineData("/payer-mix", "fixed-base-2")]
+    [InlineData("/payment-age", "mercy-flights-rotor")]
+    [InlineData("/cash-per-transport", "other-provider-base")]
+    [InlineData("/breakdown", "rotor")]
+    [InlineData("/by-group", "ROTOR-BASE")]
+    [InlineData("/transports", "rotor-base-")]
+    public async Task A_key_that_is_not_one_of_the_providers_divisions_is_a_400_and_nothing_is_queried(string route, string key)
+    {
+        (HttpStatusCode status, JsonElement body) = await GetAsync($"{Series}{route}?division={key}");
+
+        Assert.Equal(HttpStatusCode.BadRequest, status);
+        Assert.True(body.GetProperty("errors").TryGetProperty("division", out _));
+        Assert.Equal(0, MetricCalls(route));
+    }
+
+    [Theory]
+    [InlineData("Mercy%20Flights%20-%20Rotor")]
+    [InlineData("rotor%20base")]
+    [InlineData("rotor-base%0A")]
+    [InlineData("%2e%2e%2fother")]
+    [InlineData("rotor_base")]
+    [InlineData("rotor-base%27%3B%20DROP%20TABLE%20x")]
+    [InlineData("ro%C3%A4tor")]
+    public async Task A_division_that_is_not_shaped_like_a_key_is_a_400_before_the_directory_is_asked(string key)
+    {
+        (HttpStatusCode status, JsonElement body) = await GetAsync($"{Series}/payer-mix?division={key}");
+
+        Assert.Equal(HttpStatusCode.BadRequest, status);
+        Assert.True(body.GetProperty("errors").TryGetProperty("division", out _));
+        Assert.Empty(divisions.Lookups);
+        Assert.Equal(0, payerMix.Calls);
+    }
+
+    [Fact]
+    public async Task An_oversize_division_is_a_400_before_the_directory_is_asked_and_the_value_is_not_echoed()
+    {
+        string key = new('a', 5000);
+
+        (HttpStatusCode status, JsonElement body) = await GetAsync($"{Series}/payer-mix?division={key}");
+
+        Assert.Equal(HttpStatusCode.BadRequest, status);
+        Assert.DoesNotContain("aaaaaaaaaa", body.GetRawText(), StringComparison.Ordinal);
+        Assert.Empty(divisions.Lookups);
+        Assert.Equal(0, payerMix.Calls);
+    }
+
+    [Fact]
+    public async Task A_provider_cannot_use_another_providers_division_key()
+    {
+        // Provider 300 (read in full) has no divisions of its own in the directory. Provider 100's key means nothing to it.
+        (HttpStatusCode status, _) = await GetAsync("/api/v1/providers/300/metrics/net-collections/payer-mix?division=rotor-base");
+
+        Assert.Equal(HttpStatusCode.BadRequest, status);
+        Assert.Equal([300], divisions.Lookups);
+        Assert.Equal(0, payerMix.Calls);
+    }
+
+    [Theory]
+    [InlineData("200")]
+    [InlineData("400")]
+    [InlineData("999")]
+    [InlineData("abc")]
+    public async Task A_facility_limited_user_or_an_unassigned_provider_is_a_404_for_any_division_and_the_directory_is_never_asked(string provider)
+    {
+        // The user of Provider 200 holds one Facility, a sibling of the other. A Facility-limited user never reads Provider-level figures, so every division,
+        // the sibling's included, is refused with the same 404 as the Provider itself.
+        (HttpStatusCode own, _) = await GetAsync($"/api/v1/providers/{provider}/metrics/net-collections/payer-mix?division=rotor-base");
+        (HttpStatusCode sibling, _) = await GetAsync($"/api/v1/providers/{provider}/metrics/net-collections/breakdown?division=fixed-base");
+
+        Assert.Equal(HttpStatusCode.NotFound, own);
+        Assert.Equal(HttpStatusCode.NotFound, sibling);
+        Assert.Empty(divisions.Lookups);
+        Assert.Equal(0, payerMix.Calls + breakdown.Calls);
+    }
+
+    [Fact]
+    public async Task A_division_sent_to_a_metric_that_does_not_honor_it_is_ignored_and_changes_nothing()
+    {
+        (HttpStatusCode status, JsonElement body) = await GetAsync($"{Series}?division=rotor-base&months=3&endPeriod=202610");
+
+        Assert.Equal(HttpStatusCode.OK, status);
+        Assert.False(body.TryGetProperty("division", out _));
+        Assert.Empty(divisions.Lookups);
+    }
+
+    [Fact]
+    public async Task The_divisions_route_lists_keys_and_names_for_the_providers_in_name_order_and_is_scoped_like_every_metric_route()
+    {
+        (HttpStatusCode ok, JsonElement body) = await GetAsync($"{Series}/divisions");
+        (HttpStatusCode all, JsonElement none) = await GetAsync("/api/v1/providers/300/metrics/net-collections/divisions");
+        (HttpStatusCode limited, _) = await GetAsync("/api/v1/providers/200/metrics/net-collections/divisions");
+        (HttpStatusCode unknown, _) = await GetAsync("/api/v1/providers/999/metrics/net-collections/divisions");
+
+        Assert.Equal(HttpStatusCode.OK, ok);
+        Assert.Equal(["fixed-base", "rotor-base"], body.GetProperty("divisions").EnumerateArray().Select(d => d.GetProperty("key").GetString()));
+        Assert.Equal("Mercy Flights - Rotor", body.GetProperty("divisions")[1].GetProperty("name").GetString());
+        Assert.Equal(HttpStatusCode.OK, all);
+        Assert.Empty(none.GetProperty("divisions").EnumerateArray());
+        Assert.Equal(HttpStatusCode.NotFound, limited);
+        Assert.Equal(HttpStatusCode.NotFound, unknown);
+        Assert.Equal([100, 300], divisions.Lookups);
+    }
+
+    [Fact]
+    public async Task A_division_the_directory_cannot_read_because_the_warehouse_is_down_is_a_503_problem()
+    {
+        divisions.Failure = new WarehouseUnavailableException(new InvalidOperationException("Password=hunter2"));
+
+        (HttpStatusCode status, JsonElement body) = await GetAsync($"{Series}/payer-mix?division=rotor-base");
+
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, status);
+        Assert.DoesNotContain("hunter2", body.GetRawText(), StringComparison.Ordinal);
+    }
+
+    private sealed class FakeDataThrough : IDataThroughReader
+    {
+        public DateOnly? Date { get; set; } = new DateOnly(2026, 11, 21);
+
+        public List<(int ProviderId, DataThroughSource Source)> Calls { get; } = [];
+
+        public Task<DateOnly?> GetAsync(int providerId, IReadOnlyList<DataThroughSource> sources, CancellationToken cancellationToken)
+        {
+            Calls.Add((providerId, Assert.Single(sources)));
+            return Task.FromResult(Date);
+        }
+    }
+
     private sealed class FakeNetCollections : INetCollectionsMetric
     {
         public List<ApPeriod> Periods { get; } = [new(2026, 11), new(2026, 10)];
@@ -999,19 +1381,39 @@ public sealed class NetCollectionsEndpointTests : IDisposable
     {
         public Task<IReadOnlySet<string>> GetFacilityIdsAsync(int portalCompanyId, CancellationToken cancellationToken) =>
             Task.FromResult<IReadOnlySet<string>>(portalCompanyId is 200 or 300 ? new HashSet<string> { "9", "10" } : []);
+
+        public static IReadOnlyList<ReportingDivision> Divisions { get; } = [new("fixed-base", "Mercy Flights - Fixed"), new("rotor-base", "Mercy Flights - Rotor")];
+
+        public List<int> Lookups { get; } = [];
+
+        public Exception? Failure { get; set; }
+
+        public Task<IReadOnlyList<ReportingDivision>> GetReportingDivisionsAsync(int portalCompanyId, CancellationToken cancellationToken)
+        {
+            Lookups.Add(portalCompanyId);
+            if (Failure is not null)
+            {
+                return Task.FromException<IReadOnlyList<ReportingDivision>>(Failure);
+            }
+
+            return Task.FromResult<IReadOnlyList<ReportingDivision>>(portalCompanyId is 100 ? [.. Divisions] : []);
+        }
     }
 
     private sealed class FakeBreakdown : INetCashBreakdownMetric
     {
         public Exception? Failure { get; set; }
 
+        public ReportingDivision? LastDivision { get; private set; }
+
         public int Calls { get; private set; }
 
         public (int ProviderId, ApPeriod Period, ServiceLineFilter ServiceLine) LastCall { get; private set; }
 
-        public Task<NetCashBreakdown> GetBreakdownAsync(int providerId, ApPeriod period, ServiceLineFilter serviceLine, CancellationToken cancellationToken)
+        public Task<NetCashBreakdown> GetBreakdownAsync(int providerId, ApPeriod period, ServiceLineFilter serviceLine, ReportingDivision? division, CancellationToken cancellationToken)
         {
             Calls++;
+            LastDivision = division;
             LastCall = (providerId, period, serviceLine);
             if (Failure is not null)
             {
@@ -1071,13 +1473,16 @@ public sealed class NetCollectionsEndpointTests : IDisposable
     {
         public Exception? Failure { get; set; }
 
+        public ReportingDivision? LastDivision { get; private set; }
+
         public int Calls { get; private set; }
 
         public (int ProviderId, ApPeriod Period, ServiceLineFilter ServiceLine) LastCall { get; private set; }
 
-        public Task<NetCashByGroup> GetNetCashByGroupAsync(int providerId, ApPeriod period, ServiceLineFilter serviceLine, CancellationToken cancellationToken)
+        public Task<NetCashByGroup> GetNetCashByGroupAsync(int providerId, ApPeriod period, ServiceLineFilter serviceLine, ReportingDivision? division, CancellationToken cancellationToken)
         {
             Calls++;
+            LastDivision = division;
             LastCall = (providerId, period, serviceLine);
             if (Failure is not null)
             {
@@ -1097,13 +1502,16 @@ public sealed class NetCollectionsEndpointTests : IDisposable
     {
         public Exception? Failure { get; set; }
 
+        public ReportingDivision? LastDivision { get; private set; }
+
         public int Calls { get; private set; }
 
         public (int ProviderId, ApPeriod Period, ServiceLineFilter ServiceLine, string? Group) LastCall { get; private set; }
 
-        public Task<CashPerTransport> GetCashPerTransportAsync(int providerId, ApPeriod period, ServiceLineFilter serviceLine, string? groupKey, CancellationToken cancellationToken)
+        public Task<CashPerTransport> GetCashPerTransportAsync(int providerId, ApPeriod period, ServiceLineFilter serviceLine, string? groupKey, ReportingDivision? division, CancellationToken cancellationToken)
         {
             Calls++;
+            LastDivision = division;
             LastCall = (providerId, period, serviceLine, groupKey);
             if (Failure is not null)
             {
@@ -1125,13 +1533,16 @@ public sealed class NetCollectionsEndpointTests : IDisposable
     {
         public Exception? Failure { get; set; }
 
+        public ReportingDivision? LastDivision { get; private set; }
+
         public int Calls { get; private set; }
 
         public (int ProviderId, ApPeriod Period, ServiceLineFilter ServiceLine, string? Group) LastCall { get; private set; }
 
-        public Task<PaymentAge> GetPaymentAgeAsync(int providerId, ApPeriod period, ServiceLineFilter serviceLine, string? groupKey, CancellationToken cancellationToken)
+        public Task<PaymentAge> GetPaymentAgeAsync(int providerId, ApPeriod period, ServiceLineFilter serviceLine, string? groupKey, ReportingDivision? division, CancellationToken cancellationToken)
         {
             Calls++;
+            LastDivision = division;
             LastCall = (providerId, period, serviceLine, groupKey);
             if (Failure is not null)
             {
@@ -1152,13 +1563,16 @@ public sealed class NetCollectionsEndpointTests : IDisposable
     {
         public Exception? Failure { get; set; }
 
+        public ReportingDivision? LastDivision { get; private set; }
+
         public int Calls { get; private set; }
 
         public (int ProviderId, ApPeriod Period, ServiceLineFilter ServiceLine, string? Group) LastCall { get; private set; }
 
-        public Task<PayerMix> GetPayerMixAsync(int providerId, ApPeriod period, ServiceLineFilter serviceLine, string? groupKey, CancellationToken cancellationToken)
+        public Task<PayerMix> GetPayerMixAsync(int providerId, ApPeriod period, ServiceLineFilter serviceLine, string? groupKey, ReportingDivision? division, CancellationToken cancellationToken)
         {
             Calls++;
+            LastDivision = division;
             LastCall = (providerId, period, serviceLine, groupKey);
             if (Failure is not null)
             {
@@ -1180,13 +1594,16 @@ public sealed class NetCollectionsEndpointTests : IDisposable
     {
         public Exception? Failure { get; set; }
 
+        public ReportingDivision? LastDivision { get; private set; }
+
         public int Calls { get; private set; }
 
         public (int ProviderId, ApPeriod End, int Months, ServiceLineFilter ServiceLine) LastCall { get; private set; }
 
-        public Task<TransportVolume> GetVolumeAsync(int providerId, ApPeriod endPeriod, int months, ServiceLineFilter serviceLine, CancellationToken cancellationToken)
+        public Task<TransportVolume> GetVolumeAsync(int providerId, ApPeriod endPeriod, int months, ServiceLineFilter serviceLine, ReportingDivision? division, CancellationToken cancellationToken)
         {
             Calls++;
+            LastDivision = division;
             LastCall = (providerId, endPeriod, months, serviceLine);
             if (Failure is not null)
             {

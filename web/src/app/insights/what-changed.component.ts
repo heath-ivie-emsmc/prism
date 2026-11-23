@@ -7,6 +7,7 @@ import { EmsButtonDirective, EmsIconComponent } from '@ems-management-consultant
 import { AuthService } from '../auth/auth.service';
 import { AttentionCardView, attentionCard, reviewQuery } from '../attention/attention';
 import { AttentionCountsDto, AttentionQuery, AttentionService, CLAIMS_PERMISSION } from '../attention/attention.service';
+import { DataFreshnessService } from '../shared/data-freshness.service';
 import { LoadProblemComponent } from '../shared/load-problem.component';
 import { SkeletonComponent } from '../shared/skeleton.component';
 import { InsightsService, WhatChangedDto } from './insights.service';
@@ -17,6 +18,7 @@ interface Query {
   readonly period: string;
   readonly line: 'air' | 'ground';
   readonly group: string;
+  readonly rev: number;
 }
 
 /**
@@ -262,6 +264,7 @@ interface Query {
 })
 export class WhatChangedComponent {
   private readonly insights = inject(InsightsService);
+  private readonly freshness = inject(DataFreshnessService);
   private readonly auth = inject(AuthService);
   private readonly attention = inject(AttentionService);
 
@@ -277,7 +280,7 @@ export class WhatChangedComponent {
       const providerId = this.providerId();
       const period = this.period();
       const group = this.group();
-      return providerId && /^\d{6}$/.test(period) && group ? { providerId, period, line: this.line(), group } : null;
+      return providerId && /^\d{6}$/.test(period) && group ? { providerId, period, line: this.line(), group, rev: this.freshness.revision() } : null;
     },
     stream: ({ params }) => (params ? this.insights.whatChanged(params.providerId, params.period, params.line, params.group) : of(null)),
   });

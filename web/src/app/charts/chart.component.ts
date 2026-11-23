@@ -7,6 +7,7 @@ import {
   effect,
   inject,
   input,
+  output,
   signal,
   untracked,
   viewChild,
@@ -32,6 +33,13 @@ export interface ChartColors {
   readonly categorical?: readonly string[];
   /** The chart is too narrow for a figure on every bar or point, so only the key one is shown. */
   readonly narrow: boolean;
+}
+
+/** What was clicked: the category or point name and its index in the series. */
+export interface ChartElementEvent {
+  readonly name: string;
+  readonly dataIndex: number;
+  readonly seriesName: string;
 }
 
 /** Below this width in CSS pixels, labels on every bar would run into each other. */
@@ -69,6 +77,11 @@ export class ChartComponent {
   readonly option = input.required<ChartOptionBuilder>();
   readonly label = input.required<string>();
   readonly renderer = input<'canvas' | 'svg'>('canvas');
+  /**
+   * A bar, point or slice was clicked or tapped. The pointer is one way in; the owner of the chart must also offer a keyboard path
+   * (real links beside the chart, or the table), because the canvas itself cannot take focus on its parts.
+   */
+  readonly elementActivate = output<ChartElementEvent>();
 
   private readonly host = viewChild.required<ElementRef<HTMLElement>>('host');
   private readonly theme = inject(EmsThemeService);
@@ -107,6 +120,11 @@ export class ChartComponent {
     } catch {
       return;
     }
+    this.chart.on('click', (params) => {
+      const event = params as { name?: unknown; dataIndex?: unknown; seriesName?: unknown };
+      if (typeof event.dataIndex !== 'number') return;
+      this.elementActivate.emit({ name: String(event.name ?? ''), dataIndex: event.dataIndex, seriesName: String(event.seriesName ?? '') });
+    });
     if (typeof ResizeObserver !== 'undefined') {
       const observer = new ResizeObserver(() => {
         this.chart?.resize();

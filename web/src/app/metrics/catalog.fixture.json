@@ -1,0 +1,200 @@
+{
+  "_comment": "Generated from src/Prism.Application/Metrics/MetricCatalog.cs by MetricCatalogSnapshotTests. Do not edit by hand: run the test with PRISM_UPDATE_SNAPSHOTS=1. Lists every Available Metric the web registries must know: placeable ones and drill targets.",
+  "metrics": [
+    {
+      "key": "net_collections",
+      "status": "available",
+      "placeable": true,
+      "presentations": [
+        "line",
+        "column",
+        "table"
+      ],
+      "serviceLines": [
+        "air",
+        "ground",
+        "both"
+      ],
+      "divisionSupport": "none",
+      "freshness": "dailyLoad",
+      "helpKey": "net_collections",
+      "drills": []
+    },
+    {
+      "key": "net_cash_projection",
+      "status": "available",
+      "placeable": true,
+      "presentations": [
+        "column",
+        "line",
+        "table"
+      ],
+      "serviceLines": [
+        "air",
+        "ground",
+        "both"
+      ],
+      "divisionSupport": "none",
+      "freshness": "dailyLoad",
+      "helpKey": "net_cash_projection",
+      "drills": []
+    },
+    {
+      "key": "net_cash_breakdown",
+      "status": "available",
+      "placeable": true,
+      "presentations": [
+        "table",
+        "column"
+      ],
+      "serviceLines": [
+        "air",
+        "ground",
+        "both"
+      ],
+      "divisionSupport": "supported",
+      "freshness": "dailyLoad",
+      "helpKey": "net_cash_breakdown",
+      "drills": [
+        {
+          "rel": "drill",
+          "targetKey": "payer_mix",
+          "bindsDimension": "group"
+        }
+      ]
+    },
+    {
+      "key": "net_cash_by_group",
+      "status": "available",
+      "placeable": true,
+      "presentations": [
+        "stacked",
+        "column",
+        "table"
+      ],
+      "serviceLines": [
+        "air",
+        "ground",
+        "both"
+      ],
+      "divisionSupport": "supported",
+      "freshness": "dailyLoad",
+      "helpKey": "net_cash_by_group",
+      "drills": []
+    },
+    {
+      "key": "cash_per_transport_by_payer",
+      "status": "available",
+      "placeable": true,
+      "presentations": [
+        "column",
+        "table"
+      ],
+      "serviceLines": [
+        "air",
+        "ground",
+        "both"
+      ],
+      "divisionSupport": "supported",
+      "freshness": "dailyLoad",
+      "helpKey": "cash_per_transport_by_payer",
+      "drills": []
+    },
+    {
+      "key": "payment_age",
+      "status": "available",
+      "placeable": true,
+      "presentations": [
+        "table"
+      ],
+      "serviceLines": [
+        "air",
+        "ground",
+        "both"
+      ],
+      "divisionSupport": "supported",
+      "freshness": "dailyLoad",
+      "helpKey": "payment_age",
+      "drills": []
+    },
+    {
+      "key": "payer_mix",
+      "status": "available",
+      "placeable": true,
+      "presentations": [
+        "column",
+        "stacked",
+        "donut",
+        "table"
+      ],
+      "serviceLines": [
+        "air",
+        "ground",
+        "both"
+      ],
+      "divisionSupport": "supported",
+      "freshness": "dailyLoad",
+      "helpKey": "payer_mix",
+      "drills": [
+        {
+          "rel": "drill",
+          "targetKey": "payer_mix_detail",
+          "bindsDimension": "payerGroup"
+        }
+      ]
+    },
+    {
+      "key": "transport_volume",
+      "status": "available",
+      "placeable": true,
+      "presentations": [
+        "tile",
+        "column",
+        "table"
+      ],
+      "serviceLines": [
+        "air",
+        "ground",
+        "both"
+      ],
+      "divisionSupport": "supported",
+      "freshness": "dailyLoad",
+      "helpKey": "transport_volume",
+      "drills": []
+    },
+    {
+      "key": "clean_claim_rate",
+      "status": "available",
+      "placeable": true,
+      "presentations": [
+        "tile",
+        "line",
+        "table"
+      ],
+      "serviceLines": [
+        "air",
+        "ground",
+        "both"
+      ],
+      "divisionSupport": "none",
+      "freshness": "dailyLoad",
+      "helpKey": "clean_claim_rate",
+      "drills": []
+    },
+    {
+      "key": "payer_mix_detail",
+      "status": "available",
+      "placeable": false,
+      "presentations": [],
+      "serviceLines": [
+        "air",
+        "ground",
+        "both"
+      ],
+      "divisionSupport": "supported",
+      "freshness": "dailyLoad",
+      "helpKey": "payer_mix_detail",
+      "drills": []
+    }
+  ]
+}

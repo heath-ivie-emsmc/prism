@@ -9,6 +9,26 @@ import { BASE, CATALOG, CLEAN, CLEAN_CLAIMS, METRIC_REPLIES, NET_CASH, SERIES, b
 
 const NET = `${BASE}/metrics/net-collections`;
 
+const PAYER_MIX_METRIC = {
+  ...NET_CASH,
+  key: 'payer_mix',
+  name: 'Payer mix',
+  dimensions: ['period', 'serviceLine', 'division'],
+  context: { divisionSupport: 'supported' as const },
+  presentations: NET_CASH.presentations.map((p) => ({ ...p })),
+};
+const PAYER_MIX_REPLY = {
+  metric: { key: 'payer_mix', name: 'Payer mix', description: 'd', unit: 'count' },
+  dataThrough: '2026-11-05',
+  providerId: '526',
+  period: '202610',
+  priorPeriod: '202609',
+  serviceLine: 'air',
+  group: null,
+  groupName: null,
+  shares: [{ key: 'medicare', name: 'Medicare', current: 10, prior: 8 }],
+};
+
 async function create(w: LayoutWidget, metric = NET_CASH, replies: Record<string, object> = METRIC_REPLIES) {
   const http = bootstrap();
   const fixture: ComponentFixture<MetricWidgetComponent> = TestBed.createComponent(MetricWidgetComponent);
@@ -44,7 +64,7 @@ describe('MetricWidgetComponent', () => {
 
     expect(root.querySelector('.widget__value')?.textContent).toBe('94.5%');
     expect(root.textContent).toContain('First-pass resolution');
-    expect(root.textContent).toContain('Data through 04/07/2026');
+    expect(root.textContent).toContain('Data through Apr 7 · Updates once a day');
     expect(root.textContent).toContain('Covers all service lines');
   });
 
@@ -137,6 +157,87 @@ describe('MetricWidgetComponent', () => {
 
     // A division that is not in the list falls back to all, so the note shows only for a real division. The rule itself is covered by the catalog test.
     expect(filters.selectedDivision()).toBe('all');
+  });
+
+  it('shows one freshness stamp and one context badge per widget, in the shared wording', async () => {
+    const { root } = await create(widget('a', 0, 0));
+
+    expect(root.querySelectorAll('app-freshness-stamp')).toHaveLength(1);
+    expect(root.querySelectorAll('app-context-badge')).toHaveLength(1);
+    expect(root.textContent?.match(/Data through/g)).toHaveLength(1);
+    expect(root.textContent).toContain('Data through Nov 5 · Updates once a day');
+    expect(root.textContent).toContain('Air · All bases');
+  });
+
+  it('sends the page Division to a Metric that honors it, and the badge names the selected one', async () => {
+    const supported = { ...PAYER_MIX_METRIC };
+    const http = bootstrap();
+    const fixture = TestBed.createComponent(MetricWidgetComponent);
+    fixture.componentRef.setInput('widget', widget('a', 0, 0, { metricKey: 'payer_mix', presentation: 'column' }));
+    fixture.componentRef.setInput('metric', supported);
+    TestBed.inject(DashboardFilterContext).division.setValue('a1');
+    await settle(fixture, http, { [`${BASE}/metrics/net-collections/payer-mix`]: PAYER_MIX_REPLY });
+
+    expect(TestBed.inject(DashboardFilterContext).selectedDivision()).toBe('a1');
+    expect((fixture.nativeElement as HTMLElement).querySelector('app-context-badge')?.textContent).toContain('Air · Selected base location');
+    http.verify();
+  });
+
+  it('does not send the Division to a Metric that ignores it, and the badge says all of them', async () => {
+    const http = bootstrap();
+    const fixture = TestBed.createComponent(MetricWidgetComponent);
+    fixture.componentRef.setInput('widget', widget('a', 0, 0));
+    fixture.componentRef.setInput('metric', NET_CASH);
+    TestBed.inject(DashboardFilterContext).division.setValue('a1');
+    await settle(fixture, http, METRIC_REPLIES);
+
+    expect((fixture.nativeElement as HTMLElement).querySelector('app-context-badge')?.textContent).toContain('Air · All bases');
+    expect((fixture.nativeElement as HTMLElement).textContent).toContain('Not filtered by Base location');
+  });
+
+  describe('drill links', () => {
+    const drillHref = (payer: string) => `${BASE}/metrics/net-collections/payer-mix/${payer}?group=rotor-wing&period=202610&serviceLine=air&division=`;
+    const DRILL_REPLY = {
+      ...PAYER_MIX_REPLY,
+      group: 'rotor-wing',
+      groupName: 'Rotor wing',
+      shares: [
+        { key: 'commercial', name: 'Commercial', current: 10, prior: 8, links: [{ rel: 'drill', href: drillHref('commercial'), title: 'Commercial payers' }] },
+        { key: 'patient', name: 'Patient responsibility', current: 2, prior: 2 },
+      ],
+    };
+    const open = (presentation: string, reply: object = DRILL_REPLY) =>
+      create(widget('a', 0, 0, { metricKey: 'payer_mix', presentation }), PAYER_MIX_METRIC, { [`${NET}/payer-mix`]: reply });
+    const hrefs = (root: HTMLElement, selector: string) => [...root.querySelectorAll<HTMLAnchorElement>(selector)].map((a) => [a.getAttribute('aria-label'), a.getAttribute('href')]);
+
+    it('lists a real link under a chart for each payer group the API gave a link for, naming where it leads', async () => {
+      const { root } = await open('column');
+
+      expect(hrefs(root, '.widget__drills a')).toEqual([['View Commercial breakdown', '/dashboard/metrics/payer-mix/rotor-wing/commercial?period=202610&line=air']]);
+    });
+
+    it('links the row header in the table presentation, and only where there is a link', async () => {
+      const { root } = await open('table');
+
+      expect(hrefs(root, 'tbody th a')).toEqual([['View Commercial breakdown', '/dashboard/metrics/payer-mix/rotor-wing/commercial?period=202610&line=air']]);
+      expect(root.querySelectorAll('tbody th')).toHaveLength(2);
+    });
+
+    it('has no links when the API gave none, and ignores a link that is not a known drill target', async () => {
+      const none = await open('column', PAYER_MIX_REPLY);
+      expect(none.root.querySelector('.widget__drills')).toBeNull();
+      TestBed.resetTestingModule();
+      const bad = await open('column', { ...DRILL_REPLY, shares: [{ ...DRILL_REPLY.shares[0]!, links: [{ rel: 'drill', href: 'https://evil.example/x', title: 'x' }] }] });
+      expect(bad.root.querySelector('.widget__drills')).toBeNull();
+    });
+
+    it('passes axe with links in both presentations', async () => {
+      const chart = await open('column');
+      expect(await axeViolations(chart.root)).toEqual([]);
+      TestBed.resetTestingModule();
+      const table = await open('table');
+      expect(await axeViolations(table.root)).toEqual([]);
+    });
   });
 
   it('passes axe as a chart and as a table', async () => {

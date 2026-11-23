@@ -11,7 +11,7 @@ public sealed class InsightsEngine(INetCashByGroupMetric netCash, IEnumerable<II
 {
     public async Task<Insight?> ExplainAsync(int providerId, ApPeriod period, ServiceLineFilter serviceLine, string? groupKey, CancellationToken cancellationToken)
     {
-        NetCashByGroup cash = await netCash.GetNetCashByGroupAsync(providerId, period, serviceLine, cancellationToken);
+        NetCashByGroup cash = await netCash.GetNetCashByGroupAsync(providerId, period, serviceLine, null, cancellationToken);
         (string name, IReadOnlyList<MonthlyCash> history) = Shape(cash, serviceLine, groupKey);
         MonthlyCash? now = history.FirstOrDefault(m => m.Period == period);
         MonthlyCash? before = history.FirstOrDefault(m => m.Period == period.AddMonths(-1));

@@ -68,7 +68,7 @@ test.describe('net cash breakdown', () => {
     await expect(page.getByRole('heading', { level: 2, name: 'Ground net cash by level of service' })).toBeVisible();
     await expect(page.getByRole('heading', { level: 3, name: 'Basic life support' })).toBeVisible();
     await expect(page.getByRole('columnheader', { name: 'Unit' })).toBeVisible();
-    await expect(page.getByRole('columnheader', { name: 'Station' })).toBeVisible();
+    await expect(page.getByRole('columnheader', { name: 'Reporting division' })).toBeVisible();
   });
 
   test('changing the Period changes the month in the address and the page', async ({ page }) => {

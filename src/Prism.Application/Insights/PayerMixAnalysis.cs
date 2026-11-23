@@ -15,8 +15,8 @@ public sealed class PayerMixAnalysis(IPayerMixMetric payerMix, ICashPerTransport
     public async Task<Finding?> RunAsync(InsightInput input, CancellationToken cancellationToken)
     {
         // The two reads do not depend on each other, so they run together.
-        Task<PayerMix> mixTask = payerMix.GetPayerMixAsync(input.ProviderId, input.Period, input.ServiceLine, input.GroupKey, cancellationToken);
-        Task<CashPerTransport> ratesTask = cashPerTransport.GetCashPerTransportAsync(input.ProviderId, input.Period, input.ServiceLine, input.GroupKey, cancellationToken);
+        Task<PayerMix> mixTask = payerMix.GetPayerMixAsync(input.ProviderId, input.Period, input.ServiceLine, input.GroupKey, null, cancellationToken);
+        Task<CashPerTransport> ratesTask = cashPerTransport.GetCashPerTransportAsync(input.ProviderId, input.Period, input.ServiceLine, input.GroupKey, null, cancellationToken);
         await Task.WhenAll(mixTask, ratesTask);
         PayerMix mix = await mixTask;
         decimal now = mix.Shares.Sum(s => s.Current);
@@ -58,7 +58,7 @@ public sealed class PayerMixAnalysis(IPayerMixMetric payerMix, ICashPerTransport
     /// <summary>Whether the payer group's share also moved the same way the month before.</summary>
     private async Task<bool> HeldBeforeAsync(InsightInput input, string payerKey, decimal move, CancellationToken cancellationToken)
     {
-        PayerMix earlier = await payerMix.GetPayerMixAsync(input.ProviderId, input.PriorPeriod, input.ServiceLine, input.GroupKey, cancellationToken);
+        PayerMix earlier = await payerMix.GetPayerMixAsync(input.ProviderId, input.PriorPeriod, input.ServiceLine, input.GroupKey, null, cancellationToken);
         decimal now = earlier.Shares.Sum(s => s.Current);
         decimal before = earlier.Shares.Sum(s => s.Prior);
         if (now == 0m || before == 0m || earlier.Shares.FirstOrDefault(s => s.Key == payerKey) is not { } share)

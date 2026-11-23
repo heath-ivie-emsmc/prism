@@ -1,6 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import { buildWidgetOption, formatValue } from './widget-chart.options';
-import { SUMMARY_MAX, fromBreakdown, fromByGroup, fromCashPerTransport, fromCleanClaims, fromNetCash, fromPayerMix, fromPaymentAge, fromProjection, fromTransports, limit } from './widget-data';
+import { SUMMARY_MAX, limit } from './widget-data';
+import { fromBreakdown } from '../metrics/net-cash-breakdown/net-cash-breakdown.widget';
+import { fromByGroup } from '../metrics/net-cash-by-group/net-cash-by-group.widget';
+import { fromCashPerTransport } from '../metrics/cash-per-transport-by-payer/cash-per-transport-by-payer.widget';
+import { fromCleanClaims } from '../metrics/clean-claim-rate/clean-claim-rate.widget';
+import { fromNetCash } from '../metrics/net-collections/net-collections.widget';
+import { fromPayerMix } from '../metrics/payer-mix/payer-mix.widget';
+import { fromPaymentAge } from '../metrics/payment-age/payment-age.widget';
+import { fromProjection } from '../metrics/net-cash-projection/net-cash-projection.widget';
+import { fromTransports } from '../metrics/transport-volume/transport-volume.widget';
 import type { ChartColors } from '../charts/chart.component';
 
 const METRIC = { key: 'k', name: 'n', description: 'd', unit: 'u' };

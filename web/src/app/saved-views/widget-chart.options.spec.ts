@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ChartColors } from '../charts/chart.component';
-import { payerColor } from '../payer-mix/payer-mix';
+import { payerColor } from '../metrics/payer-mix/payer-mix';
 import { buildWidgetOption } from './widget-chart.options';
 import { WidgetData } from './widget-data';
 

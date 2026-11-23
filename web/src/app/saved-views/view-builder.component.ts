@@ -1,3 +1,4 @@
+import { metricDivisionSupport } from '../metrics/metric-catalog.service';
 import { LiveAnnouncer } from '@angular/cdk/a11y';
 import { BreakpointObserver } from '@angular/cdk/layout';
 import { HttpErrorResponse } from '@angular/common/http';
@@ -139,7 +140,7 @@ interface Step {
           <ems-message state="neutral">Shared by {{ ownerName() ?? 'a colleague' }}. You can view it or save your own copy. Figures show the data you have access to.</ems-message>
         }
 
-        <app-filter-bar label="View filters" [divisionUnavailable]="!anyDivisionSupport()" />
+        <app-filter-bar label="View filters" [divisionUnavailable]="!anyDivisionSupport()" [divisionIgnoredBy]="divisionIgnoredBy()" />
         <p class="builder__hint">Filters apply to every metric on this page. They aren't saved with the view.</p>
 
         @if (editing()) {
@@ -387,7 +388,12 @@ export class ViewBuilderComponent {
   protected readonly catalog = computed(() => (this.catalogResource.hasValue() ? this.catalogResource.value() : null));
   protected readonly catalogLoading = computed(() => this.catalogResource.isLoading());
   protected readonly metrics = computed<ReadonlyMap<string, CatalogMetricDto>>(() => new Map((this.catalog()?.metrics ?? []).map((m) => [m.key, m])));
-  protected readonly anyDivisionSupport = computed(() => this.widgets().some((w) => this.metrics().get(w.metricKey)?.dimensions.includes('division')));
+  private readonly widgetMetrics = computed(() => {
+    const keys = [...new Set(this.widgets().map((w) => w.metricKey))];
+    return keys.flatMap((key) => this.metrics().get(key) ?? []);
+  });
+  protected readonly anyDivisionSupport = computed(() => this.widgetMetrics().some((m) => metricDivisionSupport(m) === 'supported'));
+  protected readonly divisionIgnoredBy = computed(() => this.widgetMetrics().filter((m) => !this.anyDivisionSupport() || metricDivisionSupport(m) === 'none').map((m) => m.name));
 
   private readonly viewResource = rxResource<LoadedView | null, { providerId: string; id: number } | null>({
     params: () => {

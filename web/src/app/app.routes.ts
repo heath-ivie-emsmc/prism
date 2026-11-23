@@ -21,11 +21,21 @@ export const routes: Routes = [
       },
       {
         path: 'dashboard/net-cash',
-        loadComponent: () => import('./breakdown/net-cash-breakdown.component').then((m) => m.NetCashBreakdownComponent),
+        loadComponent: () => import('./metrics/net-cash-breakdown/net-cash-breakdown.component').then((m) => m.NetCashBreakdownComponent),
       },
       {
         path: 'dashboard/net-cash/:group',
-        loadComponent: () => import('./payer-mix/payer-mix.component').then((m) => m.PayerMixComponent),
+        loadComponent: () => import('./metrics/payer-mix/payer-mix.component').then((m) => m.PayerMixComponent),
+      },
+      {
+        path: 'dashboard/metrics/payer-mix/:group/:payerKey',
+        title: 'Payer breakdown · Prism',
+        loadComponent: () => import('./metrics/payer-mix-detail/payer-mix-detail.component').then((m) => m.PayerMixDetailComponent),
+      },
+      {
+        path: 'dashboard/metrics/:key',
+        title: 'Metric · Prism',
+        loadComponent: () => import('./metrics/metric-view/metric-view.component').then((m) => m.MetricViewComponent),
       },
       {
         path: 'dashboard/needs-attention',

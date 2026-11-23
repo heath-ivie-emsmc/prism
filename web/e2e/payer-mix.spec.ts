@@ -21,6 +21,43 @@ test.describe('payer mix', () => {
     await expect(page.getByRole('heading', { level: 2, name: 'Fixed wing payer mix' })).toBeVisible();
   });
 
+  test('the group card link comes from the API drill link: without one the card has no link', async ({ page }) => {
+    const figures = (cash: number) => ({ cash, transports: 10, loadedMiles: 100, primaryMix: 7, secondaryMix: 3 });
+    const group = (key: string, name: string, links: object[]) => ({ key, name, serviceLine: 'air', current: figures(200), prior: figures(150), links });
+    await page.route(/net-collections\/breakdown/, (route) =>
+      route.fulfill({
+        json: {
+          metric: { key: 'net_cash_breakdown', name: 'Net cash breakdown', description: 'd', unit: 'USD' },
+          providerId: '526',
+          period: '202610',
+          priorPeriod: '202609',
+          serviceLine: 'air',
+          dataThrough: '2026-11-22',
+          periodOpen: false,
+          groups: [
+            group('rotor-wing', 'Rotor wing', [{ rel: 'drill', href: '/api/v1/providers/526/metrics/net-collections/payer-mix?group=rotor-wing&period=202610&serviceLine=air', title: 'Rotor wing payer mix' }]),
+            group('fixed-wing', 'Fixed wing', []),
+          ],
+          rows: [],
+        },
+      }),
+    );
+    await page.goto('/dashboard/net-cash?period=202610&line=air');
+    await page.locator('app-net-cash-breakdown table').waitFor();
+
+    await expect(page.getByRole('link', { name: /see rotor wing detail/i })).toHaveAttribute('href', /\/dashboard\/net-cash\/rotor-wing\?period=202610&line=air$/);
+    await expect(page.getByRole('link', { name: /see fixed wing detail/i })).toHaveCount(0);
+    await expect(page.getByRole('heading', { level: 3, name: 'Fixed wing' })).toBeVisible();
+  });
+
+  test('the breakdown help text carries the patient-transports-only note', async ({ page }) => {
+    await page.goto('/dashboard/net-cash?period=202610&line=air');
+    await page.locator('app-net-cash-breakdown table').waitFor();
+    await page.getByRole('button', { name: 'What these numbers mean' }).click();
+
+    await expect(page.locator('app-net-cash-breakdown app-metric-help')).toContainText('Only patient transports are counted');
+  });
+
   test('the group link works from the keyboard', async ({ page }) => {
     await page.goto('/dashboard/net-cash?period=202610&line=air');
     await page.locator('app-net-cash-breakdown table').waitFor();
@@ -193,8 +230,8 @@ test.describe('payer mix', () => {
 
     const table = page.locator('app-payer-mix table');
     await expect(table.getByRole('row')).toHaveCount(8);
-    await expect(table.getByRole('row', { name: /^Medicaid/ })).toContainText('+5 pts');
-    await expect(table.getByRole('row', { name: /^VA/ })).toBeVisible();
+    await expect(table.getByRole('row', { name: /^View Medicaid breakdown/ })).toContainText('+5 pts');
+    await expect(table.getByRole('row', { name: /^View VA breakdown/ })).toBeVisible();
     expect(await axeViolations(page)).toEqual([]);
   });
 
