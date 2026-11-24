@@ -99,6 +99,22 @@ test.describe('saved views', () => {
     await expect(page.locator(':focus')).toHaveAttribute('aria-label', 'Move Payer mix');
   });
 
+  test('the palette marks a metric already on the view, in text, and still lets it be added again', async ({ page }) => {
+    await openView(page, 5, { edit: true });
+    const palette = page.locator('app-metric-palette');
+    const marks = palette.locator('.palette__placed');
+    const present = await marks.count();
+    expect(present).toBeGreaterThan(0);
+    await expect(marks.first()).toContainText('On this view');
+    expect((await layoutErrors(page)).errors).toEqual([]);
+
+    const before = await page.locator('app-grid-canvas li.item').count();
+    await page.getByRole('button', { name: /^Add Payer mix to view/ }).click();
+
+    await expect(page.locator('app-grid-canvas li.item')).toHaveCount(before + 1);
+    await expect(page.getByRole('button', { name: /^Add Payer mix to view again\. On this view/ })).toBeVisible();
+  });
+
   test('keyboard: move a widget with the arrow keys, drop with Enter, cancel with Escape', async ({ page }) => {
     await openView(page, 5, { edit: true });
     const move = page.getByRole('button', { name: 'Move Clean claim rate', exact: true });

@@ -17,7 +17,7 @@ internal static class TransportVolumeEndpoints
             .WithSummary("Transports and loaded miles by month")
             .WithDescription(
                 "Transports and loaded miles (statute miles, billed with the patient on board) for each of the last `months` months ending with `endPeriod` (`yyyyMM`, default the newest period with net cash data), "
-                + "by date of service. `months` defaults to 6 and is at most 24. `serviceLine` is `all` (default), `air` or `ground`. Months with no transports are left out. `groups` splits the last month by aircraft type or level of service. "
+                + "by date of service. `months` defaults to 6 and is at most 24. `serviceLine` is `all` (default), `air` or `ground`. Months with no transports are left out. `groups` splits the last month by aircraft type or level of service, with each group's `priorTransports` in the month before it (same date-of-service basis, `serviceLine` and `division`), `changeTransports` and `changePercent` (percent units, one decimal, null when the prior month had none). A group with no transports in the last month is not listed. "
                 + "`periodOpen` is true while the accounting period of the last month is open, so transports for it may still be added. A transport belongs to the month it happened, so these counts differ from the net cash breakdown, "
                 + "which counts encounters with cash posted in the month. Aggregates only. `division` limits the figures to one Reporting Division, using a `key` from the divisions route; an unknown key is a 400. Returns 404 when the Provider is not one the caller may read in full.")
             .Produces<TransportVolumeResponse>()
@@ -88,7 +88,7 @@ internal static class TransportVolumeEndpoints
             ServiceLineName(volume.ServiceLine),
             volume.PeriodOpen,
             volume.Points.Select(p => new TransportVolumePointResponse(p.Period.ToString(), Months[p.Period.Month - 1], p.Period.Year, p.Transports, p.LoadedMiles)).ToArray(),
-            volume.Groups.Select(g => new TransportVolumeGroupResponse(g.Key, g.Name, g.IsAir ? "air" : "ground", g.Transports)).ToArray());
+            volume.Groups.Select(g => new TransportVolumeGroupResponse(g.Key, g.Name, g.IsAir ? "air" : "ground", g.Transports, g.PriorTransports, g.Change, g.ChangePercent)).ToArray());
         return Results.Ok(response with { DataThrough = through, Division = division?.Key, DivisionName = division?.Name });
     }
 }
@@ -128,5 +128,8 @@ public sealed record TransportVolumeResponse(
 /// <summary>One month: <c>Period</c> is <c>yyyyMM</c>, <c>Transports</c> the count and <c>LoadedMiles</c> the statute miles billed with the patient on board.</summary>
 public sealed record TransportVolumePointResponse(string Period, string Label, int Year, int Transports, decimal LoadedMiles);
 
-/// <summary>An aircraft type or level of service: <c>Key</c> is stable, <c>Name</c> is for display, <c>ServiceLine</c> is <c>air</c> or <c>ground</c>.</summary>
-public sealed record TransportVolumeGroupResponse(string Key, string Name, string ServiceLine, int Transports);
+/// <summary>
+/// An aircraft type or level of service: <c>Key</c> is stable, <c>Name</c> is for display, <c>ServiceLine</c> is <c>air</c> or <c>ground</c>.
+/// <c>PriorTransports</c> is the count in the month before the last, <c>ChangeTransports</c> the difference and <c>ChangePercent</c> that difference in percent units (null when the prior month had none).
+/// </summary>
+public sealed record TransportVolumeGroupResponse(string Key, string Name, string ServiceLine, int Transports, int PriorTransports, int ChangeTransports, decimal? ChangePercent);

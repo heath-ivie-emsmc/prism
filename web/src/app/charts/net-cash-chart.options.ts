@@ -18,7 +18,7 @@ function axisLabel(month: NetCashMonth, index: number): string {
   return index === 0 || month.label === 'Jan' ? `${month.label}\n${month.year}` : month.label;
 }
 
-/** The likely-range whisker above and below a projected month (a vertical line with a cap at each end), with the month's figure above it. */
+/** The forecast-range whisker above and below a projected month (a vertical line with a cap at each end), with the month's figure above it. */
 function whiskers(colors: ChartColors): CustomSeriesRenderItem {
   return (_params, api) => {
     const low = api.coord([api.value(0), api.value(1)]);
@@ -68,7 +68,7 @@ export function buildNetCashOption(allMonths: readonly NetCashMonth[], kind: Net
         const month = first ? months[first.dataIndex] : undefined;
         if (!first || !month) return '';
         const title = escapeHtml(`${month.label} ${month.year}`);
-        const range = month.low !== undefined && month.high !== undefined ? `<br/>Likely ${formatExact(month.low)} to ${formatExact(month.high)}` : '';
+        const range = month.low !== undefined && month.high !== undefined ? `<br/>Forecast range ${formatExact(month.low)} to ${formatExact(month.high)}` : '';
         return `${title}<br/>${month.kind === 'projected' ? 'Projected' : 'Net cash collected'}: <b>${formatExact(month.value)}</b>${range}`;
       },
     },
@@ -119,7 +119,7 @@ export function buildNetCashOption(allMonths: readonly NetCashMonth[], kind: Net
       : undefined;
 
   const range = {
-    name: 'Likely range',
+    name: 'Forecast range',
     type: 'custom',
     renderItem: whiskers(colors),
     data: ranges,

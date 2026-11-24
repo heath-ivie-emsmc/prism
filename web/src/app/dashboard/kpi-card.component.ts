@@ -2,6 +2,7 @@ import { ChangeDetectionStrategy, Component, input, signal } from '@angular/core
 import { EmsIconComponent } from '@ems-management-consultants/ui';
 import { Labels } from './service-line';
 import { DataFrameComponent } from '../shared/data-frame.component';
+import { MetricHelpComponent } from '../shared/metric-help.component';
 import { SkeletonComponent } from '../shared/skeleton.component';
 
 export interface KpiDelta {
@@ -12,7 +13,7 @@ export interface KpiDelta {
 /** Small Metric tile: title, big value with a unit, a visual slot, a change line and a footnote. Layout only: it knows nothing about any Metric. */
 @Component({
   selector: 'app-kpi-card',
-  imports: [DataFrameComponent, EmsIconComponent, SkeletonComponent],
+  imports: [DataFrameComponent, EmsIconComponent, MetricHelpComponent, SkeletonComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <app-data-frame [heading]="title()" [expandable]="expandable()" [context]="context()" [dataThrough]="dataThrough()" [serviceLine]="serviceLine()" [divisionApplied]="divisionApplied()" [labels]="labels()" [attr.aria-busy]="loading()" (expandedChange)="expanded.set($event)">
@@ -32,6 +33,10 @@ export interface KpiDelta {
         </p>
       </div>
       <div class="kpi__visual" [class.kpi__visual--expanded]="expanded()"><ng-content /></div>
+      <!-- Detail for a bigger look: shown only in full screen, where there is room for a table. -->
+      @if (expanded()) {
+        <ng-content select="[kpiExpanded]" />
+      }
       <!-- Always laid out, empty when there is no change to report, so the footnote under it sits on the same line in every tile of a row. -->
       <p class="kpi__delta" [attr.aria-hidden]="delta() ? null : 'true'">
         @if (loading()) {
@@ -52,6 +57,9 @@ export interface KpiDelta {
       </div>
       @if (caveat() && !loading()) {
         <p class="kpi__footnote kpi__caveat">{{ caveat() }}</p>
+      }
+      @if (helpKey()) {
+        <app-metric-help [metric]="helpKey()" [heading]="title()" [compact]="true" [serviceLine]="serviceLine()" [labels]="labels()" />
       }
     </app-data-frame>
   `,
@@ -97,7 +105,9 @@ export interface KpiDelta {
       overflow: hidden;
       clip-path: inset(50%);
     }
+    /* The card body is a flex column that may shrink its children, and in a short full screen window a shrunk picture would spill over the lines below it. */
     .kpi__visual {
+      flex: none;
       margin: 0.75rem 0;
       min-height: 3rem;
     }
@@ -137,6 +147,9 @@ export class KpiCardComponent {
   readonly expandable = input(false);
   /** What the figure covers, shown when the tile is full screen and the page filters are out of sight. */
   readonly context = input('');
+
+  /** The Metric key whose help text explains the figure. Empty for a tile that is not backed by a Metric. */
+  readonly helpKey = input('');
 
   /** yyyy-MM-dd; when given the tile shows a freshness stamp and what it covers. */
   readonly dataThrough = input<string | null>(null);

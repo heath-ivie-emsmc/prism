@@ -12,12 +12,17 @@ let nextId = 0;
   host: { '(keydown.escape)': 'close($event)' },
   template: `
     @if (help(); as h) {
-      <p class="help__summary">{{ h.summary }}</p>
+      @if (!compact()) {
+        <p class="help__summary">{{ h.summary }}</p>
+      }
       <button #toggle type="button" class="help__toggle" [attr.aria-expanded]="open()" [attr.aria-controls]="panelId" (click)="open.set(!open())">
-        What these numbers mean
+        What these numbers mean@if (heading()) {<span class="cdk-visually-hidden"> for {{ heading() }}</span>}
       </button>
       @if (open()) {
         <div class="help__panel" [id]="panelId">
+          @if (compact()) {
+            <p class="help__summary">{{ h.summary }}</p>
+          }
           <dl>
             @for (g of h.glossary; track g.term) {
               <dt>{{ g.term }}</dt>
@@ -71,6 +76,10 @@ export class MetricHelpComponent {
     this.open.set(false);
     this.toggle()?.nativeElement.focus();
   }
+  /** Small cards and widgets show only the disclosure button; the summary opens with the glossary. Keeps a tile's height steady. */
+  readonly compact = input(false);
+  /** Names the figure for screen readers when several of these share a page ("What these numbers mean for Transports"). */
+  readonly heading = input('');
   /** The Service Line the figures cover, so the Reporting Division wording matches the context badge. */
   readonly serviceLine = input<'all' | 'air' | 'ground'>('all');
   /** The Provider's own Labels, when the page has them. Otherwise the defaults for the Service Line. */

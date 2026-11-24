@@ -11,7 +11,8 @@ public sealed class ClaimAttentionReader(IWarehouse warehouse, IWarehouseProvide
 {
     public async Task<AttentionCounts> GetCountsAsync(int providerId, ApPeriod period, ServiceLineFilter serviceLine, string? groupKey, CancellationToken cancellationToken)
     {
-        var query = new WarehouseQuery(ClaimAttentionSql.CountsSql, await ParametersAsync(providerId, period, serviceLine, groupKey, cancellationToken)) { Name = "ClaimAttentionCounts" };
+        Dictionary<string, object?> parameters = await ParametersAsync(providerId, period, serviceLine, groupKey, cancellationToken);
+        var query = new WarehouseQuery(ClaimAttentionSql.CountsSql, parameters) { Name = "ClaimAttentionCounts" };
 
         IReadOnlyList<AttentionCounts> rows = await warehouse.QueryAsync(
             query,
@@ -22,20 +23,66 @@ public sealed class ClaimAttentionReader(IWarehouse warehouse, IWarehouseProvide
                     new AttentionCount(AttentionCatalog.NeedsAttention, (int)reader.GetInt64(1)),
                     new AttentionCount(AttentionCatalog.All, (int)reader.GetInt64(2)),
                 ],
-                reader.GetDecimal(3)),
+                reader.GetDecimal(3),
+                [
+                    new AttentionCategoryCount(AttentionCatalog.Denied, "Denied", (int)reader.GetInt64(0), reader.GetDecimal(3)),
+                    new AttentionCategoryCount("on_hold", "On hold", (int)reader.GetInt64(5), reader.GetDecimal(6)),
+                    new AttentionCategoryCount("in_collections", "In collections", (int)reader.GetInt64(7), reader.GetDecimal(8)),
+                ]),
             cancellationToken);
 
-        return rows.Count == 1 ? rows[0] : new AttentionCounts(null, AttentionCatalog.Checks.Select(c => new AttentionCount(c.Key, 0)).ToList(), 0);
+        // An aggregate always returns one row; a period with no claims has no load date, and then the follow-up reads are skipped.
+        if (rows.Count != 1 || rows[0].DataThrough is null)
+        {
+            return new AttentionCounts(null, AttentionCatalog.Checks.Select(c => new AttentionCount(c.Key, 0)).ToList(), 0, EmptyCategories(), [], EmptyBands());
+        }
+
+        // The two follow-up reads only run when the period has claims, and use the same scope.
+        IReadOnlyList<DenialReasonCount> reasons = await ReadReasonsAsync(parameters, cancellationToken);
+        IReadOnlyList<FilingBandCount> bands = await ReadBandsAsync(parameters, cancellationToken);
+        return rows[0] with { Reasons = reasons, Bands = bands };
     }
+
+    private async Task<IReadOnlyList<DenialReasonCount>> ReadReasonsAsync(Dictionary<string, object?> parameters, CancellationToken cancellationToken)
+    {
+        var query = new WarehouseQuery(ClaimAttentionSql.ReasonsSql, parameters) { Name = "ClaimAttentionReasons" };
+        return await warehouse.QueryAsync(
+            query,
+            reader => new DenialReasonCount(reader.GetString(0), reader.GetBoolean(1), (int)reader.GetDecimal(2), reader.GetDecimal(3)),
+            cancellationToken);
+    }
+
+    private async Task<IReadOnlyList<FilingBandCount>> ReadBandsAsync(Dictionary<string, object?> scope, CancellationToken cancellationToken)
+    {
+        var parameters = new Dictionary<string, object?>(scope);
+        AddFilingLimits(parameters);
+        var query = new WarehouseQuery(ClaimAttentionSql.FilingBandsSql, parameters) { Name = "ClaimAttentionFilingBands" };
+        IReadOnlyList<IReadOnlyList<FilingBandCount>> rows = await warehouse.QueryAsync(
+            query,
+            reader => FilingBands.All.Select((band, i) => new FilingBandCount(band.Key, band.Name, (int)reader.GetInt64(i * 2), reader.GetDecimal((i * 2) + 1))).ToList(),
+            cancellationToken);
+        return rows.Count == 1 ? rows[0] : EmptyBands();
+    }
+
+    private void AddFilingLimits(Dictionary<string, object?> parameters)
+    {
+        FilingLimitOptions filing = limits.Value;
+        parameters["limit_categories"] = filing.ByPayerCategory.Keys.ToArray();
+        parameters["limit_days"] = filing.ByPayerCategory.Values.ToArray();
+        parameters["default_limit_days"] = filing.Default;
+    }
+
+    private static List<AttentionCategoryCount> EmptyCategories() =>
+        [new(AttentionCatalog.Denied, "Denied", 0, 0m), new("on_hold", "On hold", 0, 0m), new("in_collections", "In collections", 0, 0m)];
+
+    private static List<FilingBandCount> EmptyBands() => FilingBands.All.Select(b => new FilingBandCount(b.Key, b.Name, 0, 0m)).ToList();
 
     public async Task<AttentionClaims> GetClaimsAsync(
         int providerId, AttentionCheck check, ApPeriod period, ServiceLineFilter serviceLine, string? groupKey, AttentionPage? page, CancellationToken cancellationToken)
     {
         Dictionary<string, object?> parameters = await ParametersAsync(providerId, period, serviceLine, groupKey, cancellationToken);
         FilingLimitOptions filing = limits.Value;
-        parameters["limit_categories"] = filing.ByPayerCategory.Keys.ToArray();
-        parameters["limit_days"] = filing.ByPayerCategory.Values.ToArray();
-        parameters["default_limit_days"] = filing.Default;
+        AddFilingLimits(parameters);
         // No page means every claim: a null limit is "no limit" in PostgreSQL.
         parameters["page_size"] = page is null ? null : page.Size;
         parameters["page_offset"] = page is null ? 0 : (page.Number - 1) * page.Size;

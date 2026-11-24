@@ -7,6 +7,7 @@ export const TRANSPORT_VOLUME_HELP: MetricHelp = {
     { term: 'Transport', text: 'One patient movement, counted under one service line and one {reportingDivision}.' },
     { term: 'Loaded miles', text: 'Miles driven or flown with the patient on board. They are treated as statute miles, and the nautical switch converts them for air.' },
     { term: 'Month of the transport', text: 'Counted by the date of service, so these counts differ from the net cash breakdown, which counts transports by the month cash was posted.' },
+    { term: 'Change from the month before', text: 'Each aircraft type or level of service shows the latest month next to the month before it, counted the same way and with the same filters. The percent change is not shown when the month before had no transports, and a group with no transports in the latest month is not listed.' },
     { term: 'Open month', text: 'While the accounting period is open, new transports can still arrive, so the count may rise.' },
   ],
 };

@@ -83,7 +83,7 @@ public sealed class ReadinessCheckTests(PostgresFixture postgres) : IClassFixtur
     private static ServiceProvider ProbeServices(string connectionString)
     {
         var services = new ServiceCollection();
-        services.AddDbContext<PrismDbContext>(options => options.UsePrismNpgsql(connectionString));
+        services.AddDbContext<PrismDbContext>(options => options.UsePrismNpgsql(Prism.Testing.Common.TestDatabaseGuard.Assert(connectionString)));
         return services.BuildServiceProvider();
     }
 

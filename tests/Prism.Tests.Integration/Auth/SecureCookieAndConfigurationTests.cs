@@ -63,7 +63,8 @@ public sealed class SecureCookieAndConfigurationTests
     {
         WebApplicationBuilder builder = WebApplication.CreateBuilder(new WebApplicationOptions { EnvironmentName = "Production" });
         builder.WebHost.UseTestServer();
-        builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?> { ["ConnectionStrings:Prism"] = "Host=unused.invalid;Database=unused" }.Concat(settings).ToDictionary());
+        builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?> { ["ConnectionStrings:Prism"] = "Host=unused.invalid;Database=unused", ["ConnectionStrings:Warehouse"] = "" });
+        builder.Configuration.AddInMemoryCollection(settings);
         builder.Services.AddPrismPersistence(builder.Configuration);
         await using WebApplication app = builder.Build();
 

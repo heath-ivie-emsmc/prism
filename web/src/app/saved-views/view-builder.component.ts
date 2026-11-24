@@ -1,4 +1,5 @@
 import { metricDivisionSupport } from '../metrics/metric-catalog.service';
+import { coverageReason, metricAppliesTo } from '../metrics/shared/applies-to';
 import { LiveAnnouncer } from '@angular/cdk/a11y';
 import { BreakpointObserver } from '@angular/cdk/layout';
 import { HttpErrorResponse } from '@angular/common/http';
@@ -170,7 +171,7 @@ interface Step {
                 }
               } @else if (docked()) {
                 <h2>Metric palette</h2>
-                <app-metric-palette [catalog]="catalog" [canAdd]="canAddMore()" [dragEnabled]="gridMode()" (add)="addMetric($event)" (blocked)="blocked($event)" (searched)="searched($event)" (dragMoved)="ghostFor($event)" (dragEnded)="canvasRef()?.hideGhost()" />
+                <app-metric-palette [catalog]="catalog" [canAdd]="canAddMore()" [dragEnabled]="gridMode()" [serviceLine]="filters.serviceLine()" [placed]="placedCounts()" (add)="addMetric($event)" (blocked)="blocked($event)" (searched)="searched($event)" (dragMoved)="ghostFor($event)" (dragEnded)="canvasRef()?.hideGhost()" />
               } @else {
                 <button emsButton="filled" type="button" id="open-palette" (click)="openPalette()">Add metrics</button>
               }
@@ -432,7 +433,17 @@ export class ViewBuilderComponent {
 
   protected readonly editing = computed(() => this.mode() === 'edit');
   private readonly snapshot = computed(() => JSON.stringify([this.name(), this.description(), this.density(), [...this.widgets()].sort((a, b) => a.id.localeCompare(b.id))]));
+  /** A new view that has not been started yet: the person may manage it and nothing has set its baseline. */
+  private readonly needsNewDraft = computed(() => this.isNew() && this.mode() === 'view' && this.canManage() && this.baseline() === '');
   protected readonly dirty = computed(() => this.editing() && this.snapshot() !== this.baseline());
+  /** How many Widgets of each Metric the draft holds, so the palette can mark the ones already on the view. */
+  protected readonly placedCounts = computed<ReadonlyMap<string, number>>(() => {
+    const counts = new Map<string, number>();
+    for (const widget of this.widgets()) {
+      counts.set(widget.metricKey, (counts.get(widget.metricKey) ?? 0) + 1);
+    }
+    return counts;
+  });
   protected readonly canAddMore = computed(() => this.widgets().length < MAX_WIDGETS);
   protected readonly heading = computed(() => (this.editing() ? this.name().trim() || 'New view' : this.name() || 'Saved view'));
   protected readonly settingsWidget = computed(() => this.widgets().find((w) => w.id === this.selectedId() && this.editing()) ?? null);
@@ -449,8 +460,9 @@ export class ViewBuilderComponent {
         untracked(() => this.hydrate(loaded));
       }
     });
+    // Tracks one trigger. startNew() writes the baseline, which turns the trigger off, so the effect never feeds itself.
     effect(() => {
-      if (this.isNew() && this.mode() === 'view' && this.canManage() && this.baseline() === '') {
+      if (this.needsNewDraft()) {
         untracked(() => this.startNew());
       }
     });
@@ -756,8 +768,9 @@ export class ViewBuilderComponent {
     this.focusWidget(id);
   }
 
-  protected blocked(event: { metric: CatalogMetricDto; reason: 'planned' | 'full' }): void {
-    this.announcer.announce(event.reason === 'planned' ? announce.planned(event.metric.name) : announce.limitReached(event.metric.name, MAX_WIDGETS), 'polite');
+  protected blocked(event: { metric: CatalogMetricDto; reason: 'planned' | 'full' | 'line' }): void {
+    const message = event.reason === 'planned' ? announce.planned(event.metric.name) : event.reason === 'line' ? announce.lineNotCovered(event.metric.name, coverageReason(metricAppliesTo(event.metric), this.filters.serviceLine()) ?? '') : announce.limitReached(event.metric.name, MAX_WIDGETS);
+    this.announcer.announce(message, 'polite');
   }
 
   protected searched(event: { count: number; query: string }): void {
@@ -784,7 +797,7 @@ export class ViewBuilderComponent {
       return;
     }
     const ref = this.dialogs.open(PaletteDialogComponent, {
-      data: { catalog, canAdd: this.canAddMore, add: (m: CatalogMetricDto) => this.addMetric(m), blocked: (e: { metric: CatalogMetricDto; reason: 'planned' | 'full' }) => this.blocked(e), searched: (e: { count: number; query: string }) => this.searched(e) },
+      data: { catalog, canAdd: this.canAddMore, serviceLine: this.filters.serviceLine, placed: this.placedCounts, add: (m: CatalogMetricDto) => this.addMetric(m), blocked: (e: { metric: CatalogMetricDto; reason: 'planned' | 'full' | 'line' }) => this.blocked(e), searched: (e: { count: number; query: string }) => this.searched(e) },
       autoFocus: 'first-tabbable',
     });
     ref.afterClosed().subscribe(() => setTimeout(() => document.getElementById('open-palette')?.focus()));

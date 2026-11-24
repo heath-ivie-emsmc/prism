@@ -31,6 +31,8 @@ public static class MetricsServiceCollectionExtensions
         services.AddSingleton<IInsightAnalysis, AgedPaymentsAnalysis>();
         services.AddSingleton<IInsightAnalysis, VolumeAnalysis>();
         services.AddSingleton<IInsightAnalysis, PayerMixAnalysis>();
+        services.AddSingleton<IInsightAnalysis, AircraftMixAnalysis>();
+        services.AddSingleton<IInsightAnalysis, BaseMixAnalysis>();
         services.AddSingleton<InsightsEngine>();
         services.AddSingleton<IInsightService, CachedInsightService>();
         services.AddSingleton<IValidateOptions<FilingLimitOptions>, FilingLimitOptionsValidator>();

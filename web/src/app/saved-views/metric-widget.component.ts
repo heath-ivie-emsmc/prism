@@ -1,3 +1,4 @@
+import { NgTemplateOutlet } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, effect, inject, input, output, untracked } from '@angular/core';
 import { rxResource } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
@@ -6,10 +7,11 @@ import { ChartColors, ChartComponent } from '../charts/chart.component';
 import { DashboardFilterContext } from '../dashboard/dashboard-filter-context';
 import { drillLinkName } from '../metrics/drill-link';
 import { metricDivisionSupport } from '../metrics/metric-catalog.service';
+import { coversLine, metricAppliesTo } from '../metrics/shared/applies-to';
 import { DataFreshnessService } from '../shared/data-freshness.service';
-import { ContextBadgeComponent } from '../shared/context-badge.component';
-import { FreshnessStampComponent } from '../shared/freshness-stamp.component';
 import { LoadProblemComponent } from '../shared/load-problem.component';
+import { MetricHelpComponent } from '../shared/metric-help.component';
+import { ScopeFootComponent } from '../shared/scope-foot.component';
 import { SkeletonComponent } from '../shared/skeleton.component';
 import { CatalogMetricDto, LayoutWidget } from './layout.model';
 import { ChartKind, buildWidgetOption } from './widget-chart.options';
@@ -28,13 +30,14 @@ const CHART_KINDS: ReadonlySet<string> = new Set(['line', 'column', 'stacked', '
  */
 @Component({
   selector: 'app-metric-widget',
-  imports: [RouterLink, ChartComponent, ContextBadgeComponent, FreshnessStampComponent, LoadProblemComponent, SkeletonComponent],
+  imports: [NgTemplateOutlet, RouterLink, ChartComponent, LoadProblemComponent, MetricHelpComponent, ScopeFootComponent, SkeletonComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     @if (unavailable()) {
       <p class="widget__note"><strong>Metric no longer available</strong><br />This metric isn't available any more.@if (editing()) { Remove it from this view. }</p>
     } @else if (unsupported()) {
       <p class="widget__note">{{ metric().name }} isn't available for {{ lineName() }}. Choose another Service Line to see it.</p>
+      <ng-container [ngTemplateOutlet]="helpText" />
     } @else if (!ready()) {
       <app-skeleton height="6rem" />
     } @else if (resource.isLoading() && !data()) {
@@ -42,9 +45,11 @@ const CHART_KINDS: ReadonlySet<string> = new Set(['line', 'column', 'stacked', '
       <app-skeleton height="6rem" />
     } @else if (resource.error() !== undefined) {
       <app-load-problem [error]="resource.error()" [subject]="metric().name" (retry)="resource.reload()" />
+      <ng-container [ngTemplateOutlet]="helpText" />
     } @else if (data(); as data) {
       @if (data.empty) {
         <p class="widget__note">No {{ metric().name.toLowerCase() }} data for {{ periodLabel() }}.</p>
+        <ng-container [ngTemplateOutlet]="helpText" />
       } @else {
         @if (isTile()) {
           <p class="widget__value">{{ data.headline?.value }}</p>
@@ -82,8 +87,32 @@ const CHART_KINDS: ReadonlySet<string> = new Set(['line', 'column', 'stacked', '
                 </tbody>
               </table>
             </div>
+            @for (extra of extraTables(); track $index) {
+              <div class="widget__table widget__table--extra" role="region" tabindex="0" [attr.aria-label]="extra.caption">
+                <table>
+                  <caption>{{ extra.caption }}</caption>
+                  <thead>
+                    <tr>
+                      @for (column of extra.columns; track $index) {
+                        <th scope="col">{{ column }}</th>
+                      }
+                    </tr>
+                  </thead>
+                  <tbody>
+                    @for (extraRow of extra.rows; track $index) {
+                      <tr>
+                        <th scope="row">{{ extraRow.head }}</th>
+                        @for (cell of extraRow.cells; track $index) {
+                          <td>{{ cell }}</td>
+                        }
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
+            }
           } @else {
-            <app-chart [option]="optionBuilder()" [label]="data.summary" />
+            <app-chart [option]="optionBuilder()" [label]="data.summary" [style.min-height]="chartMinHeight()" />
             @if (drillLinks().length > 0) {
               <ul class="widget__drills" aria-label="Open a breakdown">
                 @for (link of drillLinks(); track link.name) {
@@ -99,10 +128,15 @@ const CHART_KINDS: ReadonlySet<string> = new Set(['line', 'column', 'stacked', '
         @if (data.caveat) {
           <p class="widget__foot">{{ data.caveat }}</p>
         }
-        <app-context-badge [serviceLine]="badgeLine()" [divisionApplied]="divisionApplied()" [labels]="filters.labels()" />
-        <app-freshness-stamp [dataThrough]="data.dataThrough" />
+        <ng-container [ngTemplateOutlet]="helpText" />
+        <app-scope-foot [dataThrough]="data.dataThrough" [serviceLine]="badgeLine()" [divisionApplied]="divisionApplied()" [labels]="filters.labels()" [appliesTo]="appliesTo()" />
       }
     }
+    <ng-template #helpText>
+      @if (help() !== 'none') {
+        <app-metric-help [metric]="widget().metricKey" [heading]="metric().name" [compact]="help() === 'compact'" [serviceLine]="badgeLine()" [labels]="filters.labels()" />
+      }
+    </ng-template>
   `,
   styles: `
     /* The widget fills the card the grid gave it, and the chart takes whatever is left after the notes. A taller widget gives a taller chart. */
@@ -156,18 +190,29 @@ const CHART_KINDS: ReadonlySet<string> = new Set(['line', 'column', 'stacked', '
       outline-offset: -2px;
     }
     .widget__table {
+      container-type: inline-size;
       flex: 1 1 auto;
       min-height: 0;
       overflow-y: auto;
       max-width: 100%;
       overflow-x: auto;
     }
+    /* A second table under the first: it takes only the height it needs, so the first keeps the room the grid gave it. */
+    .widget__table--extra {
+      flex: 0 0 auto;
+      margin-block-start: 1rem;
+    }
     table {
       border-collapse: collapse;
       font-size: var(--ems-font-size-small);
       font-variant-numeric: tabular-nums;
     }
+    /* A wide table scrolls sideways, but its caption stays as wide as the card and in view, so it is never cut off. */
     caption {
+      position: sticky;
+      inset-inline-start: 0;
+      width: 100cqw;
+      box-sizing: border-box;
       text-align: start;
       color: var(--ems-text-muted);
       padding-block-end: 0.25rem;
@@ -189,6 +234,8 @@ export class MetricWidgetComponent {
   readonly widget = input.required<LayoutWidget>();
   readonly metric = input.required<CatalogMetricDto>();
   readonly editing = input(false);
+  /** Assistive text under the figure: none, a disclosure button only (a card on a grid), or the summary and the disclosure (a page of its own). */
+  readonly help = input<'none' | 'compact' | 'full'>('none');
   /** Reports loading, ready or failed, so the page can say one thing about all of its widgets. */
   readonly status = output<WidgetStatus>();
 
@@ -199,7 +246,9 @@ export class MetricWidgetComponent {
   private readonly honorsDivision = computed(() => metricDivisionSupport(this.metric()) === 'supported');
   protected readonly unavailable = computed(() => !LOADABLE_METRICS.includes(this.widget().metricKey) || !this.metric().presentations.some((p) => p.key === this.widget().presentation));
   protected readonly lineName = computed(() => ({ air: 'air', ground: 'ground', both: 'air and ground together' })[this.filters.serviceLine()]);
-  protected readonly unsupported = computed(() => !this.metric().serviceLines.includes(this.filters.serviceLine()));
+  protected readonly appliesTo = computed(() => metricAppliesTo(this.metric()));
+  /** The page's Service Line is one the Metric does not cover (an air-only Metric under Ground only, or the reverse). It is never fetched: the API would answer 400. */
+  protected readonly unsupported = computed(() => !this.metric().serviceLines.includes(this.filters.serviceLine()) || !coversLine(this.appliesTo(), this.filters.serviceLine()));
   protected readonly ready = computed(() => !!this.filters.providerId() && !!this.filters.endPeriod() && !this.filters.periodsLoading());
   protected readonly isTile = computed(() => this.widget().presentation === 'tile');
   protected readonly periodLabel = computed(() => this.filters.periods().find((p) => p.value === this.filters.endPeriod())?.label ?? 'this period');
@@ -242,6 +291,10 @@ export class MetricWidgetComponent {
     if (!data) return [];
     return data.table.rows.map((cells, i) => ({ cells, drill: this.drillAt(data, i) }));
   });
+  /** The Metric's further tables, with each row's first cell split off as its header, worked out once so the template calls nothing. */
+  protected readonly extraTables = computed(() =>
+    (this.data()?.extraTables ?? []).map((t) => ({ caption: t.caption, columns: t.columns, rows: t.rows.map((r) => ({ head: r[0] ?? '', cells: r.slice(1) })) })),
+  );
   /** One link per category that has somewhere to go, for the chart presentations: keyboard users reach the drill here, as a chart's marks are not focusable. */
   protected readonly drillLinks = computed(() => {
     const data = this.data();
@@ -257,6 +310,15 @@ export class MetricWidgetComponent {
     const label = data.categories[index];
     return route && label ? { commands: route.commands, queryParams: { ...route.queryParams }, name: drillLinkName(label) } : null;
   }
+
+  /** A chart whose legend wraps onto several rows gets more height, so the plot under it keeps its size. The legend lists each series, or each slice of a donut. */
+  protected readonly chartMinHeight = computed(() => {
+    const data = this.data();
+    if (!data) return null;
+    const kind = this.widget().presentation;
+    const entries = kind === 'donut' ? data.categories.length : (kind === 'line' || kind === 'stacked') && data.trend ? data.trend.series.length : data.series.length;
+    return entries > 3 ? `${14 + Math.min(entries, 8) * 1.25}rem` : null;
+  });
 
   protected readonly optionBuilder = computed(() => {
     const data = this.data();

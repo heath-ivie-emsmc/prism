@@ -15,7 +15,7 @@ public sealed class ClaimAttentionSqlTests
 
     public static TheoryData<string> Queries()
     {
-        var data = new TheoryData<string> { ClaimAttentionSql.CountsSql };
+        var data = new TheoryData<string> { ClaimAttentionSql.CountsSql, ClaimAttentionSql.ReasonsSql, ClaimAttentionSql.FilingBandsSql };
         foreach (AttentionPredicate predicate in Enum.GetValues<AttentionPredicate>())
         {
             data.Add(ClaimAttentionSql.ClaimsSql(predicate));
@@ -38,7 +38,7 @@ public sealed class ClaimAttentionSqlTests
     [MemberData(nameof(Queries))]
     public void A_query_is_one_parameterized_read_scoped_by_provider_and_the_latest_load(string sql)
     {
-        Assert.StartsWith("SELECT", sql.TrimStart(), StringComparison.Ordinal);
+        Assert.True(sql.TrimStart().StartsWith("SELECT", StringComparison.Ordinal) || sql.TrimStart().StartsWith("WITH", StringComparison.Ordinal));
         Assert.Contains("provider_id = @provider_id", sql, StringComparison.Ordinal);
         Assert.Contains("MAX(snapshot_date)", sql, StringComparison.Ordinal);
         Assert.DoesNotContain(';', sql);

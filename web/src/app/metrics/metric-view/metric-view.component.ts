@@ -3,7 +3,7 @@ import { toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { map } from 'rxjs';
 import { EmsBreadcrumb, EmsBreadcrumbsComponent } from '@ems-management-consultants/ui';
-import { MetricHelpComponent } from '../../shared/metric-help.component';
+import { DashboardFilterContext } from '../../dashboard/dashboard-filter-context';
 import { SkeletonComponent } from '../../shared/skeleton.component';
 import { MetricWidgetComponent } from '../../saved-views/metric-widget.component';
 import { LayoutWidget } from '../../saved-views/layout.model';
@@ -22,7 +22,7 @@ const KEY = /^[a-z0-9_]{1,64}$/;
  */
 @Component({
   selector: 'app-metric-view',
-  imports: [RouterLink, EmsBreadcrumbsComponent, MetricHelpComponent, MetricWidgetComponent, SkeletonComponent],
+  imports: [RouterLink, EmsBreadcrumbsComponent, MetricWidgetComponent, SkeletonComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <main class="page">
@@ -42,9 +42,8 @@ const KEY = /^[a-z0-9_]{1,64}$/;
           <section class="app-panel" [attr.aria-label]="metric()?.name">
             <p class="page__description">{{ metric()?.description }}</p>
             <div class="page__widget">
-              <app-metric-widget [widget]="widget()!" [metric]="metric()!" />
+              <app-metric-widget [widget]="widget()!" [metric]="metric()!" help="full" />
             </div>
-            <app-metric-help [metric]="key()" [serviceLine]="line()" />
           </section>
         }
         @default {
@@ -105,6 +104,7 @@ export class MetricViewComponent {
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly catalog = inject(MetricCatalogService);
+  private readonly filters = inject(DashboardFilterContext);
   private readonly injector = inject(Injector);
   private readonly headingRef = viewChild.required<ElementRef<HTMLElement>>('heading');
 
@@ -117,9 +117,10 @@ export class MetricViewComponent {
   private readonly known = computed(() => this.key() !== '' && (Object.hasOwn(DRILL_TARGETS, this.key()) || rendererFor(this.key()) !== undefined));
   private readonly page = computed(() => (this.known() ? metricPageRoute(this.key(), (name) => this.query().get(name)) : null));
   protected readonly metric = computed(() => this.catalog.metrics().get(this.key()));
+  /** The Service Line in the address: `line` or `serviceLine`, air by default like the dashboard. An air-only Metric under `ground` shows the not-available state, and is never fetched. */
   protected readonly line = computed<'all' | 'air' | 'ground'>(() => {
     const line = this.query().get('line') ?? this.query().get('serviceLine');
-    return line === 'air' || line === 'ground' ? line : 'all';
+    return line === 'ground' || line === 'all' || line === 'both' ? (line === 'ground' ? 'ground' : 'all') : 'air';
   });
 
   protected readonly state = computed<'loading' | 'view' | 'notFound'>(() => {
@@ -145,6 +146,11 @@ export class MetricViewComponent {
     effect(() => {
       const page = this.page();
       if (page) untracked(() => void this.router.navigate([...page.commands], { queryParams: page.queryParams, replaceUrl: true }));
+    });
+    // The widget reads the page filters, so the address's Service Line becomes the filter. Only the line is tracked.
+    effect(() => {
+      const line = this.line();
+      untracked(() => this.filters.serviceLine.set(line === 'all' ? 'both' : line));
     });
     // Following a link moves focus to the heading, so a screen reader starts at the new page and not where the link was. Only the key is tracked.
     effect(() => {

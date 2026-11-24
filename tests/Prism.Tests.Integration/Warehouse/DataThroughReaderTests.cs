@@ -21,7 +21,7 @@ public sealed class DataThroughReaderTests(PostgresFixture postgres) : IClassFix
         await SeedLock.WaitAsync(ct);
         try
         {
-            await using var admin = new NpgsqlConnection(postgres.ConnectionString);
+            await using var admin = new NpgsqlConnection(TestDatabaseGuard.Assert(postgres.ConnectionString));
             await admin.OpenAsync(ct);
             await using var seed = new NpgsqlCommand(
                 """
@@ -104,7 +104,7 @@ public sealed class DataThroughReaderTests(PostgresFixture postgres) : IClassFix
         Assert.Equal(1, warehouse.Queries);
         Assert.Equal(first, second);
 
-        await using (var admin = new NpgsqlConnection(postgres.ConnectionString))
+        await using (var admin = new NpgsqlConnection(TestDatabaseGuard.Assert(postgres.ConnectionString)))
         {
             await admin.OpenAsync(ct);
             await using var load = new NpgsqlCommand("INSERT INTO reporting.trip_detail_snapshot VALUES ('2026-11-23', 2274)", admin);

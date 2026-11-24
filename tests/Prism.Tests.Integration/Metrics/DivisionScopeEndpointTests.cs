@@ -29,6 +29,15 @@ public sealed class DivisionScopeEndpointTests : IDisposable
         ["payer_mix"] = "payer-mix",
         ["payer_mix_detail"] = "payer-mix/commercial",
         ["transport_volume"] = "transports",
+        ["transport_mix_by_call_type"] = "transport-mix-by-call-type",
+        ["aircraft_performance"] = "aircraft-performance",
+        ["base_analysis"] = "base-analysis",
+        ["loaded_miles_by_aircraft"] = "loaded-miles-by-aircraft",
+        ["payer_mix_financial_effect"] = "payer-mix-financial-effect",
+        ["transports_by_pickup_location"] = "transports-by-pickup-location",
+        ["cash_contribution_by_aircraft"] = "cash-contribution/aircraft",
+        ["cash_contribution_by_division"] = "cash-contribution/division",
+        ["cash_contribution_by_payer"] = "cash-contribution/payer",
     };
 
     private readonly CountingDirectory directory = new();

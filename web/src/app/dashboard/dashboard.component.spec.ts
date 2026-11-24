@@ -61,9 +61,15 @@ describe('DashboardComponent header', () => {
       { period: '202610', label: 'Oct', year: 2026, transports: 140, loadedMiles: 18_420 },
     ],
     groups: [
-      { key: 'rotor-wing', name: 'Rotor wing', serviceLine: 'air', transports: 92 },
-      { key: 'fixed-wing', name: 'Fixed wing', serviceLine: 'air', transports: 48 },
+      { key: 'rotor-wing', name: 'Rotor wing', serviceLine: 'air', transports: 92, priorTransports: 95, changeTransports: -3, changePercent: -3.2 },
+      { key: 'fixed-wing', name: 'Fixed wing', serviceLine: 'air', transports: 48, priorTransports: 0, changeTransports: 48, changePercent: null },
     ],
+  };
+
+  const EMPTY_PROJECTION = {
+    metric: { key: 'net_cash_projection', name: 'Projected net cash', description: 'd', unit: 'USD' },
+    providerId: '526', afterPeriod: '202610', serviceLine: 'air', snapshotDate: null, total: 0, low: 0, high: 0, months: [],
+    horizon: { value: 0, low: 0, high: 0, months: 0, fromExistingTrips: null, fromFutureTrips: null, existingTripsShare: null, futureTripsShare: null }, latestActual: null,
   };
 
   const CLEAN = {
@@ -87,6 +93,10 @@ describe('DashboardComponent header', () => {
     // The page reads the Metric Catalog for what each card does with the Reporting Division.
     for (const request of TestBed.inject(HttpTestingController).match((r) => r.url === '/api/v1/providers/526/metrics/catalog')) {
       request.flush({ categories: [], metrics: CATALOG_METRICS });
+    }
+    // The projection panel asks for the forecast as soon as the period is known. Most tests are about something else, so it gets an empty forecast.
+    for (const request of TestBed.inject(HttpTestingController).match((r) => r.url === `${BASE}/projection`)) {
+      request.flush({ ...EMPTY_PROJECTION });
     }
     if (volumeAnswer.hold) return;
     for (const request of TestBed.inject(HttpTestingController).match((r) => r.url === `${BASE}/transports`)) {
@@ -388,12 +398,24 @@ describe('DashboardComponent header', () => {
     expect(root.querySelector('app-net-cash-panel table')).toBeNull();
   });
 
-  it('shows the call type and pickup filters as unavailable because the data has neither', async () => {
+  it('shows no call type or pickup controls, since no Metric on this panel serves them', async () => {
     const { root } = await createWithData();
 
-    const callType = [...root.querySelectorAll<HTMLButtonElement>('app-net-cash-panel [aria-label="Call type"] [role="radio"]')];
-    expect(callType.length).toBeGreaterThan(0);
-    expect(callType.every((b) => b.disabled)).toBe(true);
+    expect(root.querySelector('app-net-cash-panel [aria-label="Call type"]')).toBeNull();
+    expect(root.querySelector('app-net-cash-panel ems-select')).toBeNull();
+    expect(root.textContent).not.toContain('Not available for this data yet');
+  });
+
+  it('explains the net cash panel and each backed tile with a help disclosure, and the stamp and badge sit in the same footer', async () => {
+    const { root } = await createWithData();
+
+    const toggles = [...root.querySelectorAll<HTMLButtonElement>('app-metric-help .help__toggle')].map((b) => b.textContent?.replace(/\s+/g, ' ').trim());
+    expect(toggles).toEqual(
+      expect.arrayContaining(['What these numbers mean for Net cash collected', 'What these numbers mean for Transports', 'What these numbers mean for Loaded miles', 'What these numbers mean for Clean claim rate']),
+    );
+    const feet = [...root.querySelectorAll('app-data-frame app-scope-foot .foot')];
+    expect(feet.length).toBeGreaterThanOrEqual(4);
+    for (const foot of feet) expect(foot.firstElementChild?.tagName).toBe('APP-FRESHNESS-STAMP');
   });
 
   it('starts on Air only with the air label for the Reporting Division filter', async () => {

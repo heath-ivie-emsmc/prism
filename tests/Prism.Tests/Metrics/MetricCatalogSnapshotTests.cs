@@ -44,6 +44,7 @@ public sealed class MetricCatalogSnapshotTests
                     placeable = e.CanBePlaced,
                     presentations = e.Presentations.Select(p => p.Key),
                     serviceLines = e.ServiceLines,
+                    appliesTo = Lower(e.Context.AppliesTo.ToString()),
                     divisionSupport = Lower(e.Context.DivisionSupport.ToString()),
                     freshness = Lower(e.Freshness.Policy.ToString()),
                     helpKey = e.HelpKey,
@@ -72,13 +73,13 @@ public sealed class MetricCatalogSnapshotTests
     private static string Table()
     {
         var table = new StringBuilder();
-        table.Append("| Key | Category | Unit | Service lines | Freshness | Division | Drills | Placeable | Renderer folder (`web/src/app/metrics/`) | Backend folder (`Metrics/` in Application, Infrastructure, Api) |\n");
-        table.Append("|---|---|---|---|---|---|---|---|---|---|\n");
+        table.Append("| Key | Category | Unit | Applies to | Service lines | Freshness | Division | Drills | Placeable | Renderer folder (`web/src/app/metrics/`) | Backend folder (`Metrics/` in Application, Infrastructure, Api) |\n");
+        table.Append("|---|---|---|---|---|---|---|---|---|---|---|\n");
         foreach (MetricCatalogEntry e in Available)
         {
             string drills = e.Drills.Count == 0 ? "none" : string.Join(", ", e.Drills.Select(d => $"{d.Rel} to `{d.TargetKey}` (binds `{d.BindsDimension}`)"));
             string category = MetricCatalog.Categories.FirstOrDefault(c => c.Key == e.Category)?.Name ?? e.Category;
-            table.Append(CultureInfo.InvariantCulture, $"| `{e.Key}` | {category} | {e.Unit} | {string.Join(", ", e.ServiceLines)} | {e.Freshness.Policy} | {e.Context.DivisionSupport} | {drills} | {(e.CanBePlaced ? "yes" : "no")} | {RendererFolder(e.Key)} | `{SliceFolder(e.Key)}` |\n");
+            table.Append(CultureInfo.InvariantCulture, $"| `{e.Key}` | {category} | {e.Unit} | {Lower(e.Context.AppliesTo.ToString())} | {string.Join(", ", e.ServiceLines)} | {e.Freshness.Policy} | {e.Context.DivisionSupport} | {drills} | {(e.CanBePlaced ? "yes" : "no")} | {RendererFolder(e.Key)} | `{SliceFolder(e.Key)}` |\n");
         }
 
         return table.ToString();

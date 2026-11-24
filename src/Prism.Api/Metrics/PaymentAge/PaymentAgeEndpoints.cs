@@ -19,6 +19,8 @@ internal static class PaymentAgeEndpoints
                 "Net cash for `period` (`yyyyMM`, default the newest period with net cash data) and the twelve months before it, by payer group, posting month and payment age. "
                 + "Payment age is the number of months between the transport's date of service and the month the cash posted, so 0 is cash for a transport flown that month, and ages above 24 are counted at 24. "
                 + "Net cash is payments less refunds by posting month, without the Old AR import, as in the breakdown. Cash for transports with no date of service is left out, so the cells can add up to less than the breakdown. "
+                + "`payers` summarises each payer group over all the cells: `typicalAgeMonths` is the cash-weighted median age in months (null when the group has no cash) and `bands` is the share (0 to 1, four decimals, summing to 1 within rounding) of the group's cash received at ages 0-1, 2-3, 4-6, 7-12 and 13+ months (empty when no cash). "
+                + "Age is whole months only (posting month minus date-of-service month, capped at 24): the warehouse has no day-level payment date, so no day figures are given. Refunds (negative cells) are left out of the typical age and the shares. "
                 + "`serviceLine` is `all`, `air` (default) or `ground`. `group` narrows it to one aircraft type or level of service, using the `key` the breakdown route returns (for example `fixed-wing`). "
                 + "Aggregates only: no patient, claim or payer names. `division` limits the figures to one Reporting Division, using a `key` from the divisions route; an unknown key is a 400. Returns 404 when the Provider is not one the caller may read in full.")
             .Produces<PaymentAgeResponse>()
@@ -86,7 +88,14 @@ internal static class PaymentAgeEndpoints
             age.Period.ToString(),
             ServiceLineName(age.ServiceLine),
             age.GroupKey,
-            age.Cells.Select(c => new PaymentAgeCellResponse(c.PayerKey, c.PayerName, c.PostingPeriod.ToString(), c.AgeMonths, c.Cash, c.Transports)).ToArray());
+            age.Cells.Select(c => new PaymentAgeCellResponse(c.PayerKey, c.PayerName, c.PostingPeriod.ToString(), c.AgeMonths, c.Cash, c.Transports)).ToArray())
+        {
+            Payers = age.Payers.Select(p => new PayerPaymentAgeResponse(
+                p.PayerKey,
+                p.PayerName,
+                p.TypicalAgeMonths,
+                p.Bands.Select(b => new PaymentAgeBandResponse(b.Band.Key, b.Band.FromMonths, b.Band.ToMonths, b.Share)).ToArray())).ToArray(),
+        };
         return Results.Ok(response with { DataThrough = through, Division = division?.Key, DivisionName = division?.Name });
     }
 }
@@ -103,6 +112,9 @@ public sealed record PaymentAgeResponse(
     string? Group,
     IReadOnlyList<PaymentAgeCellResponse> Cells)
 {
+    /// <summary>Per payer group, over all the cells: the typical age (months) and the share of cash by age band. Payer groups with no cells are not listed.</summary>
+    public IReadOnlyList<PayerPaymentAgeResponse> Payers { get; init; } = [];
+
     /// <summary>The date of the warehouse load the figures come from, <c>yyyy-MM-dd</c> (Data Through). Null when the Provider has no data in the table the Metric reads.</summary>
     public string? DataThrough { get; init; }
 
@@ -118,3 +130,9 @@ public sealed record PaymentAgeResponse(
 /// when paid. <c>PayerKey</c> is stable, <c>PayerName</c> is for display.
 /// </summary>
 public sealed record PaymentAgeCellResponse(string PayerKey, string PayerName, string PostingPeriod, int AgeMonths, decimal Cash, int Transports);
+
+/// <summary>A payer group's <c>TypicalAgeMonths</c> (cash-weighted median, null when no cash) and <c>Bands</c> (empty when no cash).</summary>
+public sealed record PayerPaymentAgeResponse(string PayerKey, string PayerName, int? TypicalAgeMonths, IReadOnlyList<PaymentAgeBandResponse> Bands);
+
+/// <summary>One age band in whole months: <c>FromMonths</c> to <c>ToMonths</c> inclusive (null for the open-ended last band) and the <c>Share</c> (0 to 1) of the group's cash in it.</summary>
+public sealed record PaymentAgeBandResponse(string Key, int FromMonths, int? ToMonths, decimal Share);

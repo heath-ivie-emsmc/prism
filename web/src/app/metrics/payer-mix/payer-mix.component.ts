@@ -339,7 +339,8 @@ export class PayerMixComponent {
 
   protected readonly views = VIEWS;
   protected readonly view = signal<PayerView>('bar');
-  protected readonly notAvailable = 'Not available for this data yet';
+  /** The page has no picker of its own: the dashboard's choice arrives in the address and is applied. The control says so instead of offering a choice it cannot take. */
+  protected readonly notAvailable = 'Set on the dashboard. This page follows that choice.';
   protected readonly period = new FormControl<string>('', { nonNullable: true });
   protected readonly location = new FormControl<string>({ value: 'all', disabled: true }, { nonNullable: true });
 
@@ -355,7 +356,7 @@ export class PayerMixComponent {
   protected readonly line = computed<BreakdownLine>(() => (this.query().line === 'ground' ? 'ground' : 'air'));
   /** The Provider's term for a Reporting Division (a Label, by Service Line), never a hard-coded one. */
   protected readonly labels = computed(() => defaultLabels(this.line()));
-  protected readonly allLocations = computed<EmsPickerOption<string>[]>(() => [{ value: 'all', label: this.labels().allReportingDivisions }]);
+  protected readonly allLocations = computed<EmsPickerOption<string>[]>(() => [{ value: 'all', label: this.division() ? 'Chosen on the dashboard' : this.labels().allReportingDivisions }]);
   protected readonly providerName = computed(() => this.auth.activeProvider()?.name ?? '');
   private readonly providerId = computed(() => this.auth.activeProviderId());
 

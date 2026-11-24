@@ -4,8 +4,16 @@ namespace Prism.Application.Metrics;
 /// <summary>Transports and loaded miles in one month of service. Months with no transports are left out of the series, not returned as zero.</summary>
 public sealed record TransportVolumePoint(ApPeriod Period, int Transports, decimal LoadedMiles);
 
-/// <summary>Transports in the last month of the series for one aircraft type or level of service.</summary>
-public sealed record TransportVolumeGroup(string Key, string Name, bool IsAir, int Transports);
+/// <summary>
+/// Transports in the last month of the series for one aircraft type or level of service, and in the month before it (same date-of-service basis and filters).
+/// <see cref="ChangePercent"/> is in percent units (12.5 is 12.5%), rounded to one decimal, and null when the prior month had none.
+/// </summary>
+public sealed record TransportVolumeGroup(string Key, string Name, bool IsAir, int Transports, int PriorTransports = 0)
+{
+    public int Change => Transports - PriorTransports;
+
+    public decimal? ChangePercent => PriorTransports == 0 ? null : Math.Round((decimal)Change / PriorTransports * 100m, 1, MidpointRounding.AwayFromZero);
+}
 
 /// <summary>
 /// Transports and loaded miles for a run of months ending at <paramref name="EndPeriod"/>, by date of service, and the split of the last month

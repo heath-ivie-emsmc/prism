@@ -53,6 +53,18 @@ describe('MetricHelpComponent', () => {
     expect(root.textContent).not.toMatch(/\{[A-Za-z]+\}/);
   });
 
+  it('in compact mode hides the summary until the disclosure opens, names the figure for screen readers, and passes axe', async () => {
+    const { fixture, root } = create('payment_age', { compact: true, heading: 'Payment age' });
+    expect(root.querySelector('.help__summary')).toBeNull();
+    const button = root.querySelector('button')!;
+    expect(button.textContent?.replace(/\s+/g, ' ').trim()).toBe('What these numbers mean for Payment age');
+    button.click();
+    fixture.detectChanges();
+    expect(root.querySelector('.help__panel .help__summary')?.textContent).toContain('How long payers take to pay');
+    expect(root.querySelectorAll('dt').length).toBeGreaterThan(2);
+    expect(await axeViolations(root)).toEqual([]);
+  });
+
   it('shows nothing for a Metric with no help', () => {
     expect(create('nope').root.querySelector('button')).toBeNull();
   });

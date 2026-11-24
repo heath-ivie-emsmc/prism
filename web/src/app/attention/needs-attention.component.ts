@@ -22,6 +22,7 @@ import {
 import {
   AttentionClaimsDto, AttentionCountsDto, AttentionQuery, AttentionService, CLAIMS_PERMISSION,
 } from './attention.service';
+import { AttentionSummaryComponent } from './attention-summary.component';
 import { SendToCseData, SendToCseDrawerComponent } from './send-to-cse-drawer.component';
 
 interface ClaimsParams extends AttentionQuery {
@@ -38,7 +39,7 @@ interface ClaimsParams extends AttentionQuery {
 @Component({
   selector: 'app-needs-attention',
   imports: [
-    EmsBadgeComponent, EmsBreadcrumbsComponent, EmsButtonDirective, EmsChipComponent, EmsIconComponent, EmsPaginationComponent, EmsSelectComponent, LoadProblemComponent,
+    AttentionSummaryComponent, EmsBadgeComponent, EmsBreadcrumbsComponent, EmsButtonDirective, EmsChipComponent, EmsIconComponent, EmsPaginationComponent, EmsSelectComponent, LoadProblemComponent,
     MatCheckboxModule, ReactiveFormsModule, SegmentedControlComponent, SkeletonComponent,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -55,6 +56,10 @@ interface ClaimsParams extends AttentionQuery {
           <ems-select class="page__select" label="Period" [options]="periods()" [formControl]="period" [clearable]="false" />
         </form>
       </header>
+
+      @if (allowed() && counts()) {
+        <app-attention-summary [counts]="counts()" [periodLabel]="periodLabel()" />
+      }
 
       <section class="app-panel claims" aria-labelledby="claims-title">
         <header class="claims__header">
@@ -401,7 +406,7 @@ export class NeedsAttentionComponent {
   });
 
   protected readonly dto = computed(() => (this.claimsResource.hasValue() ? this.claimsResource.value() : null));
-  private readonly counts = computed(() => (this.countsResource.hasValue() ? this.countsResource.value() : null));
+  protected readonly counts = computed(() => (this.countsResource.hasValue() ? this.countsResource.value() : null));
   protected readonly claimsLoading = computed(() => this.claimsResource.isLoading() || this.periodsResource.isLoading());
   protected readonly loadError = computed<unknown>(() => this.periodsResource.error() ?? this.claimsResource.error() ?? this.countsResource.error());
   protected readonly rows = computed<readonly ClaimRowView[]>(() => (this.dto()?.claims ?? []).map(toClaimRow));
@@ -419,7 +424,8 @@ export class NeedsAttentionComponent {
     const subject = group ? `${groupWords(group)} claims` : this.line() === 'air' ? 'Air claims' : 'Ground claims';
     return `${subject}, ${this.periodLabel()}`.replace(/, $/, '');
   });
-  protected readonly vehicleHeading = computed(() => (this.line() === 'air' ? 'Aircraft' : 'Vehicle'));
+  /** The warehouse's vehicle is the tail number, for aircraft and ground units alike. */
+  protected readonly vehicleHeading = computed(() => 'Tail number');
 
   /** The ticked claims, by id, across tabs and pages. They are cleared when the month, Service Line or aircraft type changes. */
   protected readonly selected = linkedSignal<AttentionQuery | null, ReadonlyMap<string, ClaimRowView>>({ source: () => this.base(), computation: () => new Map() });

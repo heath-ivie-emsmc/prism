@@ -16,7 +16,9 @@ public sealed class NetCashProjectionMetric(IWarehouse warehouse, IWarehouseProv
                SUM(total_projected_cash) AS total,
                LEAST(SUM(total_projected_cash), SUM(forecasted_ar_cash), SUM(forecasted_budget_cash)) AS low,
                GREATEST(SUM(total_projected_cash), SUM(forecasted_ar_cash), SUM(forecasted_budget_cash)) AS high,
-               MAX(snapshot_date) AS snapshot_date
+               MAX(snapshot_date) AS snapshot_date,
+               SUM(forecasted_ar_cash) AS from_existing_trips,
+               SUM(forecasted_budget_cash) AS from_future_trips
         FROM reporting.forecast_cash_per_trip
         WHERE provider_id = @provider_id AND is_current AND total_projected_cash IS NOT NULL
           AND month_index >= @first_month
@@ -40,18 +42,20 @@ public sealed class NetCashProjectionMetric(IWarehouse warehouse, IWarehouseProv
                 ["month_limit"] = INetCashProjectionMetric.ProjectedMonths,
             }) { Name = "NetCashProjectionMetric" };
 
-        IReadOnlyList<(DateOnly Month, decimal Total, decimal Low, decimal High, DateOnly? Snapshot)> rows = await warehouse.QueryAsync(
+        IReadOnlyList<(DateOnly Month, decimal Total, decimal Low, decimal High, DateOnly? Snapshot, decimal? Existing, decimal? Future)> rows = await warehouse.QueryAsync(
             query,
             reader => (
                 DateOnly.FromDateTime(reader.GetDateTime(0)),
                 reader.GetDecimal(1),
                 reader.GetDecimal(2),
                 reader.GetDecimal(3),
-                reader.IsDBNull(4) ? (DateOnly?)null : DateOnly.FromDateTime(reader.GetDateTime(4))),
+                reader.IsDBNull(4) ? (DateOnly?)null : DateOnly.FromDateTime(reader.GetDateTime(4)),
+                reader.IsDBNull(5) ? (decimal?)null : reader.GetDecimal(5),
+                reader.IsDBNull(6) ? (decimal?)null : reader.GetDecimal(6)),
             cancellationToken);
 
         List<NetCashProjectionMonth> months = rows
-            .Select(row => new NetCashProjectionMonth(new ApPeriod(row.Month.Year, row.Month.Month), row.Total, row.Low, row.High))
+            .Select(row => new NetCashProjectionMonth(new ApPeriod(row.Month.Year, row.Month.Month), row.Total, row.Low, row.High, row.Existing, row.Future))
             .ToList();
         return new NetCashProjection(INetCashProjectionMetric.Definition, afterPeriod, serviceLine, rows.Max(row => row.Snapshot), months);
     }

@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Prism.Infrastructure.Persistence;
+using Prism.Testing.Common;
 using Testcontainers.PostgreSql;
 
 namespace Prism.Tests.Integration.Persistence;
@@ -9,11 +10,13 @@ public sealed class PostgresFixture : IAsyncLifetime
 {
     private readonly PostgreSqlContainer container = new PostgreSqlBuilder("postgres:17-alpine").Build();
 
-    public string ConnectionString => container.GetConnectionString();
+    /// <summary>The throwaway container database. Every read of it asserts that it is one, so no helper can be handed anything else.</summary>
+    public string ConnectionString => TestDatabaseGuard.Assert(container.GetConnectionString());
 
     public async ValueTask InitializeAsync()
     {
         await container.StartAsync(TestContext.Current.CancellationToken);
+        TestDatabaseGuard.Register(container.GetConnectionString());
         await using PrismDbContext db = NewContext();
         await db.Database.MigrateAsync(TestContext.Current.CancellationToken);
     }

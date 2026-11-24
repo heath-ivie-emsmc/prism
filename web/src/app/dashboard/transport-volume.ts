@@ -11,9 +11,36 @@ export const CARD_MONTHS = 6;
 
 const count = new Intl.NumberFormat('en-US');
 
+const signed = (n: number): string => `${n > 0 ? '+' : ''}${count.format(n)}`;
+const signedPercent = (p: number | null): string => (p === null ? 'n/a' : `${p > 0 ? '+' : ''}${p.toFixed(1)}%`);
+
+/** The rows of the latest-month split, one per group, in the order the API gave them. */
+export function splitRows(groups: TransportVolumeDto['groups']): readonly TransportSplitRow[] {
+  return groups.map((g) => ({
+    key: g.key,
+    name: g.name,
+    latest: count.format(g.transports),
+    prior: count.format(g.priorTransports),
+    change: signed(g.changeTransports),
+    changePercent: signedPercent(g.changePercent),
+  }));
+}
+
 export interface CardDelta {
   readonly direction: 'up' | 'down';
   readonly text: string;
+}
+
+/** One aircraft type or level of service in the latest month, next to the month before. Cells are text, worked out here so the template only prints them. */
+export interface TransportSplitRow {
+  readonly key: string;
+  readonly name: string;
+  readonly latest: string;
+  readonly prior: string;
+  /** "-3" or "+12", with the sign in the text. */
+  readonly change: string;
+  /** "-3.1%", or "n/a" when the prior month had none. */
+  readonly changePercent: string;
 }
 
 export interface TransportsCard {
@@ -27,6 +54,10 @@ export interface TransportsCard {
   readonly titles: readonly string[];
   /** The count of each month, to print over its bar. */
   readonly labels: readonly string[];
+  /** The latest month split by aircraft type or level of service, with the month before. Empty when the API sent no split. */
+  readonly split: readonly TransportSplitRow[];
+  readonly splitLatestName: string;
+  readonly splitPriorName: string;
 }
 
 export interface MilesCard {
@@ -89,7 +120,7 @@ function valuesByMonth(volume: TransportVolumeDto, months: string[], pick: (p: T
 
 export function toTransportsCard(volume: TransportVolumeDto | null): TransportsCard {
   const end = volume?.endPeriod ?? '';
-  if (!volume || !end) return { value: '—', delta: null, footnote: '', bars: [], description: '', titles: [], labels: [] };
+  if (!volume || !end) return { value: '—', delta: null, footnote: '', bars: [], description: '', titles: [], labels: [], split: [], splitLatestName: '', splitPriorName: '' };
   const months = cardMonths(end);
   const values = valuesByMonth(volume, months, (p) => p.transports);
   const last = values[values.length - 1]!;
@@ -104,6 +135,9 @@ export function toTransportsCard(volume: TransportVolumeDto | null): TransportsC
     description: `Transports by month: ${titles.join(', ')}.`,
     titles,
     labels: values.map((v) => count.format(v)),
+    split: splitRows(volume.groups),
+    splitLatestName: monthName(end),
+    splitPriorName: priorMonthName(end),
   };
 }
 

@@ -20,7 +20,7 @@ interface Probe {
 const build = (kind: 'line' | 'bar', months = MONTHS) => buildNetCashOption(months, kind, COLORS) as unknown as Probe;
 
 describe('buildNetCashOption', () => {
-  it('shows one tooltip line per month, never NaN, with the likely range for projected months', () => {
+  it('shows one tooltip line per month, never NaN, with the forecast range for projected months', () => {
     const tooltip = (build('line') as unknown as { tooltip: { formatter: (p: unknown) => string } }).tooltip;
     const rows = (index: number) => [{ dataIndex: index, seriesName: 'Net cash collected' }, { dataIndex: index, seriesName: 'Projected', value: '-' }];
 
@@ -30,7 +30,7 @@ describe('buildNetCashOption', () => {
     expect(actual).toContain('Oct 2026');
     expect(actual).toContain('$1,100,000.00');
     expect(projected).toContain('Projected');
-    expect(projected).toContain('Likely $1,150,000.00 to $1,280,000.00');
+    expect(projected).toContain('Forecast range $1,150,000.00 to $1,280,000.00');
     expect(actual + projected).not.toContain('NaN');
   });
 
@@ -50,7 +50,7 @@ describe('buildNetCashOption', () => {
   it('draws the actual line, a projected line that joins it, whiskers and a divider for the line view', () => {
     const series = build('line').series;
 
-    expect(series.map((s) => s.name)).toEqual(['Net cash collected', 'Projected', 'Likely range', 'Actual and projected divider']);
+    expect(series.map((s) => s.name)).toEqual(['Net cash collected', 'Projected', 'Forecast range', 'Actual and projected divider']);
     expect((series[1]!.data as (unknown | null)[]).slice(0, 1)).toEqual([null]);
     expect(series[2]!.data).toEqual([[2, 1_150_000, 1_280_000, 1_210_000], [3, 1_080_000, 1_320_000, 1_200_000]]);
   });

@@ -40,6 +40,10 @@ internal static class ClaimAttentionEndpoints
             .WithDescription(
                 "For `period` (`yyyyMM`, required) and `serviceLine` (`all`, `air` or `ground`, default `all`) and optionally `group` (an aircraft type or level of service key from the breakdown route, such as `fixed-wing`), the number of claims flagged by each Attention Check "
                 + "(`denied`, `needs_attention`, `all`), by date of service in the latest warehouse load, and the balance still owed on the denied claims. Aggregates only, but it needs the claims permission. "
+                + "It also returns `deniedRate` (denied claims divided by all claims in the period, 0 to 1, null when there are none); `reasons` (the top 10 denial reasons by denied claim count, each with `count` and `balanceDue`, then one `isOther` row for the rest; "
+                + "reason text is cleaned in SQL, cut to 120 characters, and empty is `No reason given`); `categories` (separate counts and balance due for Denied, On hold and In collections, which can overlap, so do not add them); "
+                + "and `filingBands` (needs-attention claims and balance due that are past due, due within 10 days, within 30 days, and later, from the derived filing deadline and Data Through; the filing limits are a placeholder until the real payer limits are supplied, so the bands are estimates). "
+                + "There is no assigned owner, and no IDR, patient-due or missing-documentation category: the warehouse has no source for them. The response is never cached. "
                 + "Returns 404 when the Provider is not one the caller may read in full.")
             .Produces<AttentionCountsResponse>()
             .ProducesProblem(StatusCodes.Status400BadRequest)
@@ -124,7 +128,13 @@ internal static class ClaimAttentionEndpoints
             scope.Period.ToString(),
             await access.DataThroughAsync(id, MetricDataThrough.ClaimAttention, scope.ServiceLine, cancellationToken),
             counts.Counts.Select(c => new AttentionCountResponse(c.Key, AttentionCatalog.Find(c.Key)!.Name, c.Count)).ToArray(),
-            counts.DeniedBalanceDue));
+            counts.DeniedBalanceDue)
+        {
+            DeniedRate = counts.DeniedRate,
+            Reasons = (counts.Reasons ?? []).Select(r => new DenialReasonResponse(r.Reason, r.IsOther, r.Count, r.BalanceDue)).ToArray(),
+            Categories = (counts.Categories ?? []).Select(c => new AttentionCategoryResponse(c.Key, c.Name, c.Count, c.BalanceDue)).ToArray(),
+            FilingBands = (counts.Bands ?? []).Select(b => new FilingBandResponse(b.Key, b.Name, b.Claims, b.BalanceDue)).ToArray(),
+        });
     }
 
     public static async Task<IResult> Claims(
@@ -295,8 +305,30 @@ internal sealed record ExportRequest(string ProviderId, string CheckKey, string?
 /// <summary>The route and query values of the counts.</summary>
 internal sealed record CountsRequest(string ProviderId, string? Period, string? ServiceLine, string? Group);
 
-/// <summary>The number of claims each Attention Check flags in a period. Aggregates only.</summary>
-public sealed record AttentionCountsResponse(string ProviderId, string Period, string? DataThrough, IReadOnlyList<AttentionCountResponse> Counts, decimal DeniedBalanceDue);
+/// <summary>The number of claims each Attention Check flags in a period, with the denial rate, reasons, categories and filing bands. Aggregates only.</summary>
+public sealed record AttentionCountsResponse(string ProviderId, string Period, string? DataThrough, IReadOnlyList<AttentionCountResponse> Counts, decimal DeniedBalanceDue)
+{
+    /// <summary>Denied claims divided by all claims in the period, 0 to 1 (four decimals). Null when the period has no claims.</summary>
+    public decimal? DeniedRate { get; init; }
+
+    /// <summary>The top 10 denial reasons by denied claim count, then one <c>isOther</c> row for the rest. Text is cleaned and at most 120 characters.</summary>
+    public IReadOnlyList<DenialReasonResponse> Reasons { get; init; } = [];
+
+    /// <summary>Denied, On hold and In collections, each with its claim count and balance due. A claim can be in more than one, so they overlap and must not be added.</summary>
+    public IReadOnlyList<AttentionCategoryResponse> Categories { get; init; } = [];
+
+    /// <summary>Needs-attention claims by estimated filing deadline: past due, within 10 days, 11 to 30 days, later. Always four rows, in that order.</summary>
+    public IReadOnlyList<FilingBandResponse> FilingBands { get; init; } = [];
+}
+
+/// <summary>A denial reason (<c>Reason</c>, cleaned warehouse text, or <c>No reason given</c>), the denied claims behind it and their <c>BalanceDue</c> (USD). <c>IsOther</c> is the row that sums the reasons beyond the top 10.</summary>
+public sealed record DenialReasonResponse(string Reason, bool IsOther, int Count, decimal BalanceDue);
+
+/// <summary>A category of claim needing action: <c>Key</c> is <c>denied</c>, <c>on_hold</c> or <c>in_collections</c>. <c>BalanceDue</c> (USD) adds only positive balances.</summary>
+public sealed record AttentionCategoryResponse(string Key, string Name, int Count, decimal BalanceDue);
+
+/// <summary>A filing band: <c>Key</c> is <c>past_due</c>, <c>due_within_10_days</c>, <c>due_within_30_days</c> or <c>due_later</c>. <c>Claims</c> and <c>BalanceDue</c> (USD) are for needs-attention claims.</summary>
+public sealed record FilingBandResponse(string Key, string Name, int Claims, decimal BalanceDue);
 
 /// <summary>One check and how many claims it flags.</summary>
 public sealed record AttentionCountResponse(string Key, string Name, int Count);

@@ -22,7 +22,7 @@ internal static class CatalogEndpoints
                 + "`placeable` is false for something computed on the dashboard only, such as `what_changed`. `dimensions` are the filters the Metric honors (`period`, `months`, `serviceLine`, `group`, `division`); "
                 + "a Metric that does not list `division` ignores the Reporting Division filter. `presentations` are the ways it can be drawn, each with the preset sizes (`S`, `M`, `L`) that suit it and its bounds in columns and rows of the 12-column grid. "
                 + "`options` are the settings a widget exposes, as `choice` or `toggle`. `claimLevel` marks a Metric that would carry claim detail and so stays planned until it has its own permission and an audit record. "
-                + "`context` says where the Metric applies: `providerScoped`, `serviceLines`, `divisionSupport` (`none` or `supported`), `groupDimensions` and `timeGrain` (`period` or `month`). "
+                + "`context` says where the Metric applies: `providerScoped`, `serviceLines`, `divisionSupport` (`none` or `supported`), `groupDimensions`, `timeGrain` (`period` or `month`) and `appliesTo` (`air`, `ground` or `both`: an air-only Metric treats `serviceLine=all` as air and refuses `serviceLine=ground` with a 400). "
                 + "`freshness.policy` is `dailyLoad` (cached against Data Through) or `noCache` (claim-level). `helpKey` names the Metric's help entry, and `drills` lists links to other Metrics. "
                 + "Definitions only: no figures, and the same for every Provider the caller can read.")
             .Produces<MetricCatalogResponse>()
@@ -61,7 +61,8 @@ internal static class CatalogEndpoints
             entry.Context.ServiceLines,
             entry.Context.DivisionSupport == DivisionSupport.Supported ? "supported" : "none",
             entry.Context.GroupDimensions,
-            entry.Context.TimeGrain),
+            entry.Context.TimeGrain,
+            entry.Context.AppliesTo.ToString().ToLowerInvariant()),
         new CatalogFreshnessResponse(entry.Freshness.Policy == FreshnessPolicy.NoCache ? "noCache" : "dailyLoad"),
         entry.HelpKey,
         entry.Drills.Select(d => new CatalogDrillResponse(d.Rel, d.TargetKey, d.BindsDimension)).ToArray());
@@ -92,8 +93,12 @@ public sealed record CatalogMetricResponse(
     string HelpKey,
     IReadOnlyList<CatalogDrillResponse> Drills);
 
-/// <summary>Where a Metric applies. <c>DivisionSupport</c> is <c>none</c> or <c>supported</c>, <c>TimeGrain</c> is <c>period</c> or <c>month</c>.</summary>
-public sealed record CatalogContextResponse(bool ProviderScoped, IReadOnlyList<string> ServiceLines, string DivisionSupport, IReadOnlyList<string> GroupDimensions, string TimeGrain);
+/// <summary>
+/// Where a Metric applies. <c>DivisionSupport</c> is <c>none</c> or <c>supported</c>, <c>TimeGrain</c> is <c>period</c> or <c>month</c>. <c>AppliesTo</c> is <c>air</c>, <c>ground</c> or <c>both</c>:
+/// an air-only or ground-only Metric has data for that Service Line only, so <c>serviceLine=all</c> means that line and the other line is a 400.
+/// <c>ServiceLines</c> lists the <c>serviceLine</c> values it accepts: air and both, ground and both, or air, ground and both.
+/// </summary>
+public sealed record CatalogContextResponse(bool ProviderScoped, IReadOnlyList<string> ServiceLines, string DivisionSupport, IReadOnlyList<string> GroupDimensions, string TimeGrain, string AppliesTo);
 
 /// <summary>Caching policy. <c>Policy</c> is <c>dailyLoad</c> or <c>noCache</c>.</summary>
 public sealed record CatalogFreshnessResponse(string Policy);

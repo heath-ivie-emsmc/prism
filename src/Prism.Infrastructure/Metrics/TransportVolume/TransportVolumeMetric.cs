@@ -26,6 +26,8 @@ public sealed class TransportVolumeMetric(IWarehouse warehouse, IWarehouseProvid
     {
         int count = Math.Clamp(months, 1, ITransportVolumeMetric.MaxMonths);
         ApPeriod first = endPeriod.AddMonths(-(count - 1));
+        // The query reaches one month before the series when needed, so the groups can be compared with the month before the last.
+        ApPeriod queryFrom = count == 1 ? endPeriod.AddMonths(-1) : first;
         ApPeriod next = endPeriod.AddMonths(1);
         int warehouseId = await providers.ResolveAsync(providerId, cancellationToken);
         var query = new WarehouseQuery(
@@ -33,7 +35,7 @@ public sealed class TransportVolumeMetric(IWarehouse warehouse, IWarehouseProvid
             new Dictionary<string, object?>
             {
                 [WarehouseQuery.ProviderParameter] = warehouseId,
-                ["from_date"] = new DateOnly(first.Year, first.Month, 1),
+                ["from_date"] = new DateOnly(queryFrom.Year, queryFrom.Month, 1),
                 ["to_date"] = new DateOnly(next.Year, next.Month, 1),
                 ["include_air"] = serviceLine is ServiceLineFilter.Both or ServiceLineFilter.Air,
                 ["include_ground"] = serviceLine is ServiceLineFilter.Both or ServiceLineFilter.Ground,
@@ -45,17 +47,24 @@ public sealed class TransportVolumeMetric(IWarehouse warehouse, IWarehouseProvid
             reader => new Row(reader.GetString(0).Trim(), reader.IsDBNull(1) ? null : reader.GetString(1), (int)reader.GetInt64(2), reader.GetDecimal(3)),
             cancellationToken);
 
+        string firstText = first.ToString();
         List<TransportVolumePoint> points = rows
+            .Where(r => count > 1 || r.Period == firstText)
             .GroupBy(r => r.Period)
             .Select(g => new TransportVolumePoint(ApPeriod.TryParse(g.Key, out ApPeriod p) ? p : endPeriod, g.Sum(r => r.Transports), g.Sum(r => r.LoadedMiles)))
             .OrderBy(p => (p.Period.Year * 12) + p.Period.Month)
             .ToList();
 
         string last = endPeriod.ToString();
+        string prior = endPeriod.AddMonths(-1).ToString();
+        Dictionary<string, int> priorByGroup = rows
+            .Where(r => r.Period == prior)
+            .GroupBy(r => NetCashBreakdownMetric.GroupKey(r.LevelOfService))
+            .ToDictionary(g => g.Key, g => g.Sum(r => r.Transports), StringComparer.Ordinal);
         List<TransportVolumeGroup> groups = rows
             .Where(r => r.Period == last)
             .GroupBy(r => NetCashBreakdownMetric.GroupKey(r.LevelOfService))
-            .Select(g => new TransportVolumeGroup(g.Key, NetCashBreakdownMetric.GroupName(g.Key, g.First().LevelOfService), NetCashBreakdownMetric.IsAir(g.Key), g.Sum(r => r.Transports)))
+            .Select(g => new TransportVolumeGroup(g.Key, NetCashBreakdownMetric.GroupName(g.Key, g.First().LevelOfService), NetCashBreakdownMetric.IsAir(g.Key), g.Sum(r => r.Transports), priorByGroup.GetValueOrDefault(g.Key)))
             .OrderByDescending(g => g.Transports)
             .ThenBy(g => g.Name, StringComparer.Ordinal)
             .ToList();

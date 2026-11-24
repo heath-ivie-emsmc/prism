@@ -27,6 +27,12 @@ public enum FindingBasis
 {
     PostedCash,
     ExpectedEffect,
+
+    /// <summary>
+    /// Another cut of the same posted change (by Reporting Division when the change is already explained by aircraft type). It is true on its own, but it overlaps a
+    /// Driver, so it is shown beside the Drivers and never added to them.
+    /// </summary>
+    AlternativeCut,
 }
 
 /// <summary>
@@ -61,3 +67,30 @@ public sealed record VolumeFinding(FindingLabel Label, decimal Impact, decimal T
 /// </summary>
 public sealed record PayerMixFinding(FindingLabel Label, decimal Impact, string PayerKey, string PayerName, decimal ShareFrom, decimal ShareTo)
     : Finding(Label, FindingBasis.ExpectedEffect, Impact);
+
+/// <summary>
+/// Where the transports with cash posted moved between aircraft types (or levels of service) or between Reporting Divisions, valued at what each one earned last month.
+/// <paramref name="Impact"/> is the mix effect on posted cash: the sum over segments of (transports now minus last month's transports scaled to this month's total) times that
+/// segment's cash per transport last month. <paramref name="SegmentKey"/> is the segment with the largest effect and <paramref name="ShareFrom"/> to <paramref name="ShareTo"/> its
+/// share of the transports with cash posted (0 to 1). <paramref name="SegmentRate"/> and <paramref name="AverageRate"/> are its cash per transport last month and the average of all
+/// segments. An aircraft-mix Finding is a Driver. A base-mix Finding is a Driver only when no aircraft mix explains the change, and is otherwise shown beside the Drivers.
+/// </summary>
+public abstract record SegmentMixFinding(
+    FindingLabel Label,
+    FindingBasis Basis,
+    decimal Impact,
+    string SegmentKey,
+    string SegmentName,
+    decimal ShareFrom,
+    decimal ShareTo,
+    decimal SegmentRate,
+    decimal AverageRate)
+    : Finding(Label, Basis, Impact);
+
+/// <summary>Transports moved between aircraft types (air) or levels of service (ground).</summary>
+public sealed record AircraftMixFinding(FindingLabel Label, decimal Impact, string SegmentKey, string SegmentName, decimal ShareFrom, decimal ShareTo, decimal SegmentRate, decimal AverageRate)
+    : SegmentMixFinding(Label, FindingBasis.PostedCash, Impact, SegmentKey, SegmentName, ShareFrom, ShareTo, SegmentRate, AverageRate);
+
+/// <summary>Transports moved between Reporting Divisions. <see cref="Finding.Basis"/> says whether it is a Driver or shown beside them.</summary>
+public sealed record BaseMixFinding(FindingLabel Label, FindingBasis Basis, decimal Impact, string SegmentKey, string SegmentName, decimal ShareFrom, decimal ShareTo, decimal SegmentRate, decimal AverageRate)
+    : SegmentMixFinding(Label, Basis, Impact, SegmentKey, SegmentName, ShareFrom, ShareTo, SegmentRate, AverageRate);

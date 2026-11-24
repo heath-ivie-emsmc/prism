@@ -1,6 +1,6 @@
 import { expect, test } from './fixtures';
 import type { Page } from '@playwright/test';
-import { axeViolations, chooseNetCashView, expandHelp, layoutErrors, openDashboard, openDashboardWithNotice, openMetricView, openMetricViewNotFound, openNeedsAttention, openPayerDetail, openPayerMixPage, openSavedViews, openView } from './support';
+import { axeViolations, chooseNetCashView, expandHelp, layoutErrors, openDashboard, openDashboardWithNotice, openDashboardHelp, openViewHelp, openMetricView, openMetricViewNotFound, openNeedsAttention, openPayerDetail, openPayerMixPage, openProjection, openSavedViews, openTransportsFullScreen, openView, SIX_METRICS, openMetricViewGroundOnly, openPaletteUnderGround, openSixMetricView, CONTRIBUTION_METRICS, openInsightNewKinds } from './support';
 
 /** WCAG 2.2 AA beyond the static page: other states, other pages, user settings. Every test also gates on axe. */
 test.describe('accessibility', () => {
@@ -95,7 +95,7 @@ test.describe('accessibility', () => {
 
     await expect(page.getByText("We can't load the projection right now. Try again in a moment.", { exact: true })).toBeVisible();
     await expect(page.getByText('{{')).toHaveCount(0);
-    expect(asked[0]).toBe('?endPeriod=202610&serviceLine=air');
+    expect(asked[0]).toBe('?endPeriod=202610&serviceLine=air&horizon=3');
     await expect(page.getByText('Expected, next 3 months')).toBeHidden();
     expect(await axeViolations(page)).toEqual([]);
   });
@@ -256,12 +256,12 @@ test.describe('accessibility', () => {
     test('the table has a caption, scoped headers and a focusable scroll region, and every status and deadline is in words', async ({ page }) => {
       await openNeedsAttention(page, 'check=needs_attention&period=202610&line=air&group=fixed-wing');
 
-      await expect(page.locator('app-needs-attention table caption')).toHaveCount(1);
-      expect(await page.locator('app-needs-attention thead th').evaluateAll((els) => els.map((e) => e.getAttribute('scope')))).toEqual(Array(7).fill('col'));
-      await expect(page.locator('app-needs-attention tbody th[scope="row"]')).toHaveCount(4);
+      await expect(page.locator('app-needs-attention .claims table caption')).toHaveCount(1);
+      expect(await page.locator('app-needs-attention .claims thead th').evaluateAll((els) => els.map((e) => e.getAttribute('scope')))).toEqual(Array(7).fill('col'));
+      await expect(page.locator('app-needs-attention .claims tbody th[scope="row"]')).toHaveCount(4);
       await expect(page.locator('app-needs-attention [role="region"]')).toHaveAttribute('tabindex', '0');
-      await expect(page.locator('app-needs-attention tbody')).toContainText('On hold');
-      await expect(page.locator('app-needs-attention tbody')).toContainText('Overdue by 3 days');
+      await expect(page.locator('app-needs-attention .claims tbody')).toContainText('On hold');
+      await expect(page.locator('app-needs-attention .claims tbody')).toContainText('Overdue by 3 days');
     });
 
     test('ticking claims is announced with the count', async ({ page }) => {
@@ -443,9 +443,20 @@ const TRUST_STATES: { name: string; open: (p: Page) => Promise<void> }[] = [
       await expandHelp(p);
     },
   },
+  { name: 'dashboard, card help open', open: (p) => openDashboardHelp(p) },
+  { name: 'saved view, widget help open', open: (p) => openViewHelp(p) },
   { name: 'dashboard, update notice', open: (p) => openDashboardWithNotice(p) },
   { name: 'metric view', open: (p) => openMetricView(p) },
   { name: 'metric view, not found', open: (p) => openMetricViewNotFound(p) },
+  ...SIX_METRICS.map((m) => ({ name: `metric view, ${m.name}`, open: (p: Page) => openMetricView(p, m.key) })),
+  { name: 'metric view, air-only Metric under Ground only', open: (p: Page) => openMetricViewGroundOnly(p) },
+  { name: 'saved view, the six new Metrics (charts)', open: (p: Page) => openSixMetricView(p, 'a') },
+  { name: 'saved view, the six new Metrics (tables and tiles)', open: (p: Page) => openSixMetricView(p, 'b') },
+  ...CONTRIBUTION_METRICS.map((m) => ({ name: `metric view, ${m.name}`, open: (p: Page) => openMetricView(p, m.key) })),
+  { name: 'metric view, air-only contribution under Ground only', open: (p: Page) => openMetricViewGroundOnly(p, 'cash_contribution_by_aircraft') },
+  { name: 'saved view, the contribution Metrics', open: (p: Page) => openSixMetricView(p, 'c') },
+  { name: 'payer mix, newer insight card kinds', open: (p: Page) => openInsightNewKinds(p) },
+  { name: 'palette, air-only Metrics under Ground only', open: (p: Page) => openPaletteUnderGround(p) },
 ];
 
 test.describe('accessibility: trust cues and the breakdown page', () => {
@@ -532,5 +543,66 @@ test.describe('accessibility: trust cues and the breakdown page', () => {
     await expect(page.locator('app-data-updated-notice [role="status"]')).toHaveAttribute('aria-live', 'polite');
     await expect(page.locator('app-data-updated-notice [role="alert"]')).toHaveCount(0);
     await expect(page.locator('app-data-updated-notice').getByRole('button', { name: 'Update view' })).toBeVisible();
+  });
+
+  test.describe('figures from the metric catalog', () => {
+    test('the projection is a captioned table with scoped headers and a focusable, named scroll region, and a calm message when it fails', async ({ page }) => {
+      await openProjection(page);
+
+      await expect(page.locator('app-projection-panel table caption')).toHaveCount(1);
+      expect(await page.locator('app-projection-panel thead th').evaluateAll((els) => els.map((e) => e.getAttribute('scope')))).toEqual(Array(4).fill('col'));
+      await expect(page.locator('app-projection-panel tbody th[scope="row"]')).toHaveCount(9);
+      await expect(page.locator('app-projection-panel .panel__table-wrap')).toHaveAttribute('tabindex', '0');
+      await expect(page.locator('app-projection-panel .panel__table-wrap')).toHaveAccessibleName('Projection by month');
+      await expect(page.locator('app-projection-panel [role="radiogroup"]')).toHaveAccessibleName('Months to project');
+      // Not a chart, so there is nothing to describe: the figures are text and no stacked bar stands for the shares.
+      await expect(page.locator('app-projection-panel [role="img"], app-projection-panel canvas')).toHaveCount(0);
+      expect(await axeViolations(page, 'app-projection-panel')).toEqual([]);
+
+      await page.route(/net-collections\/projection/, (route) => route.fulfill({ status: 503, json: { title: 'x' } }));
+      await page.locator('app-projection-panel').getByRole('radio', { name: '2 months' }).click();
+      await expect(page.locator('app-projection-panel app-load-problem')).toBeVisible();
+      expect(await axeViolations(page, 'app-projection-panel')).toEqual([]);
+    });
+
+    test('the Transports split has a caption, scoped headers and states its change with a sign, not only a colour', async ({ page }) => {
+      await openTransportsFullScreen(page);
+      const table = page.locator('app-kpi-card .split table');
+
+      await expect(table.locator('caption')).toContainText('Transports by aircraft type or level of service');
+      expect(await table.locator('thead th').evaluateAll((els) => els.map((e) => e.getAttribute('scope')))).toEqual(Array(5).fill('col'));
+      await expect(table.locator('tbody th[scope="row"]')).toHaveCount(2);
+      await expect(page.locator('app-kpi-card .split')).toHaveAttribute('role', 'region');
+      await expect(page.locator('app-kpi-card .split')).toHaveAccessibleName('Transports by aircraft type or level of service');
+      expect(await axeViolations(page)).toEqual([]);
+    });
+
+    test('the claims summary has named tables, scoped headers and headings that do not skip', async ({ page }) => {
+      await openNeedsAttention(page);
+      const summary = page.locator('app-attention-summary');
+
+      await expect(summary.locator('table')).toHaveCount(3);
+      for (const [i, name] of ['Top denial reasons', 'Claim categories', 'Filing deadlines (estimated)'].entries()) {
+        await expect(summary.locator('table').nth(i)).toHaveAccessibleName(name);
+      }
+      expect(await summary.locator('thead th').evaluateAll((els) => els.every((e) => e.getAttribute('scope') === 'col'))).toBe(true);
+      expect(await summary.locator('tbody th').evaluateAll((els) => els.every((e) => e.getAttribute('scope') === 'row'))).toBe(true);
+      expect(await axeViolations(page, 'app-attention-summary')).toEqual([]);
+    });
+
+    test('payer timing and cash per transport tables in a view are named regions with scoped headers', async ({ page }) => {
+      await openMetricView(page, 'payment_age');
+
+      const regions = page.locator('app-metric-widget [role="region"]');
+      await expect(regions).toHaveCount(2);
+      await expect(regions.nth(1)).toHaveAccessibleName('Payer timing: typical months to payment and share of cash by age band');
+      await expect(regions.nth(1)).toHaveAttribute('tabindex', '0');
+      expect(await page.locator('app-metric-widget thead th').evaluateAll((els) => els.every((e) => e.getAttribute('scope') === 'col'))).toBe(true);
+      expect(await axeViolations(page)).toEqual([]);
+
+      await openMetricView(page, 'cash_per_transport_by_payer');
+      await expect(page.locator('app-metric-widget .widget__foot').first()).toContainText('cash posted through');
+      expect(await axeViolations(page)).toEqual([]);
+    });
   });
 });

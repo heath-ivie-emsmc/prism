@@ -67,7 +67,7 @@ const UNIT_LABELS: Readonly<Record<string, string>> = { USD: 'US dollars', perce
       @if (moving()) {
         <ems-chip state="info" icon="open_with">Moving</ems-chip>
       }
-      <app-metric-widget [widget]="shownWidget()" [metric]="metric()" [editing]="editing()" (status)="status.emit($event)" />
+      <app-metric-widget [widget]="shownWidget()" [metric]="metric()" [editing]="editing()" help="compact" (status)="status.emit($event)" />
     </app-data-frame>
   `,
   styles: `

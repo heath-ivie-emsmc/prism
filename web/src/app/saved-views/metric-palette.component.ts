@@ -1,11 +1,13 @@
 import { CdkDrag, CdkDragHandle, CdkDropList } from '@angular/cdk/drag-drop';
 import { ChangeDetectionStrategy, Component, computed, input, output, signal } from '@angular/core';
 import { EmsButtonDirective, EmsChipComponent, EmsIconComponent } from '@ems-management-consultants/ui';
+import { AppliesTo, LineSelection, appliesToText, coverageReason, metricAppliesTo } from '../metrics/shared/applies-to';
 import { CatalogDto, CatalogMetricDto } from './layout.model';
 import { LOADABLE_METRICS } from './widget-data.service';
 
 const MAX_QUERY = 40;
-const DEFAULT_OPEN_LIMIT = 12;
+/** With this many Metrics or fewer every category starts open, so no Add button is hidden behind a collapsed heading. More than that and only the first opens. The catalog has grown past 12. */
+const DEFAULT_OPEN_LIMIT = 24;
 
 interface Group {
   readonly key: string;
@@ -48,24 +50,32 @@ interface Group {
           @if (isOpen(group.key)) {
             <ul [id]="'palette-' + group.key" class="palette__list">
               @for (metric of group.metrics; track metric.key) {
-                <li class="palette__item" [class.palette__item--planned]="!canPlace(metric)" cdkDrag [cdkDragData]="metric" [cdkDragDisabled]="!dragEnabled() || !canPlace(metric) || !canAdd()" cdkDragPreviewContainer="parent" (cdkDragMoved)="dragMoved.emit({ metric, point: $event.pointerPosition })" (cdkDragEnded)="dragEnded.emit()">
-                  @if (dragEnabled() && canPlace(metric)) {
+                <li class="palette__item" [class.palette__item--planned]="!canPlace(metric) || !!lineReason(metric)" cdkDrag [cdkDragData]="metric" [cdkDragDisabled]="!dragEnabled() || !canPlace(metric) || !canAdd() || !!lineReason(metric)" cdkDragPreviewContainer="parent" (cdkDragMoved)="dragMoved.emit({ metric, point: $event.pointerPosition })" (cdkDragEnded)="dragEnded.emit()">
+                  @if (dragEnabled() && canPlace(metric) && !lineReason(metric)) {
                     <span class="palette__grip" cdkDragHandle aria-hidden="true"><ems-icon name="drag_indicator" size="sm" /></span>
                   }
                   <div class="palette__text">
                     <span class="palette__name">{{ metric.name }}</span>
+                    @if (placedText(metric); as placed) {
+                      <ems-chip class="palette__placed" state="success" size="sm" icon="check">{{ placed }}</ems-chip>
+                    }
                     <span class="palette__desc">{{ metric.description }}</span>
                     @if (!canPlace(metric)) {
                       <ems-chip state="secondary" size="sm" icon="schedule">Coming soon</ems-chip>
+                    } @else {
+                      <span class="palette__scope" [attr.data-applies-to]="appliesTo(metric)">{{ scopeText(metric) }}</span>
+                      @if (lineReason(metric); as reason) {
+                        <span class="palette__reason" [id]="'line-reason-' + metric.key">{{ reason }}</span>
+                      }
                     }
                   </div>
                   <button
                     emsButton="raised"
                     type="button"
                     class="palette__add"
-                    [attr.aria-label]="'Add ' + metric.name + ' to view'"
-                    [attr.aria-disabled]="!canPlace(metric) || !canAdd() ? 'true' : null"
-                    [attr.aria-describedby]="!canPlace(metric) ? 'planned-reason' : null"
+                    [attr.aria-label]="'Add ' + metric.name + ' to view' + (placedText(metric) ? ' again. ' + placedText(metric) : '')"
+                    [attr.aria-disabled]="!canPlace(metric) || !canAdd() || lineReason(metric) ? 'true' : null"
+                    [attr.aria-describedby]="!canPlace(metric) ? 'planned-reason' : lineReason(metric) ? 'line-reason-' + metric.key : null"
                     (click)="press(metric)"
                   >
                     Add
@@ -165,6 +175,16 @@ interface Group {
       font-weight: 600;
       overflow-wrap: anywhere;
     }
+    .palette__scope,
+    .palette__reason {
+      font-size: var(--ems-font-size-small);
+      line-height: var(--ems-line-height-small);
+      color: var(--ems-text-muted);
+    }
+    .palette__reason {
+      font-weight: 600;
+      color: var(--ems-text-default);
+    }
     .palette__desc {
       font-size: var(--ems-font-size-small);
       line-height: var(--ems-line-height-small);
@@ -205,9 +225,14 @@ export class MetricPaletteComponent {
   readonly canAdd = input(true);
   /** Pointer dragging works only where the grid has room (grid mode). Add works everywhere. */
   readonly dragEnabled = input(false);
+  /** The page's Service Line. An air-only Metric is listed but cannot be added under Ground only, and the reverse. */
+  readonly serviceLine = input<LineSelection>('both');
+
+  /** How many Widgets of each Metric key the view already holds. A Metric already there still has an Add button, with a check mark beside its name. */
+  readonly placed = input<ReadonlyMap<string, number>>(new Map());
 
   readonly add = output<CatalogMetricDto>();
-  readonly blocked = output<{ metric: CatalogMetricDto; reason: 'planned' | 'full' }>();
+  readonly blocked = output<{ metric: CatalogMetricDto; reason: 'planned' | 'full' | 'line' }>();
   readonly searched = output<{ count: number; query: string }>();
   /** Where a metric being dragged is, so the grid can show where it would land. */
   readonly dragMoved = output<{ metric: CatalogMetricDto; point: { x: number; y: number } }>();
@@ -232,6 +257,29 @@ export class MetricPaletteComponent {
 
   protected canPlace(metric: CatalogMetricDto): boolean {
     return metric.status === 'available' && metric.placeable && LOADABLE_METRICS.includes(metric.key);
+  }
+
+  /** "On this view" or "On this view (2)", or null when the Metric is not on the view. Visible text, so it does not rely on the icon. */
+  protected placedText(metric: CatalogMetricDto): string | null {
+    const count = this.placed().get(metric.key) ?? 0;
+    if (count === 0) {
+      return null;
+    }
+    return count === 1 ? 'On this view' : `On this view (${count})`;
+  }
+
+  protected appliesTo(metric: CatalogMetricDto): AppliesTo {
+    return metricAppliesTo(metric);
+  }
+
+  /** "Air only", "Ground only" or "Air and ground": every Metric names its scope in the list. */
+  protected scopeText(metric: CatalogMetricDto): string {
+    return appliesToText(metricAppliesTo(metric));
+  }
+
+  /** Why the Metric cannot be added under the page's Service Line, or null. Visible text, so it is not only a tooltip. */
+  protected lineReason(metric: CatalogMetricDto): string | null {
+    return coverageReason(metricAppliesTo(metric), this.serviceLine());
   }
 
   protected isOpen(key: string): boolean {
@@ -267,6 +315,8 @@ export class MetricPaletteComponent {
   protected press(metric: CatalogMetricDto): void {
     if (!this.canPlace(metric)) {
       this.blocked.emit({ metric, reason: 'planned' });
+    } else if (this.lineReason(metric)) {
+      this.blocked.emit({ metric, reason: 'line' });
     } else if (!this.canAdd()) {
       this.blocked.emit({ metric, reason: 'full' });
     } else {

@@ -131,8 +131,14 @@ const MODE_LABEL: Readonly<Record<string, string>> = {
     }
     .shell__logo {
       display: block;
-      height: 2.5rem;
+      height: 3.5rem;
       width: auto;
+    }
+    /* A phone keeps the logo beside the tabs and the profile menu, so it stays at the smaller size. */
+    @media (max-width: 37.5rem) {
+      .shell__logo {
+        height: 2.5rem;
+      }
     }
     .shell__brand-name {
       font-weight: var(--ems-font-weight-heavy);

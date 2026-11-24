@@ -1,3 +1,4 @@
+using Prism.Testing.Common;
 using Prism.Application.Warehouse;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -19,7 +20,7 @@ public sealed class ProviderDivisionDirectoryTests(PostgresFixture postgres) : I
         await SeedLock.WaitAsync(ct);
         try
         {
-            await using var admin = new NpgsqlConnection(postgres.ConnectionString);
+            await using var admin = new NpgsqlConnection(TestDatabaseGuard.Assert(postgres.ConnectionString));
             await admin.OpenAsync(ct);
             await using var seed = new NpgsqlCommand(
                 """

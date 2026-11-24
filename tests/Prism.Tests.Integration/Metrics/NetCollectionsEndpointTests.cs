@@ -272,6 +272,135 @@ public sealed class NetCollectionsEndpointTests : IDisposable
     }
 
     [Fact]
+    public async Task Payment_age_adds_the_typical_age_and_the_age_bands_per_payer_group()
+    {
+        (_, JsonElement body) = await GetAsync($"{Series}/payment-age?period=202610");
+
+        JsonElement payer = Assert.Single(body.GetProperty("payers").EnumerateArray());
+        Assert.Equal("commercial", payer.GetProperty("payerKey").GetString());
+        Assert.Equal(6, payer.GetProperty("typicalAgeMonths").GetInt32());
+        Assert.Equal(["0-1", "2-3", "4-6", "7-12", "13+"], payer.GetProperty("bands").EnumerateArray().Select(b => b.GetProperty("key").GetString()));
+        Assert.Equal([0m, 0m, 1m, 0m, 0m], payer.GetProperty("bands").EnumerateArray().Select(b => b.GetProperty("share").GetDecimal()));
+        Assert.Equal(JsonValueKind.Null, payer.GetProperty("bands")[4].GetProperty("toMonths").ValueKind);
+        Assert.Equal(1, body.GetProperty("cells").GetArrayLength());
+    }
+
+    [Fact]
+    public async Task Cash_per_transport_carries_the_overall_figure_the_difference_from_it_and_the_cohort_months()
+    {
+        (_, JsonElement body) = await GetAsync($"{Series}/cash-per-transport?period=202610");
+
+        // Overall is 3,000 over 10 transports: 300 a transport. Commercial is 2,000 over 3: 666.67, so 366.67 above, 122.2 percent.
+        Assert.Equal(300m, body.GetProperty("overall").GetProperty("cashPerTransport").GetDecimal());
+        JsonElement commercial = body.GetProperty("payers")[0];
+        Assert.Equal(2000m / 3 - 300m, commercial.GetProperty("differenceFromOverall").GetDecimal());
+        Assert.Equal(122.2m, commercial.GetProperty("percentFromOverall").GetDecimal());
+        JsonElement va = body.GetProperty("payers")[1];
+        Assert.Equal(JsonValueKind.Null, va.GetProperty("differenceFromOverall").ValueKind);
+        Assert.Equal(JsonValueKind.Null, va.GetProperty("percentFromOverall").ValueKind);
+        JsonElement cohorts = body.GetProperty("cohorts");
+        Assert.Equal(("202505", "202604", "202610"), (cohorts.GetProperty("firstServiceMonth").GetString(), cohorts.GetProperty("lastServiceMonth").GetString(), cohorts.GetProperty("cashThroughPeriod").GetString()));
+    }
+
+    [Fact]
+    public async Task A_zero_overall_figure_gives_a_difference_but_no_percent()
+    {
+        cashPerTransport.OverallTransports = 0;
+
+        (_, JsonElement body) = await GetAsync($"{Series}/cash-per-transport?period=202610");
+
+        JsonElement commercial = body.GetProperty("payers")[0];
+        Assert.Equal(JsonValueKind.Null, body.GetProperty("overall").GetProperty("cashPerTransport").ValueKind);
+        Assert.Equal(JsonValueKind.Null, commercial.GetProperty("differenceFromOverall").ValueKind);
+        Assert.Equal(JsonValueKind.Null, commercial.GetProperty("percentFromOverall").ValueKind);
+    }
+
+    [Fact]
+    public async Task Transport_groups_carry_the_prior_month_the_change_and_the_percent_with_null_when_the_prior_month_had_none()
+    {
+        (_, JsonElement body) = await GetAsync($"{Series}/transports?endPeriod=202610");
+
+        JsonElement rotor = body.GetProperty("groups")[0];
+        Assert.Equal((10, -2, -20.0m), (rotor.GetProperty("priorTransports").GetInt32(), rotor.GetProperty("changeTransports").GetInt32(), rotor.GetProperty("changePercent").GetDecimal()));
+        JsonElement fixedWing = body.GetProperty("groups")[1];
+        Assert.Equal((0, 4), (fixedWing.GetProperty("priorTransports").GetInt32(), fixedWing.GetProperty("changeTransports").GetInt32()));
+        Assert.Equal(JsonValueKind.Null, fixedWing.GetProperty("changePercent").ValueKind);
+    }
+
+    [Fact]
+    public async Task The_projection_adds_change_from_previous_a_running_total_and_the_horizon_total()
+    {
+        (_, JsonElement body) = await GetAsync($"{Series}/projection?endPeriod=202610");
+
+        JsonElement months = body.GetProperty("months");
+        // The latest actual is 6,000 (October); each projected month is 1,200 with the range 1,000 to 1,400.
+        Assert.Equal("202610", body.GetProperty("latestActual").GetProperty("period").GetString());
+        Assert.Equal(6000m, body.GetProperty("latestActual").GetProperty("value").GetDecimal());
+        Assert.Equal(-4800m, months[0].GetProperty("changeFromPrevious").GetProperty("amount").GetDecimal());
+        Assert.Equal(-80.0m, months[0].GetProperty("changeFromPrevious").GetProperty("percent").GetDecimal());
+        Assert.Equal(0m, months[1].GetProperty("changeFromPrevious").GetProperty("amount").GetDecimal());
+        Assert.Equal([1200m, 2400m, 3600m], months.EnumerateArray().Select(m => m.GetProperty("cumulative").GetProperty("value").GetDecimal()));
+        Assert.Equal([1000m, 2000m, 3000m], months.EnumerateArray().Select(m => m.GetProperty("cumulative").GetProperty("low").GetDecimal()));
+        Assert.Equal([1400m, 2800m, 4200m], months.EnumerateArray().Select(m => m.GetProperty("cumulative").GetProperty("high").GetDecimal()));
+        JsonElement horizon = body.GetProperty("horizon");
+        Assert.Equal((3600m, 3000m, 4200m, 3), (horizon.GetProperty("value").GetDecimal(), horizon.GetProperty("low").GetDecimal(), horizon.GetProperty("high").GetDecimal(), horizon.GetProperty("months").GetInt32()));
+        Assert.Equal(3600m, body.GetProperty("total").GetDecimal());
+    }
+
+    [Fact]
+    public async Task The_projection_reports_the_two_components_and_their_shares_as_read_even_when_they_do_not_add_up_to_the_value()
+    {
+        (_, JsonElement body) = await GetAsync($"{Series}/projection?endPeriod=202610");
+
+        // Each month: value 1,200, existing trips 700, future trips 600 (1,300 together: the response does not force them to match).
+        JsonElement month = body.GetProperty("months")[0];
+        Assert.Equal((700m, 600m, 0.5833m, 0.5m), (month.GetProperty("fromExistingTrips").GetDecimal(), month.GetProperty("fromFutureTrips").GetDecimal(), month.GetProperty("existingTripsShare").GetDecimal(), month.GetProperty("futureTripsShare").GetDecimal()));
+        JsonElement horizon = body.GetProperty("horizon");
+        Assert.Equal((2100m, 1800m, 0.5833m, 0.5m), (horizon.GetProperty("fromExistingTrips").GetDecimal(), horizon.GetProperty("fromFutureTrips").GetDecimal(), horizon.GetProperty("existingTripsShare").GetDecimal(), horizon.GetProperty("futureTripsShare").GetDecimal()));
+        // The range rule is unchanged: running sums of each month's low and high.
+        Assert.Equal(3000m, body.GetProperty("low").GetDecimal());
+        Assert.Equal(4200m, body.GetProperty("high").GetDecimal());
+    }
+
+    [Fact]
+    public async Task The_projection_without_an_actual_month_has_no_first_change_and_no_latest_actual()
+    {
+        metric.NoActualCash = true;
+
+        (_, JsonElement body) = await GetAsync($"{Series}/projection?endPeriod=202610");
+
+        Assert.Equal(JsonValueKind.Null, body.GetProperty("latestActual").ValueKind);
+        Assert.Equal(JsonValueKind.Null, body.GetProperty("months")[0].GetProperty("changeFromPrevious").ValueKind);
+        Assert.Equal(0m, body.GetProperty("months")[1].GetProperty("changeFromPrevious").GetProperty("amount").GetDecimal());
+    }
+
+    [Fact]
+    public async Task A_shorter_horizon_returns_fewer_months_and_totals_only_those()
+    {
+        (HttpStatusCode status, JsonElement body) = await GetAsync($"{Series}/projection?endPeriod=202610&horizon=2");
+
+        Assert.Equal(HttpStatusCode.OK, status);
+        Assert.Equal(2, body.GetProperty("months").GetArrayLength());
+        Assert.Equal(2, body.GetProperty("horizon").GetProperty("months").GetInt32());
+        Assert.Equal(2400m, body.GetProperty("horizon").GetProperty("value").GetDecimal());
+        Assert.Equal(2400m, body.GetProperty("total").GetDecimal());
+    }
+
+    [Theory]
+    [InlineData("0")]
+    [InlineData("4")]
+    [InlineData("-1")]
+    [InlineData("99999999")]
+    public async Task A_projection_horizon_outside_one_to_three_is_a_400_that_does_not_echo_it_and_queries_nothing(string horizon)
+    {
+        (HttpStatusCode status, JsonElement body) = await GetAsync($"{Series}/projection?horizon={horizon}");
+
+        Assert.Equal(HttpStatusCode.BadRequest, status);
+        Assert.Equal("horizon must be between 1 and 3.", body.GetProperty("errors").GetProperty("horizon")[0].GetString());
+        Assert.Equal(0, projection.Calls);
+    }
+
+    [Fact]
     public async Task The_projection_defaults_to_all_service_lines_after_the_newest_period()
     {
         await GetAsync($"{Series}/projection");
@@ -1129,6 +1258,7 @@ public sealed class NetCollectionsEndpointTests : IDisposable
         Assert.Equal(
             [
                 (100, DataThroughSource.CashForecast),
+                (100, DataThroughSource.NetCollectionsKpi),
                 (100, DataThroughSource.CleanClaims),
                 (100, DataThroughSource.TripDetail),
                 (100, DataThroughSource.NetCollectionsKpi),
@@ -1317,7 +1447,7 @@ public sealed class NetCollectionsEndpointTests : IDisposable
 
         public Task<DateOnly?> GetAsync(int providerId, IReadOnlyList<DataThroughSource> sources, CancellationToken cancellationToken)
         {
-            Calls.Add((providerId, Assert.Single(sources)));
+            Calls.AddRange(sources.Select(source => (providerId, source)));
             return Task.FromResult(Date);
         }
     }
@@ -1331,6 +1461,8 @@ public sealed class NetCollectionsEndpointTests : IDisposable
         public int Calls { get; private set; }
 
         public int SeriesCalls { get; private set; }
+
+        public bool NoActualCash { get; set; }
 
         public (int ProviderId, ApPeriod End, int Months, ServiceLineFilter ServiceLine) LastSeriesCall { get; private set; }
 
@@ -1350,7 +1482,7 @@ public sealed class NetCollectionsEndpointTests : IDisposable
                 return Task.FromException<NetCollectionsSeries>(Failure);
             }
 
-            List<NetCollectionsPoint> points = Enumerable.Range(0, months).Select(i => new NetCollectionsPoint(endPeriod.AddMonths(-(months - 1 - i)), 1000m * (i + 1))).ToList();
+            List<NetCollectionsPoint> points = NoActualCash ? [] : Enumerable.Range(0, months).Select(i => new NetCollectionsPoint(endPeriod.AddMonths(-(months - 1 - i)), 1000m * (i + 1))).ToList();
             return Task.FromResult(new NetCollectionsSeries(INetCollectionsMetric.Definition, endPeriod, months, new DateOnly(2026, 11, 5), points));
         }
     }
@@ -1372,7 +1504,7 @@ public sealed class NetCollectionsEndpointTests : IDisposable
                 return Task.FromException<NetCashProjection>(Failure);
             }
 
-            List<NetCashProjectionMonth> months = Enumerable.Range(1, 3).Select(i => new NetCashProjectionMonth(afterPeriod.AddMonths(i), 1200m, 1000m, 1400m)).ToList();
+            List<NetCashProjectionMonth> months = Enumerable.Range(1, 3).Select(i => new NetCashProjectionMonth(afterPeriod.AddMonths(i), 1200m, 1000m, 1400m, 700m, 600m)).ToList();
             return Task.FromResult(new NetCashProjection(INetCashProjectionMetric.Definition, afterPeriod, serviceLine, new DateOnly(2026, 11, 5), months));
         }
     }
@@ -1500,6 +1632,8 @@ public sealed class NetCollectionsEndpointTests : IDisposable
 
     private sealed class FakeCashPerTransport : ICashPerTransportMetric
     {
+        public int OverallTransports { get; set; } = 10;
+
         public Exception? Failure { get; set; }
 
         public ReportingDivision? LastDivision { get; private set; }
@@ -1525,7 +1659,8 @@ public sealed class NetCollectionsEndpointTests : IDisposable
                 period.AddMonths(-6),
                 serviceLine,
                 groupKey,
-                [new PayerCashPerTransport("commercial", "Commercial", 3, 2000m), new PayerCashPerTransport("va", "VA", 0, 0m)]));
+                [new PayerCashPerTransport("commercial", "Commercial", 3, 2000m), new PayerCashPerTransport("va", "VA", 0, 0m)],
+                new OverallCashPerTransport(OverallTransports, 3000m)));
         }
     }
 
@@ -1618,7 +1753,7 @@ public sealed class NetCollectionsEndpointTests : IDisposable
                 serviceLine,
                 endPeriod.Month == 10,
                 points.Take(months - 1).Append(new TransportVolumePoint(endPeriod, 12, 345.5m)).ToList(),
-                [new TransportVolumeGroup("rotor-wing", "Rotor wing", true, 8), new TransportVolumeGroup("fixed-wing", "Fixed wing", true, 4)]));
+                [new TransportVolumeGroup("rotor-wing", "Rotor wing", true, 8, 10), new TransportVolumeGroup("fixed-wing", "Fixed wing", true, 4)]));
         }
     }
 

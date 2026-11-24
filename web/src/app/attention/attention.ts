@@ -1,7 +1,7 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { formatDate } from '../dashboard/dashboard-format';
 import { SegmentOption } from '../dashboard/segmented-control.component';
-import { AttentionClaimDto, AttentionCountDto } from './attention.service';
+import { AttentionClaimDto, AttentionCountDto, AttentionCountsDto } from './attention.service';
 
 const money = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' });
 
@@ -177,4 +177,41 @@ export function downloadFailureMessage(error: unknown): string {
   if (status === 429) return 'Too many downloads. Wait a minute, then try again.';
   if (status === 422) return 'More than 10,000 claims match, so they cannot be downloaded. Choose a single month, Service Line or aircraft type.';
   return "The claims couldn't be downloaded. Try again.";
+}
+
+/** What the summary above the list shows, all as text. */
+export interface SummaryView {
+  /** "3.2%", or null when the period has no claims. */
+  readonly deniedRate: string | null;
+  readonly reasons: readonly SummaryRow[];
+  readonly categories: readonly SummaryRow[];
+  readonly filingBands: readonly SummaryRow[];
+}
+
+export interface SummaryRow {
+  readonly key: string;
+  readonly name: string;
+  readonly count: string;
+  readonly balance: string;
+}
+
+/** How a count is written in the summary. */
+const countFormat = new Intl.NumberFormat('en-US');
+
+/** The row for every denial reason outside the top ten. */
+export const OTHER_REASONS_NAME = 'All other reasons';
+
+export const CATEGORY_OVERLAP_NOTE = 'A claim can be in more than one category, so these counts overlap and are not added together.';
+export const FILING_ESTIMATE_NOTE = 'These are estimates. The filing limits are a placeholder until the real limits are supplied.';
+
+/** The summary as text, or null when the response has none of it (an older server). Reason text is untrusted: it is bound as text and never as HTML. */
+export function toSummary(counts: AttentionCountsDto | null): SummaryView | null {
+  if (!counts) return null;
+  const row = (key: string, name: string, count: number, balance: number): SummaryRow => ({ key, name, count: countFormat.format(count), balance: formatMoney(balance) });
+  return {
+    deniedRate: counts.deniedRate === null || counts.deniedRate === undefined ? null : `${(counts.deniedRate * 100).toFixed(1)}%`,
+    reasons: (counts.reasons ?? []).map((r, i) => row(`${i}`, r.isOther ? OTHER_REASONS_NAME : r.reason, r.count, r.balanceDue)),
+    categories: (counts.categories ?? []).map((c) => row(c.key, c.name, c.count, c.balanceDue)),
+    filingBands: (counts.filingBands ?? []).map((b) => row(b.key, b.name, b.claims, b.balanceDue)),
+  };
 }

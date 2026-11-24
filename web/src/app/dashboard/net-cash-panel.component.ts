@@ -1,8 +1,7 @@
 import { ChangeDetectionStrategy, Component, computed, inject, input, output, signal } from '@angular/core';
 import { rxResource } from '@angular/core/rxjs-interop';
 import { of } from 'rxjs';
-import { EmsButtonDirective, EmsChipComponent, EmsIconComponent, EmsMessageComponent, EmsPickerOption, EmsSelectComponent } from '@ems-management-consultants/ui';
-import { FormControl, ReactiveFormsModule } from '@angular/forms';
+import { EmsChipComponent, EmsIconComponent, EmsMessageComponent } from '@ems-management-consultants/ui';
 import { RouterLink } from '@angular/router';
 import { ChartComponent, ChartOptionBuilder } from '../charts/chart.component';
 import { NetCashMonth, boundedMonths, changeFromPrior, formatExact, formatLabel, summarizeNetCash } from '../charts/net-cash';
@@ -14,6 +13,7 @@ import { DataFrameComponent } from '../shared/data-frame.component';
 import { DataFreshnessService } from '../shared/data-freshness.service';
 import { frameContext } from '../shared/fullscreen';
 import { LoadProblemComponent } from '../shared/load-problem.component';
+import { MetricHelpComponent } from '../shared/metric-help.component';
 import { SkeletonComponent } from '../shared/skeleton.component';
 import { apPeriodLabel } from './dashboard-format';
 import { SwitchComponent } from './switch.component';
@@ -22,10 +22,6 @@ import { SegmentOption, SegmentedControlComponent } from './segmented-control.co
 
 type ChartKind = 'line' | 'bar' | 'table';
 type Range = '6' | '12';
-type CallType = 'all' | 'interfacility' | 'scene';
-
-/** The warehouse view behind this panel has no call type or pickup location, so those filters are shown but off until it does. */
-const FILTER_NOT_AVAILABLE = 'Not available for this data yet';
 
 const CHART_KINDS: readonly SegmentOption<ChartKind>[] = [
   { value: 'line', label: 'Line chart', icon: 'show_chart' },
@@ -36,12 +32,6 @@ const RANGES: readonly SegmentOption<Range>[] = [
   { value: '6', label: 'Last 6 months' },
   { value: '12', label: 'Last 12 months' },
 ];
-const CALL_TYPES: readonly SegmentOption<CallType>[] = [
-  { value: 'all', label: 'All call types' },
-  { value: 'interfacility', label: 'Interfacility' },
-  { value: 'scene', label: 'Scene' },
-];
-const PICKUP_LOCATIONS: EmsPickerOption<string>[] = [{ value: 'all', label: 'All pickup locations' }];
 
 interface TableRow {
   readonly month: string;
@@ -54,7 +44,7 @@ interface TableRow {
 /** The large net cash panel: filters, the headline for the latest month, and the line, bar or table view of the months. */
 @Component({
   selector: 'app-net-cash-panel',
-  imports: [DataFrameComponent, SkeletonComponent, ChartComponent, EmsButtonDirective, LoadProblemComponent, EmsChipComponent, EmsIconComponent, EmsMessageComponent, EmsSelectComponent, ReactiveFormsModule, RouterLink, SegmentedControlComponent, SwitchComponent],
+  imports: [DataFrameComponent, SkeletonComponent, ChartComponent, LoadProblemComponent, EmsChipComponent, EmsIconComponent, EmsMessageComponent, MetricHelpComponent, RouterLink, SegmentedControlComponent, SwitchComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <app-data-frame heading="Net cash collected" [context]="context()" [dataThrough]="dataThrough()" [serviceLine]="frameLine()" [labels]="labels()">
@@ -62,8 +52,6 @@ interface TableRow {
       <div class="panel" [attr.aria-busy]="series.isLoading()">
       <div class="panel__filters">
         <app-segmented-control label="Date range" [options]="ranges" [(value)]="range" />
-        <app-segmented-control label="Call type" [options]="callTypes" [(value)]="callType" [disabled]="true" [title]="notAvailable" />
-        <ems-select class="panel__pickup" label="Pickup location" [options]="pickupLocations" [formControl]="pickup" [clearable]="false" [title]="notAvailable" />
         <app-switch class="panel__projection" label="Show 3-month projection" [(checked)]="showProjection" [disabled]="chartKind() === 'table'" />
       </div>
 
@@ -102,7 +90,7 @@ interface TableRow {
             <div class="panel__expected" [class.panel__expected--off]="!projected()" [attr.aria-hidden]="!projected()" [attr.inert]="projected() ? null : ''">
               <span class="panel__detail">Expected, next 3 months</span>
               <span class="panel__expected-amount">{{ expectedTotal() }}</span>
-              <span class="panel__detail">Likely {{ expectedRange() }}</span>
+              <span class="panel__detail">Forecast range {{ expectedRange() }}</span>
             </div>
           </div>
         }
@@ -142,6 +130,7 @@ interface TableRow {
       }
 
       <p class="panel__note">Cash is by the accounting period the payment was posted in, from the latest data load.</p>
+      <app-metric-help metric="net_collections" heading="Net cash collected" [compact]="true" [serviceLine]="frameLine()" [labels]="labels()" />
       </div>
     </app-data-frame>
   `,
@@ -168,9 +157,6 @@ interface TableRow {
       flex-wrap: wrap;
       align-items: flex-end;
       gap: 1rem;
-    }
-    .panel__pickup {
-      min-width: 14rem;
     }
     .panel__projection {
       margin-left: auto;
@@ -347,14 +333,9 @@ export class NetCashPanelComponent {
 
   protected readonly chartKinds = CHART_KINDS;
   protected readonly ranges = RANGES;
-  protected readonly callTypes = CALL_TYPES;
-  protected readonly pickupLocations = PICKUP_LOCATIONS;
-  protected readonly notAvailable = FILTER_NOT_AVAILABLE;
 
   protected readonly chartKind = signal<ChartKind>('line');
   protected readonly range = signal<Range>('6');
-  protected readonly callType = signal<CallType>('all');
-  protected readonly pickup = new FormControl<string>({ value: 'all', disabled: true }, { nonNullable: true });
 
   private readonly apiServiceLine = computed<'all' | 'air' | 'ground'>(() => {
     const line = this.serviceLine();

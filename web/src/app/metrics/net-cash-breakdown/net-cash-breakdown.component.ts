@@ -16,9 +16,10 @@ import { NetCashBreakdownDto } from './net-cash-breakdown.dto';
 import { NetCollectionsPeriodsDto } from '../net-collections/net-collections.dto';
 import { apPeriodEnd, apPeriodLabel, formatDate } from '../../dashboard/dashboard-format';
 import { monthName, percentChange, priorMonthName, summarizeBreakdown } from './net-cash-breakdown';
-import { BreakdownLine, emptyBreakdown, toBreakdown } from './net-cash-breakdown.model';
+import { BreakdownLine, breakdownTableTitle, emptyBreakdown, toBreakdown } from './net-cash-breakdown.model';
 
-const NOT_AVAILABLE = 'Not available for this data yet';
+/** The page has no picker of its own: the dashboard's choice arrives in the address and is applied. The control says so instead of offering a choice it cannot take. */
+const NOT_AVAILABLE = 'Set on the dashboard. This page follows that choice.';
 /** A change smaller than this is "steady": shown in neutral, not as good or bad news. */
 const STEADY_PERCENT = 5;
 
@@ -80,7 +81,7 @@ const percent = (value: number | null): string => (value === null ? '' : `${Math
         </div>
         <form class="page__filters" aria-label="Breakdown filters" (submit)="$event.preventDefault()">
           <ems-select class="page__select" label="Period" [options]="periods()" [formControl]="period" [clearable]="false" />
-          <ems-select class="page__select" [label]="locationLabel()" [options]="allLocations" [formControl]="location" [clearable]="false" [title]="notAvailable" />
+          <ems-select class="page__select" [label]="locationLabel()" [options]="allLocations()" [formControl]="location" [clearable]="false" [title]="notAvailable" />
         </form>
       </header>
 
@@ -157,7 +158,7 @@ const percent = (value: number | null): string => (value === null ? '' : `${Math
       </section>
 
       <section class="app-panel" aria-labelledby="rows-title">
-        <h2 id="rows-title">{{ data().terms.tableTitle }}, {{ periodLabel() }}</h2>
+        <h2 id="rows-title">{{ tableTitle() }}, {{ periodLabel() }}</h2>
         <div class="table-wrap" role="region" [attr.aria-labelledby]="'rows-title'" tabindex="0">
           <table class="table">
             <thead>
@@ -411,7 +412,7 @@ export class NetCashBreakdownComponent {
   private readonly router = inject(Router);
 
   protected readonly notAvailable = NOT_AVAILABLE;
-  protected readonly allLocations: EmsPickerOption<string>[] = [{ value: 'all', label: 'All locations' }];
+  protected readonly allLocations = computed<EmsPickerOption<string>[]>(() => [{ value: 'all', label: this.division() ? 'Chosen on the dashboard' : defaultLabels(this.line()).allReportingDivisions }]);
 
   protected readonly period = new FormControl<string>('', { nonNullable: true });
   protected readonly location = new FormControl<string>({ value: 'all', disabled: true }, { nonNullable: true });
@@ -477,6 +478,8 @@ export class NetCashBreakdownComponent {
   protected readonly empty = computed(() => this.breakdown.hasValue() && !this.failed() && this.data().groups.length === 0 && this.breakdown.value() !== null);
   /** The Provider's term for a Reporting Division, from the Labels for the Service Line, never typed here. */
   protected readonly locationLabel = computed(() => defaultLabels(this.line()).reportingDivision);
+  /** "By base location and aircraft": built from the Label, so a renamed Reporting Division renames the table. */
+  protected readonly tableTitle = computed(() => breakdownTableTitle(this.line(), this.locationLabel()));
   protected readonly summary = computed(() => summarizeBreakdown(this.data().groups));
 
   protected readonly crumbs = computed<EmsBreadcrumb[]>(() => [

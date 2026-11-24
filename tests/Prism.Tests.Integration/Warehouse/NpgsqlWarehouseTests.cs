@@ -1,3 +1,4 @@
+using Prism.Testing.Common;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 using Prism.Application.Warehouse;
@@ -17,7 +18,7 @@ public sealed class NpgsqlWarehouseTests(PostgresFixture postgres) : IClassFixtu
         await SeedLock.WaitAsync(ct);
         try
         {
-            await using var admin = new NpgsqlConnection(postgres.ConnectionString);
+            await using var admin = new NpgsqlConnection(TestDatabaseGuard.Assert(postgres.ConnectionString));
             await admin.OpenAsync(ct);
             await using var seed = new NpgsqlCommand(
                 """
@@ -36,6 +37,9 @@ public sealed class NpgsqlWarehouseTests(PostgresFixture postgres) : IClassFixtu
         var options = new PrismWarehouseOptions { ConnectionString = postgres.ConnectionString, CommandTimeoutSeconds = timeoutSeconds, MaxRows = maxRows };
         return new NpgsqlWarehouse(WarehouseDataSourceFactory.Create(options), Microsoft.Extensions.Options.Options.Create(options), logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<NpgsqlWarehouse>.Instance);
     }
+
+    // A query that runs for a very long time without any function the policy bans (pg_sleep is one): it is cancelled by the time limit, not finished.
+    private const string SlowSql = "SELECT count(*), @provider_id::int FROM generate_series(1, 100000000000)";
 
     private static WarehouseQuery Provider(string sql, int providerId, params (string, object?)[] more) =>
         new(sql, new[] { ("provider_id", (object?)providerId) }.Concat(more).ToDictionary(p => p.Item1, p => p.Item2));
@@ -80,13 +84,86 @@ public sealed class NpgsqlWarehouseTests(PostgresFixture postgres) : IClassFixtu
     }
 
     [Fact]
+    public async Task A_write_that_bypasses_the_policy_is_refused_by_the_server_in_the_read_only_transaction_even_without_the_session_default()
+    {
+        CancellationToken ct = TestContext.Current.CancellationToken;
+        await NewWarehouseAsync();
+        // A data source with NO read-only session default and NO policy: only the explicit read-only transaction stands between the statement and the table.
+        string raw = new NpgsqlConnectionStringBuilder(postgres.ConnectionString) { Pooling = true, Options = "" }.ConnectionString;
+        await using NpgsqlDataSource unprotected = new NpgsqlDataSourceBuilder(TestDatabaseGuard.Assert(raw)).Build();
+        var options = new PrismWarehouseOptions { ConnectionString = postgres.ConnectionString };
+        var warehouse = new NpgsqlWarehouse(unprotected, Microsoft.Extensions.Options.Options.Create(options), Microsoft.Extensions.Logging.Abstractions.NullLogger<NpgsqlWarehouse>.Instance);
+
+        // Prove the data source really would allow the write: a plain command on it succeeds against a scratch table.
+        await using (NpgsqlCommand probe = unprotected.CreateCommand("CREATE TABLE IF NOT EXISTS scratch_probe (a int)"))
+        {
+            await probe.ExecuteNonQueryAsync(ct);
+        }
+
+        foreach (string write in new[]
+        {
+            "INSERT INTO dw_payment VALUES (@provider_id, 'x', 1) RETURNING provider_id",
+            "DELETE FROM dw_payment WHERE provider_id = @provider_id RETURNING provider_id",
+            "WITH d AS (UPDATE dw_payment SET amount = 0 WHERE provider_id = @provider_id RETURNING provider_id) SELECT provider_id FROM d",
+            "CREATE TABLE should_not_exist AS SELECT @provider_id::int AS a",
+        })
+        {
+            PostgresException ex = await Assert.ThrowsAsync<PostgresException>(() => warehouse.QueryWithoutValidationAsync(Provider(write, 526), r => r.GetInt32(0), ct));
+            Assert.Equal(PostgresErrorCodes.ReadOnlySqlTransaction, ex.SqlState);
+        }
+
+        await using var admin = new NpgsqlConnection(TestDatabaseGuard.Assert(postgres.ConnectionString));
+        await admin.OpenAsync(ct);
+        await using var check = new NpgsqlCommand("SELECT (SELECT count(*) FROM dw_payment), (SELECT sum(amount) FROM dw_payment), to_regclass('should_not_exist') IS NULL", admin);
+        await using NpgsqlDataReader reader = await check.ExecuteReaderAsync(ct);
+        Assert.True(await reader.ReadAsync(ct));
+        Assert.Equal(3L, reader.GetInt64(0));
+        Assert.Equal(8127.5m, reader.GetDecimal(1));
+        Assert.True(reader.GetBoolean(2));
+    }
+
+    [Fact]
+    public async Task A_statement_that_turns_the_session_read_only_default_off_cannot_open_a_write_either()
+    {
+        CancellationToken ct = TestContext.Current.CancellationToken;
+        NpgsqlWarehouse warehouse = await NewWarehouseAsync();
+
+        // set_config would be refused by the policy, so this goes through the seam: the transaction was set read only first, and that cannot be undone inside it.
+        await Assert.ThrowsAsync<PostgresException>(() => warehouse.QueryWithoutValidationAsync(
+            Provider("SELECT set_config('transaction_read_only', 'off', false), set_config('default_transaction_read_only', 'off', false), @provider_id::int", 526), r => r.GetInt32(2), ct));
+        await using NpgsqlDataSource fresh = WarehouseDataSourceFactory.Create(new PrismWarehouseOptions { ConnectionString = postgres.ConnectionString });
+        await using NpgsqlCommand write = fresh.CreateCommand("INSERT INTO dw_payment VALUES (1, 'x', 1)");
+        PostgresException ex = await Assert.ThrowsAsync<PostgresException>(() => write.ExecuteNonQueryAsync(ct));
+        Assert.Equal(PostgresErrorCodes.ReadOnlySqlTransaction, ex.SqlState);
+    }
+
+    [Fact]
+    public async Task Every_read_runs_in_a_transaction_that_is_read_only_and_rolled_back()
+    {
+        NpgsqlWarehouse warehouse = await NewWarehouseAsync();
+
+        var rows = await warehouse.QueryAsync(
+            Provider("SELECT current_setting('transaction_read_only'), (SELECT count(*) FROM pg_stat_activity WHERE state = 'idle in transaction' AND application_name = 'prism-api'), @provider_id::int", 526),
+            r => (ReadOnly: r.GetString(0), Others: r.GetInt64(1)),
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal("on", Assert.Single(rows).ReadOnly);
+        // After the read the pooled connection is back with no transaction open (it was rolled back, not left idle in a transaction).
+        var after = await warehouse.QueryAsync(
+            Provider("SELECT (SELECT count(*) FROM pg_stat_activity WHERE state = 'idle in transaction' AND application_name = 'prism-api'), @provider_id::int", 526),
+            r => r.GetInt64(0),
+            TestContext.Current.CancellationToken);
+        Assert.Equal(0L, Assert.Single(after));
+    }
+
+    [Fact]
     public async Task A_write_query_is_refused_before_it_reaches_the_database()
     {
         NpgsqlWarehouse warehouse = await NewWarehouseAsync();
 
         await Assert.ThrowsAsync<WarehouseQueryRejectedException>(() => warehouse.QueryAsync(
             Provider("DELETE FROM dw_payment WHERE provider_id = @provider_id", 526), r => r.GetInt32(0), TestContext.Current.CancellationToken));
-        await using var admin = new NpgsqlConnection(postgres.ConnectionString);
+        await using var admin = new NpgsqlConnection(TestDatabaseGuard.Assert(postgres.ConnectionString));
         await admin.OpenAsync(TestContext.Current.CancellationToken);
         await using var count = new NpgsqlCommand("SELECT count(*) FROM dw_payment WHERE provider_id = 526", admin);
         Assert.Equal(2L, await count.ExecuteScalarAsync(TestContext.Current.CancellationToken));
@@ -137,7 +214,7 @@ public sealed class NpgsqlWarehouseTests(PostgresFixture postgres) : IClassFixtu
         NpgsqlWarehouse warehouse = await NewWarehouseAsync(timeoutSeconds: 1, logger: logger);
 
         await Assert.ThrowsAsync<WarehouseUnavailableException>(() => warehouse.QueryAsync(
-            Provider("SELECT pg_sleep(5), @provider_id::int", 526) with { Name = "SlowQuery" }, r => r.GetInt32(1), TestContext.Current.CancellationToken));
+            Provider(SlowSql, 526) with { Name = "SlowQuery" }, r => r.GetInt32(1), TestContext.Current.CancellationToken));
 
         (LogLevel level, string message) = Assert.Single(logger.Lines);
         Assert.Equal(LogLevel.Warning, level);
@@ -166,7 +243,7 @@ public sealed class NpgsqlWarehouseTests(PostgresFixture postgres) : IClassFixtu
         NpgsqlWarehouse warehouse = await NewWarehouseAsync(timeoutSeconds: 1);
 
         await Assert.ThrowsAsync<WarehouseUnavailableException>(() => warehouse.QueryAsync(
-            Provider("SELECT pg_sleep(5), @provider_id::int", 526), r => r.GetInt32(1), TestContext.Current.CancellationToken));
+            Provider(SlowSql, 526), r => r.GetInt32(1), TestContext.Current.CancellationToken));
     }
 
     [Fact]

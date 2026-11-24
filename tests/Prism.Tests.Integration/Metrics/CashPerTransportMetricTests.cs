@@ -1,3 +1,4 @@
+using Prism.Testing.Common;
 using Prism.Application.Warehouse;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -21,7 +22,7 @@ public sealed class CashPerTransportMetricTests(PostgresFixture postgres) : ICla
         await SeedLock.WaitAsync(ct);
         try
         {
-            await using var admin = new NpgsqlConnection(postgres.ConnectionString);
+            await using var admin = new NpgsqlConnection(TestDatabaseGuard.Assert(postgres.ConnectionString));
             await admin.OpenAsync(ct);
             await using var seed = new NpgsqlCommand(
                 """
@@ -136,6 +137,37 @@ public sealed class CashPerTransportMetricTests(PostgresFixture postgres) : ICla
         Assert.Equal("fixed-wing", result.GroupKey);
         Assert.Equal((1, 800m), Pair(result, "medicare"));
         Assert.Equal(1, result.Payers.Sum(p => p.Transports));
+    }
+
+    [Fact]
+    public async Task The_overall_figure_covers_every_payer_and_ignores_the_aircraft_type_filter()
+    {
+        CashPerTransportMetric metric = await NewMetricAsync();
+        CancellationToken ct = TestContext.Current.CancellationToken;
+
+        CashPerTransport all = await metric.GetCashPerTransportAsync(2026, Oct, ServiceLineFilter.Air, null, null, ct);
+        CashPerTransport fixedWing = await metric.GetCashPerTransportAsync(2026, Oct, ServiceLineFilter.Air, "fixed-wing", null, ct);
+
+        // Air: commercial 3 ($2,000), Medicare 1 ($800), Medicaid 1 ($250), not recorded 1 ($0).
+        Assert.Equal(new OverallCashPerTransport(6, 3050m), all.Overall);
+        Assert.Equal(all.Overall, fixedWing.Overall);
+        Assert.Equal(800m, fixedWing.Payers.Single(p => p.Key == "medicare").CashPerTransport);
+        Assert.Equal(800m - (3050m / 6), fixedWing.Payers.Single(p => p.Key == "medicare").DifferenceFrom(fixedWing.Overall?.CashPerTransport));
+    }
+
+    [Fact]
+    public async Task The_overall_figure_follows_the_service_line_and_division_filters_and_is_empty_when_nothing_matches()
+    {
+        CashPerTransportMetric metric = await NewMetricAsync();
+        CancellationToken ct = TestContext.Current.CancellationToken;
+
+        CashPerTransport ground = await metric.GetCashPerTransportAsync(2026, Oct, ServiceLineFilter.Ground, null, null, ct);
+        CashPerTransport nobody = await metric.GetCashPerTransportAsync(2026, Oct, ServiceLineFilter.Air, "fixed-wing", new ReportingDivision("k", "No Such Division"), ct);
+
+        Assert.Equal(new OverallCashPerTransport(1, 100m), ground.Overall);
+        Assert.Equal(new OverallCashPerTransport(0, 0m), nobody.Overall);
+        Assert.Null(nobody.Overall?.CashPerTransport);
+        Assert.All(nobody.Payers, p => Assert.Null(p.PercentFrom(nobody.Overall?.CashPerTransport)));
     }
 
     [Fact]

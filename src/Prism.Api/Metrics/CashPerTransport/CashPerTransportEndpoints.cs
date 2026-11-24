@@ -20,7 +20,7 @@ internal static class CashPerTransportEndpoints
                 + "(`yyyyMM`, default the newest period with net cash data), returned as `cohortFrom` and `cohortThrough`. For each payer group: the `transports` in the cohorts (paid or not), the net `cash` posted for them up to and including `period` "
                 + "(payments less refunds, without the Old AR import), and `cashPerTransport`, which is null when the group has no transports. "
                 + "`serviceLine` is `all`, `air` (default) or `ground`. `group` narrows it to one aircraft type or level of service, using the `key` the breakdown route returns (for example `fixed-wing`). "
-                + "Every payer group is listed in a fixed order, with zeros. Aggregates only: no patient, claim or payer names. `division` limits the figures to one Reporting Division, using a `key` from the divisions route; an unknown key is a 400. Returns 404 when the Provider is not one the caller may read in full.")
+                + "Every payer group is listed in a fixed order, with zeros. `overall` is the matured net cash per transport across all payer groups for the same cohorts, `serviceLine` and `division`, without the `group` filter; each payer group has `differenceFromOverall` (USD) and `percentFromOverall` (percent units, null when overall is zero or missing). `cohorts` names the service months (`firstServiceMonth` to `lastServiceMonth`, 12 months matured by 6) and the payment period (`cashThroughPeriod`) used. Aggregates only: no patient, claim or payer names. `division` limits the figures to one Reporting Division, using a `key` from the divisions route; an unknown key is a 400. Returns 404 when the Provider is not one the caller may read in full.")
             .Produces<CashPerTransportResponse>()
             .ProducesProblem(StatusCodes.Status400BadRequest)
             .ProducesProblem(StatusCodes.Status401Unauthorized)
@@ -88,7 +88,11 @@ internal static class CashPerTransportEndpoints
             result.CohortThrough.ToString(),
             ServiceLineName(result.ServiceLine),
             result.GroupKey,
-            result.Payers.Select(p => new PayerCashPerTransportResponse(p.Key, p.Name, p.Transports, p.Cash, p.CashPerTransport)).ToArray());
+            result.Payers.Select(p => new PayerCashPerTransportResponse(p.Key, p.Name, p.Transports, p.Cash, p.CashPerTransport, p.DifferenceFrom(result.Overall?.CashPerTransport), p.PercentFrom(result.Overall?.CashPerTransport))).ToArray())
+        {
+            Overall = result.Overall is { } overall ? new OverallCashPerTransportResponse(overall.Transports, overall.Cash, overall.CashPerTransport) : null,
+            Cohorts = new CashPerTransportCohortsResponse(result.CohortFrom.ToString(), result.CohortThrough.ToString(), result.Period.ToString()),
+        };
         return Results.Ok(response with { DataThrough = through, Division = division?.Key, DivisionName = division?.Name });
     }
 }
@@ -107,6 +111,12 @@ public sealed record CashPerTransportResponse(
     string? Group,
     IReadOnlyList<PayerCashPerTransportResponse> Payers)
 {
+    /// <summary>The all-payer cash per transport for the same cohorts, Service Line and Division, without the <c>group</c> filter. Null when there is no period.</summary>
+    public OverallCashPerTransportResponse? Overall { get; init; }
+
+    /// <summary>The service period and payment period behind the figures. Null when there is no period.</summary>
+    public CashPerTransportCohortsResponse? Cohorts { get; init; }
+
     /// <summary>The date of the warehouse load the figures come from, <c>yyyy-MM-dd</c> (Data Through). Null when the Provider has no data in the table the Metric reads.</summary>
     public string? DataThrough { get; init; }
 
@@ -117,5 +127,15 @@ public sealed record CashPerTransportResponse(
     public string? DivisionName { get; init; }
 }
 
-/// <summary>A payer group: <c>Key</c> is stable, <c>Name</c> is for display. <c>CashPerTransport</c> (USD) is null when there are no transports.</summary>
-public sealed record PayerCashPerTransportResponse(string Key, string Name, int Transports, decimal Cash, decimal? CashPerTransport);
+/// <summary>
+/// A payer group: <c>Key</c> is stable, <c>Name</c> is for display. <c>CashPerTransport</c> (USD) is null when there are no transports.
+/// <c>DifferenceFromOverall</c> (USD) is this group's figure minus <c>overall.cashPerTransport</c>, and <c>PercentFromOverall</c> that difference in percent units of the overall figure
+/// (one decimal). The difference is null when the group or the overall figure has no transports, and the percent is also null when the overall figure is zero.
+/// </summary>
+public sealed record PayerCashPerTransportResponse(string Key, string Name, int Transports, decimal Cash, decimal? CashPerTransport, decimal? DifferenceFromOverall, decimal? PercentFromOverall);
+
+/// <summary>Transports, net cash and cash per transport (USD, null when no transports) across every payer group, never narrowed to one aircraft type or level of service.</summary>
+public sealed record OverallCashPerTransportResponse(int Transports, decimal Cash, decimal? CashPerTransport);
+
+/// <summary>The service months of the cohorts (<c>FirstServiceMonth</c> to <c>LastServiceMonth</c>, <c>yyyyMM</c>) and the last posting month whose cash is counted (<c>CashThroughPeriod</c>).</summary>
+public sealed record CashPerTransportCohortsResponse(string FirstServiceMonth, string LastServiceMonth, string CashThroughPeriod);

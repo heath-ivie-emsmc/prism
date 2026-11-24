@@ -1,7 +1,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { expect, test } from './fixtures';
-import { REPORT_DIR, SCHEMES, SIZES, axeViolations, chooseNetCashView, layoutErrors, expandHelp, openDashboard, openDashboardWithNotice, openMetricView, openMetricViewNotFound, openNeedsAttention, openPayerDetail, openPayerMixPage, openSavedViews, openView } from './support';
+import { expect, mockNoDeniedClaims, test } from './fixtures';
+import { REPORT_DIR, SCHEMES, SIZES, axeViolations, chooseNetCashView, layoutErrors, expandHelp, openDashboard, openDashboardWithNotice, openDashboardHelp, openViewHelp, openMetricView, openMetricViewNotFound, openNeedsAttention, openPayerDetail, openProjection, openTransportsFullScreen, openPayerMixPage, openSavedViews, openView, SIX_METRICS, openMetricViewGroundOnly, openPaletteUnderGround, openSixMetricView, CONTRIBUTION_METRICS, openInsightNewKinds } from './support';
 
 /**
  * Responsive layout and accessibility of the dashboard at every window size, light and dark. In a real browser it checks that:
@@ -182,9 +182,54 @@ const PAYER_PAGES = [
       await p.locator('app-payer-donuts svg').first().waitFor();
     },
   },
+  // The figures the metric catalog added: the projection panel at each horizon, with no actual month, with its help; the Transports split; payer timing; cash per transport; and the summary of claims needing attention.
+  { name: 'projection-one-month', open: (p: import('@playwright/test').Page) => openProjection(p, { months: 1 }) },
+  { name: 'projection-two-months', open: (p: import('@playwright/test').Page) => openProjection(p, { months: 2 }) },
+  { name: 'projection-no-actual', open: (p: import('@playwright/test').Page) => openProjection(p, { ground: true }) },
+  {
+    name: 'projection-help',
+    open: async (p: import('@playwright/test').Page) => {
+      await openProjection(p);
+      await expandHelp(p);
+    },
+  },
+  {
+    name: 'projection-failed',
+    open: async (p: import('@playwright/test').Page) => {
+      await p.route(/net-collections\/projection/, (route) => route.fulfill({ status: 503, json: { title: 'x' } }));
+      await openDashboard(p);
+      await p.locator('app-projection-panel app-load-problem').waitFor();
+      await p.waitForTimeout(300);
+    },
+  },
+  { name: 'transports-split', open: (p: import('@playwright/test').Page) => openTransportsFullScreen(p) },
+  { name: 'metric-view-payment-timing', open: (p: import('@playwright/test').Page) => openMetricView(p, 'payment_age') },
+  { name: 'metric-view-cash-per-transport', open: (p: import('@playwright/test').Page) => openMetricView(p, 'cash_per_transport_by_payer') },
+  { name: 'metric-view-projection', open: (p: import('@playwright/test').Page) => openMetricView(p, 'net_cash_projection') },
+  { name: 'metric-view-transports', open: (p: import('@playwright/test').Page) => openMetricView(p, 'transport_volume') },
+  {
+    name: 'attention-no-denied',
+    open: async (p: import('@playwright/test').Page) => {
+      await mockNoDeniedClaims(p);
+      await openNeedsAttention(p);
+    },
+  },
+  { name: 'dashboard-help-open', open: (p: import('@playwright/test').Page) => openDashboardHelp(p) },
+  { name: 'saved-view-help-open', open: (p: import('@playwright/test').Page) => openViewHelp(p) },
   { name: 'dashboard-notice', open: (p: import('@playwright/test').Page) => openDashboardWithNotice(p) },
   { name: 'metric-view', open: (p: import('@playwright/test').Page) => openMetricView(p) },
   { name: 'metric-view-not-found', open: (p: import('@playwright/test').Page) => openMetricViewNotFound(p) },
+  // The six Metrics that came with the appliesTo field: each one's page, an air-only one under Ground only, saved views holding all of them, and the palette under Ground only.
+  ...SIX_METRICS.map((m) => ({ name: `metric-view-${m.key.replaceAll('_', '-')}`, open: (p: import('@playwright/test').Page) => openMetricView(p, m.key) })),
+  { name: 'metric-view-air-only-under-ground', open: (p: import('@playwright/test').Page) => openMetricViewGroundOnly(p) },
+  { name: 'six-metrics-view-a', open: (p: import('@playwright/test').Page) => openSixMetricView(p, 'a') },
+  { name: 'six-metrics-view-b', open: (p: import('@playwright/test').Page) => openSixMetricView(p, 'b') },
+  ...CONTRIBUTION_METRICS.map((m) => ({ name: `metric-view-${m.key.replaceAll('_', '-')}`, open: (p: import('@playwright/test').Page) => openMetricView(p, m.key) })),
+  { name: 'metric-view-contribution-under-all-lines', open: (p: import('@playwright/test').Page) => openMetricView(p, 'cash_contribution_by_payer', 'period=202610&line=all') },
+  { name: 'metric-view-contribution-air-only-under-ground', open: (p: import('@playwright/test').Page) => openMetricViewGroundOnly(p, 'cash_contribution_by_aircraft') },
+  { name: 'contribution-view', open: (p: import('@playwright/test').Page) => openSixMetricView(p, 'c') },
+  { name: 'insight-new-card-kinds', open: (p: import('@playwright/test').Page) => openInsightNewKinds(p) },
+  { name: 'palette-under-ground', open: (p: import('@playwright/test').Page) => openPaletteUnderGround(p) },
 ] as const;
 for (const state of PAYER_PAGES) {
   for (const scheme of SCHEMES) {

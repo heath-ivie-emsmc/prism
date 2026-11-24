@@ -38,7 +38,6 @@ export interface BreakdownTerms {
   readonly groupHeading: string;
   readonly idHeading: string;
   readonly mixHeading: string;
-  readonly tableTitle: string;
 }
 
 export interface NetCashBreakdown {
@@ -56,16 +55,19 @@ const TERMS: Record<BreakdownLine, BreakdownTerms> = {
     groupHeading: 'Aircraft type',
     idHeading: 'Tail number',
     mixHeading: 'Scene / interfacility',
-    tableTitle: 'By base and aircraft',
   },
   ground: {
     title: 'Ground net cash by level of service',
     groupHeading: 'Level of service',
-    idHeading: 'Unit',
+    idHeading: 'Tail number',
     mixHeading: 'Emergency / scheduled',
-    tableTitle: 'By station and vehicle',
   },
 };
+
+/** The title over the rows table, built from the Provider's Label for a Reporting Division (never typed here): "By base location and aircraft". */
+export function breakdownTableTitle(line: BreakdownLine, reportingDivisionLabel: string): string {
+  return `By ${reportingDivisionLabel.toLowerCase()} and ${line === 'air' ? 'aircraft' : 'vehicle'}`;
+}
 
 const ICONS: Record<string, string> = {
   'rotor-wing': 'helicopter',

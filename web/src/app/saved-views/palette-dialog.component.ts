@@ -1,14 +1,17 @@
 import { ChangeDetectionStrategy, Component, Signal, inject } from '@angular/core';
 import { MAT_DIALOG_DATA, MatDialogClose } from '@angular/material/dialog';
 import { EmsButtonDirective, EmsDialogActionsDirective, EmsDialogComponent } from '@ems-management-consultants/ui';
+import { LineSelection } from '../metrics/shared/applies-to';
 import { CatalogDto, CatalogMetricDto } from './layout.model';
 import { MetricPaletteComponent } from './metric-palette.component';
 
 export interface PaletteDialogData {
   readonly catalog: CatalogDto;
   readonly canAdd: Signal<boolean>;
+  readonly serviceLine: Signal<LineSelection>;
+  readonly placed: Signal<ReadonlyMap<string, number>>;
   readonly add: (metric: CatalogMetricDto) => void;
-  readonly blocked: (event: { metric: CatalogMetricDto; reason: 'planned' | 'full' }) => void;
+  readonly blocked: (event: { metric: CatalogMetricDto; reason: 'planned' | 'full' | 'line' }) => void;
   readonly searched: (event: { count: number; query: string }) => void;
 }
 
@@ -20,7 +23,7 @@ export interface PaletteDialogData {
   template: `
     <ems-dialog heading="Add metrics">
       <div class="palette-dialog__body">
-        <app-metric-palette [catalog]="data.catalog" [canAdd]="data.canAdd()" [dragEnabled]="false" (add)="data.add($event)" (blocked)="data.blocked($event)" (searched)="data.searched($event)" />
+        <app-metric-palette [catalog]="data.catalog" [canAdd]="data.canAdd()" [serviceLine]="data.serviceLine()" [placed]="data.placed()" [dragEnabled]="false" (add)="data.add($event)" (blocked)="data.blocked($event)" (searched)="data.searched($event)" />
       </div>
       <div emsDialogActions><button emsButton="filled" type="button" mat-dialog-close>Done</button></div>
     </ems-dialog>

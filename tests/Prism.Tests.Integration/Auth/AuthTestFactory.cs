@@ -19,8 +19,10 @@ public sealed class AuthTestFactory : WebApplicationFactory<Program>
         bool allowIdpInitiated = false,
         bool secureCookies = false,
         IReadOnlyDictionary<string, string?>? settings = null,
-        Action<IServiceCollection>? configureServices = null)
+        Action<IServiceCollection>? configureServices = null,
+        bool verifyWarehouseWriteProtection = false)
     {
+        VerifyWarehouseWriteProtection = verifyWarehouseWriteProtection;
         AllowIdpInitiated = allowIdpInitiated;
         SecureCookies = secureCookies;
         ExtraSettings = settings ?? new Dictionary<string, string?>();
@@ -46,6 +48,12 @@ public sealed class AuthTestFactory : WebApplicationFactory<Program>
 
     private bool AllowIdpInitiated { get; }
 
+    /// <summary>
+    /// False (the default) replaces the start-up write protection check with an accepting stand-in, because most hosts here name a warehouse that does not exist
+    /// (dw.invalid) just to test wiring. The check itself, and a host that really runs it, are tested against a throwaway container database.
+    /// </summary>
+    private bool VerifyWarehouseWriteProtection { get; }
+
     private bool SecureCookies { get; }
 
     private IReadOnlyDictionary<string, string?> ExtraSettings { get; }
@@ -70,6 +78,8 @@ public sealed class AuthTestFactory : WebApplicationFactory<Program>
                 ["Auth:SessionSigningKeyBase64"] = SessionKeyBase64,
                 ["Auth:AllowIdpInitiated"] = AllowIdpInitiated.ToString(),
                 ["Auth:RequireSecureCookies"] = SecureCookies.ToString(),
+                // Environment variables are part of host configuration. A developer with the real warehouse connection in their shell must never reach it from a test host.
+                ["ConnectionStrings:Warehouse"] = "",
             });
             config.AddInMemoryCollection(ExtraSettings);
         });
@@ -78,6 +88,12 @@ public sealed class AuthTestFactory : WebApplicationFactory<Program>
             // Serilog replaces the logging providers, so the capture is a Serilog sink that the host picks up from the services.
             services.AddSingleton<Serilog.Core.ILogEventSink>(Logs);
             ConfigureTestServices?.Invoke(services);
+            if (!VerifyWarehouseWriteProtection)
+            {
+                services.RemoveAll<Prism.Infrastructure.Warehouse.IWarehouseWriteProtectionCheck>();
+                services.AddSingleton<Prism.Infrastructure.Warehouse.IWarehouseWriteProtectionCheck, AcceptingWriteProtectionCheck>();
+            }
+
             services.RemoveAll<IDatabaseProbe>();
             services.AddSingleton<IDatabaseProbe>(Database);
             services.RemoveAll<Prism.Application.Audit.IAuditLog>();
@@ -122,6 +138,11 @@ public sealed class AuthTestFactory : WebApplicationFactory<Program>
         }
 
         base.Dispose(disposing);
+    }
+
+    private sealed class AcceptingWriteProtectionCheck : Prism.Infrastructure.Warehouse.IWarehouseWriteProtectionCheck
+    {
+        public Task VerifyAsync(CancellationToken cancellationToken) => Task.CompletedTask;
     }
 
     private sealed class FixedKeyProvider(string pem) : IPortalPublicKeyProvider

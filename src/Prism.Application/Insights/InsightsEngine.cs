@@ -29,7 +29,7 @@ public sealed class InsightsEngine(INetCashByGroupMetric netCash, IEnumerable<II
         decimal bar = InsightThresholds.Materiality * Math.Abs(delta);
         List<Finding> shown = delta == 0m ? [] : [.. all.Where(f => Math.Abs(f.Impact) >= bar).OrderByDescending(f => Math.Abs(f.Impact)).Take(InsightThresholds.MaxFindings)];
         Finding[] drivers = [.. shown.Where(f => f.Basis == FindingBasis.PostedCash)];
-        Finding[] expected = [.. shown.Where(f => f.Basis == FindingBasis.ExpectedEffect)];
+        Finding[] expected = [.. shown.Where(f => f.Basis != FindingBasis.PostedCash)];
 
         decimal remaining = delta - drivers.Sum(f => f.Impact);
         return new Insight(headline, drivers, expected, new Remainder(remaining, Judge(remaining, history, period)), Normalized(all, cashNow, cashPrior));

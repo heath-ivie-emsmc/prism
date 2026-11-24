@@ -121,3 +121,66 @@ public sealed class CachedPayerMixDetailMetric(IPayerMixDetailMetric inner, IMet
     public Task<PayerMixDetail> GetDetailAsync(int providerId, ApPeriod period, ServiceLineFilter serviceLine, string? groupKey, string payerGroupKey, ReportingDivision? division, CancellationToken cancellationToken) =>
         cache.Cached(IPayerMixDetailMetric.Definition, providerId, serviceLine, ct => inner.GetDetailAsync(providerId, period, serviceLine, groupKey, payerGroupKey, division, ct), cancellationToken, period, serviceLine, groupKey, division?.Key, payerGroupKey);
 }
+
+/// <summary>Caches <see cref="ITransportMixByCallTypeMetric"/> answers.</summary>
+public sealed class CachedTransportMixByCallTypeMetric(ITransportMixByCallTypeMetric inner, IMetricCache cache) : ITransportMixByCallTypeMetric
+{
+    public Task<TransportMixByCallType> GetMixAsync(int providerId, ApPeriod period, int months, ServiceLineFilter serviceLine, string? groupKey, ReportingDivision? division, CancellationToken cancellationToken) =>
+        cache.Cached(ITransportMixByCallTypeMetric.Definition, providerId, serviceLine, ct => inner.GetMixAsync(providerId, period, months, serviceLine, groupKey, division, ct), cancellationToken, period, months, serviceLine, groupKey, division?.Key);
+}
+
+/// <summary>Caches <see cref="IAircraftPerformanceMetric"/> answers.</summary>
+public sealed class CachedAircraftPerformanceMetric(IAircraftPerformanceMetric inner, IMetricCache cache) : IAircraftPerformanceMetric
+{
+    public Task<AircraftPerformance> GetPerformanceAsync(int providerId, ApPeriod period, ServiceLineFilter serviceLine, string? groupKey, ReportingDivision? division, CancellationToken cancellationToken) =>
+        cache.Cached(IAircraftPerformanceMetric.Definition, providerId, serviceLine, ct => inner.GetPerformanceAsync(providerId, period, serviceLine, groupKey, division, ct), cancellationToken, period, serviceLine, groupKey, division?.Key);
+}
+
+/// <summary>Caches <see cref="IBaseAnalysisMetric"/> answers.</summary>
+public sealed class CachedBaseAnalysisMetric(IBaseAnalysisMetric inner, IMetricCache cache) : IBaseAnalysisMetric
+{
+    public Task<BaseAnalysis> GetAnalysisAsync(int providerId, ApPeriod period, ServiceLineFilter serviceLine, string? groupKey, ReportingDivision? division, CancellationToken cancellationToken) =>
+        cache.Cached(IBaseAnalysisMetric.Definition, providerId, serviceLine, ct => inner.GetAnalysisAsync(providerId, period, serviceLine, groupKey, division, ct), cancellationToken, period, serviceLine, groupKey, division?.Key);
+}
+
+/// <summary>Caches <see cref="ILoadedMilesByAircraftMetric"/> answers.</summary>
+public sealed class CachedLoadedMilesByAircraftMetric(ILoadedMilesByAircraftMetric inner, IMetricCache cache) : ILoadedMilesByAircraftMetric
+{
+    public Task<LoadedMilesByAircraft> GetMilesAsync(int providerId, ApPeriod period, int months, ServiceLineFilter serviceLine, string? groupKey, ReportingDivision? division, CancellationToken cancellationToken) =>
+        cache.Cached(ILoadedMilesByAircraftMetric.Definition, providerId, serviceLine, ct => inner.GetMilesAsync(providerId, period, months, serviceLine, groupKey, division, ct), cancellationToken, period, months, serviceLine, groupKey, division?.Key);
+}
+
+/// <summary>Caches <see cref="IPayerMixFinancialEffectMetric"/> answers.</summary>
+public sealed class CachedPayerMixFinancialEffectMetric(IPayerMixFinancialEffectMetric inner, IMetricCache cache) : IPayerMixFinancialEffectMetric
+{
+    public Task<PayerMixFinancialEffect> GetEffectAsync(int providerId, ApPeriod period, ServiceLineFilter serviceLine, string? groupKey, ReportingDivision? division, CancellationToken cancellationToken) =>
+        cache.Cached(IPayerMixFinancialEffectMetric.Definition, providerId, serviceLine, ct => inner.GetEffectAsync(providerId, period, serviceLine, groupKey, division, ct), cancellationToken, period, serviceLine, groupKey, division?.Key);
+}
+
+/// <summary>Caches <see cref="ITransportsByPickupLocationMetric"/> answers.</summary>
+public sealed class CachedTransportsByPickupLocationMetric(ITransportsByPickupLocationMetric inner, IMetricCache cache) : ITransportsByPickupLocationMetric
+{
+    public Task<TransportsByPickupLocation> GetPickupsAsync(int providerId, ApPeriod period, ServiceLineFilter serviceLine, string? groupKey, ReportingDivision? division, CancellationToken cancellationToken) =>
+        cache.Cached(ITransportsByPickupLocationMetric.Definition, providerId, serviceLine, ct => inner.GetPickupsAsync(providerId, period, serviceLine, groupKey, division, ct), cancellationToken, period, serviceLine, groupKey, division?.Key);
+}
+
+/// <summary>Caches <see cref="ICashContributionByAircraftMetric"/> answers.</summary>
+public sealed class CachedCashContributionByAircraftMetric(ICashContributionByAircraftMetric inner, IMetricCache cache) : ICashContributionByAircraftMetric
+{
+    public Task<CashContribution> GetContributionAsync(int providerId, ApPeriod period, ServiceLineFilter serviceLine, string? groupKey, ReportingDivision? division, CancellationToken cancellationToken) =>
+        cache.Cached(ICashContributionByAircraftMetric.Definition, providerId, serviceLine, ct => inner.GetContributionAsync(providerId, period, serviceLine, groupKey, division, ct), cancellationToken, period, serviceLine, groupKey, division?.Key);
+}
+
+/// <summary>Caches <see cref="ICashContributionByDivisionMetric"/> answers.</summary>
+public sealed class CachedCashContributionByDivisionMetric(ICashContributionByDivisionMetric inner, IMetricCache cache) : ICashContributionByDivisionMetric
+{
+    public Task<CashContribution> GetContributionAsync(int providerId, ApPeriod period, ServiceLineFilter serviceLine, string? groupKey, ReportingDivision? division, CancellationToken cancellationToken) =>
+        cache.Cached(ICashContributionByDivisionMetric.Definition, providerId, serviceLine, ct => inner.GetContributionAsync(providerId, period, serviceLine, groupKey, division, ct), cancellationToken, period, serviceLine, groupKey, division?.Key);
+}
+
+/// <summary>Caches <see cref="ICashContributionByPayerMetric"/> answers.</summary>
+public sealed class CachedCashContributionByPayerMetric(ICashContributionByPayerMetric inner, IMetricCache cache) : ICashContributionByPayerMetric
+{
+    public Task<CashContribution> GetContributionAsync(int providerId, ApPeriod period, ServiceLineFilter serviceLine, string? groupKey, ReportingDivision? division, CancellationToken cancellationToken) =>
+        cache.Cached(ICashContributionByPayerMetric.Definition, providerId, serviceLine, ct => inner.GetContributionAsync(providerId, period, serviceLine, groupKey, division, ct), cancellationToken, period, serviceLine, groupKey, division?.Key);
+}

@@ -18,41 +18,34 @@ public sealed class PayerMixAnalysis(IPayerMixMetric payerMix, ICashPerTransport
         Task<PayerMix> mixTask = payerMix.GetPayerMixAsync(input.ProviderId, input.Period, input.ServiceLine, input.GroupKey, null, cancellationToken);
         Task<CashPerTransport> ratesTask = cashPerTransport.GetCashPerTransportAsync(input.ProviderId, input.Period, input.ServiceLine, input.GroupKey, null, cancellationToken);
         await Task.WhenAll(mixTask, ratesTask);
-        PayerMix mix = await mixTask;
-        decimal now = mix.Shares.Sum(s => s.Current);
-        decimal before = mix.Shares.Sum(s => s.Prior);
-        if (now == 0m || before == 0m)
+        PayerMixEffectResult effect = PayerMixEffect.Compute(await mixTask, await ratesTask);
+        if (effect.Now == 0 || effect.Before == 0)
         {
             return null;
         }
 
-        CashPerTransport rates = await ratesTask;
-        var moves = mix.Shares
-            .Select(s => (Share: s, From: s.Prior / before, To: s.Current / now, Rate: rates.Payers.FirstOrDefault(p => p.Key == s.Key)?.CashPerTransport))
-            .Where(m => m.Rate is not null)
-            .Select(m => (m.Share, m.From, m.To, Effect: (m.To - m.From) * m.Rate!.Value * now))
-            .ToList();
+        var moves = effect.Rows.Where(r => r.Effect is not null).ToList();
         if (moves.Count == 0)
         {
             return null;
         }
 
         // The story is the group whose share rose most. Shares add up to 100%, so some group always rose when any fell.
-        var biggest = moves.OrderByDescending(m => m.To - m.From).First();
-        if (biggest.To - biggest.From < InsightThresholds.MinShareMove)
+        PayerMixEffectRow biggest = moves.OrderByDescending(m => m.ShareTo - m.ShareFrom).First();
+        if (biggest.ShareTo - biggest.ShareFrom < InsightThresholds.MinShareMove)
         {
             return null;
         }
 
-        decimal impact = moves.Sum(m => m.Effect);
+        decimal impact = moves.Sum(m => m.Effect!.Value);
         FindingLabel label = FindingLabel.Info;
         if (impact < 0m)
         {
-            bool held = await HeldBeforeAsync(input, biggest.Share.Key, biggest.To - biggest.From, cancellationToken);
+            bool held = await HeldBeforeAsync(input, biggest.Share.Key, biggest.ShareTo - biggest.ShareFrom, cancellationToken);
             label = held ? FindingLabel.Structural : FindingLabel.Watch;
         }
 
-        return new PayerMixFinding(label, impact, biggest.Share.Key, biggest.Share.Name, biggest.From, biggest.To);
+        return new PayerMixFinding(label, impact, biggest.Share.Key, biggest.Share.Name, biggest.ShareFrom, biggest.ShareTo);
     }
 
     /// <summary>Whether the payer group's share also moved the same way the month before.</summary>

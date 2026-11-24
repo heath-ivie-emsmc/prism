@@ -10,7 +10,7 @@ const volume = (end: string, points: [string, number, number][], groups: [string
   serviceLine: 'air',
   periodOpen: false,
   points: points.map(([period, transports, loadedMiles]) => ({ period, label: '', year: 2026, transports, loadedMiles })),
-  groups: groups.map(([key, name, transports]) => ({ key, name, serviceLine: 'air', transports })),
+  groups: groups.map(([key, name, transports]) => ({ key, name, serviceLine: 'air', transports, priorTransports: transports + 2, changeTransports: -2, changePercent: -1.5 })),
 });
 
 const sample = volume(
@@ -54,7 +54,7 @@ describe('dashboard cards', () => {
   });
 
   it('folds long group lists into "+n more"', () => {
-    const groups = [1, 2, 3, 4, 5].map((n) => ({ key: `g${n}`, name: `G${n}`, serviceLine: 'ground' as const, transports: 10 - n }));
+    const groups = [1, 2, 3, 4, 5].map((n) => ({ key: `g${n}`, name: `G${n}`, serviceLine: 'ground' as const, transports: 10 - n, priorTransports: 10 - n, changeTransports: 0, changePercent: 0 }));
     expect(groupsText(groups)).toBe('G1 9 · G2 8 · G3 7 · +2 more');
   });
 

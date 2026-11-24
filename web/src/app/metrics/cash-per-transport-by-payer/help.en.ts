@@ -8,6 +8,8 @@ export const CASH_PER_TRANSPORT_BY_PAYER_HELP: MetricHelp = {
     { term: 'Matured', text: 'Only transports at least six months old are counted, giving payers time to pay.' },
     { term: 'Payer group', text: 'The primary payer’s group: Commercial, Medicare, Medicaid, Other government, VA, Facility or Patient. A transport with no payer is Not recorded.' },
     { term: 'Net cash', text: 'Payments posted, less refunds, without payments loaded from the old billing system.' },
+    { term: 'Difference from overall', text: 'A payer group’s cash per transport minus the average across all payer groups, in dollars and percent. The overall average uses the same months and filters. No difference is shown when either has no transports.' },
+    { term: 'Service months and cash cut-off', text: 'The page says which months of transports are counted and the month cash is counted through, for example transports from Jan 2025 to Dec 2025 with cash posted through Nov 2026.' },
     { term: 'Filtering by {reportingDivision}', text: 'Choosing a {reportingDivision} keeps only transports and cash in that {reportingDivision}.' },
   ],
 };

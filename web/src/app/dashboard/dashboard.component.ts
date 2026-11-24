@@ -48,12 +48,12 @@ const CRUMBS: EmsBreadcrumb[] = [{ label: 'Dashboard' }];
         <app-filter-bar label="Dashboard filters" [divisionIgnoredBy]="divisionIgnoredBy()" />
       </header>
 
-      <!-- Net cash, transports and loaded miles are real. The other tiles and the projection panel below are layout only: placeholder content until the Metric Catalog serves them. -->
+      <!-- Net cash, transports, loaded miles, clean claim rate and the projection are real. The Open negotiation tile is layout only: placeholder content until the Metric Catalog serves it. -->
       <section class="dashboard__overview" aria-label="Key metrics">
         <app-net-cash-panel class="dashboard__cash" [dataThrough]="dataThroughIso()" [division]="divisionKey() ?? null" [labels]="labels()" [periodsLoading]="periodsLoading()" [providerId]="providerId()" [endPeriod]="endPeriod()" [serviceLine]="serviceLine()" [periodsError]="periodsError()" (retryPeriods)="retryPeriods()" />
 
         <div class="dashboard__tiles">
-        <app-kpi-card [dataThrough]="dataThroughIso()" [serviceLine]="badgeLine()" [labels]="labels()" [divisionApplied]="transportsDivisionApplied()" title="Transports" [value]="transportsCard().value" [delta]="transportsCard().delta" [footnote]="transportsCard().footnote" [caveat]="volumeCaveat()" [loading]="volumeLoading()" [expandable]="!volumeLoading() && !volumeFailed() && transportsCard().bars.length > 0" [context]="tileContext()">
+        <app-kpi-card [dataThrough]="dataThroughIso()" [serviceLine]="badgeLine()" [labels]="labels()" [divisionApplied]="transportsDivisionApplied()" title="Transports" helpKey="transport_volume" [value]="transportsCard().value" [delta]="transportsCard().delta" [footnote]="transportsCard().footnote" [caveat]="volumeCaveat()" [loading]="volumeLoading()" [expandable]="!volumeLoading() && !volumeFailed() && transportsCard().bars.length > 0" [context]="tileContext()">
           @if (volumeLoading()) {
             <app-skeleton height="4.75rem" />
           } @else if (volumeFailed()) {
@@ -71,9 +71,36 @@ const CRUMBS: EmsBreadcrumb[] = [{ label: 'Dashboard' }];
               }
             </div>
           }
+          @if (transportsCard().split.length) {
+            <div kpiExpanded class="split" role="region" tabindex="0" aria-label="Transports by aircraft type or level of service">
+              <table>
+                <caption>Transports by aircraft type or level of service, {{ transportsCard().splitLatestName }}, next to {{ transportsCard().splitPriorName }}</caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Aircraft type or level of service</th>
+                    <th scope="col">{{ transportsCard().splitLatestName }}</th>
+                    <th scope="col">{{ transportsCard().splitPriorName }}</th>
+                    <th scope="col">Change</th>
+                    <th scope="col">Change %</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (row of transportsCard().split; track row.key) {
+                    <tr>
+                      <th scope="row">{{ row.name }}</th>
+                      <td>{{ row.latest }}</td>
+                      <td>{{ row.prior }}</td>
+                      <td>{{ row.change }}</td>
+                      <td>{{ row.changePercent }}</td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+          }
         </app-kpi-card>
 
-        <app-kpi-card [dataThrough]="dataThroughIso()" [serviceLine]="badgeLine()" [labels]="labels()" [divisionApplied]="transportsDivisionApplied()" title="Loaded miles" [value]="milesCard().value" [unit]="milesCard().unit" [unitHidden]="true" [delta]="milesCard().delta" footnote="Billed miles, patient on board" [caveat]="volumeCaveat()" [loading]="volumeLoading()" [expandable]="!volumeLoading() && !volumeFailed() && !!milesCard().line" [context]="tileContext()">
+        <app-kpi-card [dataThrough]="dataThroughIso()" [serviceLine]="badgeLine()" [labels]="labels()" [divisionApplied]="transportsDivisionApplied()" title="Loaded miles" helpKey="transport_volume" [value]="milesCard().value" [unit]="milesCard().unit" [unitHidden]="true" [delta]="milesCard().delta" footnote="Billed miles, patient on board" [caveat]="volumeCaveat()" [loading]="volumeLoading()" [expandable]="!volumeLoading() && !volumeFailed() && !!milesCard().line" [context]="tileContext()">
           @if (volumeLoading()) {
             <app-skeleton height="4.75rem" />
           } @else if (volumeFailed()) {
@@ -96,7 +123,7 @@ const CRUMBS: EmsBreadcrumb[] = [{ label: 'Dashboard' }];
           }
         </app-kpi-card>
 
-        <app-kpi-card [dataThrough]="dataThroughIso()" [serviceLine]="badgeLine()" [labels]="labels()" title="Clean claim rate" [value]="cleanCard().value" [delta]="cleanCard().delta" footnote="First-pass resolution" [caveat]="cleanCaveat()" [loading]="cleanLoading()">
+        <app-kpi-card [dataThrough]="dataThroughIso()" [serviceLine]="badgeLine()" [labels]="labels()" title="Clean claim rate" helpKey="clean_claim_rate" [value]="cleanCard().value" [delta]="cleanCard().delta" footnote="First-pass resolution" [caveat]="cleanCaveat()" [loading]="cleanLoading()">
           @if (cleanLoading()) {
             <app-skeleton height="1.5rem" />
           } @else if (cleanFailed()) {
@@ -127,7 +154,7 @@ const CRUMBS: EmsBreadcrumb[] = [{ label: 'Dashboard' }];
         </div>
       </section>
 
-      <app-projection-panel />
+      <app-projection-panel [dataThrough]="dataThroughIso()" [labels]="labels()" [periodsLoading]="periodsLoading()" [providerId]="providerId()" [endPeriod]="endPeriod()" [serviceLine]="serviceLine()" [context]="tileContext()" />
     </main>
   `,
   styles: `
@@ -232,6 +259,31 @@ const CRUMBS: EmsBreadcrumb[] = [{ label: 'Dashboard' }];
     }
     .bars__bar--current {
       background: var(--ems-surface-accent-emerald);
+    }
+    /* The latest-month split, in full screen only. It scrolls on its own if a narrow screen cannot hold it, and is a keyboard-reachable region when it does. */
+    .split {
+      flex: none;
+      max-width: 100%;
+      overflow-x: auto;
+      margin-block: 0.5rem;
+    }
+    .split table {
+      border-collapse: collapse;
+      font-size: var(--ems-font-size-small);
+      font-variant-numeric: tabular-nums;
+    }
+    .split caption {
+      text-align: start;
+      color: var(--ems-text-muted);
+      padding-block-end: 0.25rem;
+    }
+    .split th,
+    .split td {
+      padding: 0.25rem 0.75rem 0.25rem 0;
+      text-align: end;
+    }
+    .split th:first-child {
+      text-align: start;
     }
     .card-problem {
       display: flex;

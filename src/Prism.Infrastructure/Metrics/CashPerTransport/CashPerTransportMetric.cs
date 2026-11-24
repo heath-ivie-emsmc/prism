@@ -46,25 +46,9 @@ public sealed class CashPerTransportMetric(IWarehouse warehouse, IWarehouseProvi
         string group = groupKey?.Trim().ToLowerInvariant() ?? "";
         ApPeriod from = period.AddMonths(-(ICashPerTransportMetric.MaturityMonths + ICashPerTransportMetric.CohortMonths - 1));
         ApPeriod through = period.AddMonths(-ICashPerTransportMetric.MaturityMonths);
-        ApPeriod after = through.AddMonths(1);
-        var query = new WarehouseQuery(
-            CashPerTransportSql,
-            new Dictionary<string, object?>
-            {
-                [WarehouseQuery.ProviderParameter] = await providers.ResolveAsync(providerId, cancellationToken),
-                ["period"] = period.ToString(),
-                ["from_date"] = new DateOnly(from.Year, from.Month, 1),
-                ["to_date"] = new DateOnly(after.Year, after.Month, 1),
-                ["include_air"] = serviceLine is ServiceLineFilter.Both or ServiceLineFilter.Air,
-                ["include_ground"] = serviceLine is ServiceLineFilter.Both or ServiceLineFilter.Ground,
-                [DivisionSql.Parameter] = division?.Name ?? string.Empty,
-                ["group_key"] = group,
-            }) { Name = "CashPerTransportMetric" };
+        int warehouseId = await providers.ResolveAsync(providerId, cancellationToken);
 
-        IReadOnlyList<(string Payer, int Transports, decimal Cash)> rows = await warehouse.QueryAsync(
-            query,
-            reader => (reader.GetString(0), (int)reader.GetInt64(1), reader.GetDecimal(2)),
-            cancellationToken);
+        IReadOnlyList<(string Payer, int Transports, decimal Cash)> rows = await ReadAsync(warehouseId, period, serviceLine, group, division, "CashPerTransportMetric", cancellationToken);
 
         // Every payer group is listed in a fixed order, with zeros, so a caller never has to guess at a missing one.
         List<PayerCashPerTransport> payers = PayerMixMetric.Groups
@@ -74,6 +58,34 @@ public sealed class CashPerTransportMetric(IWarehouse warehouse, IWarehouseProvi
                 : new PayerCashPerTransport(g.Key, g.Name, 0, 0m))
             .ToList();
 
-        return new CashPerTransport(ICashPerTransportMetric.Definition, period, from, through, serviceLine, group.Length == 0 ? null : group, payers);
+        // The overall figure is never narrowed to one aircraft type: with a group filter it is a second read without it, otherwise the same rows.
+        IReadOnlyList<(string Payer, int Transports, decimal Cash)> everything = group.Length == 0
+            ? rows
+            : await ReadAsync(warehouseId, period, serviceLine, "", division, "CashPerTransportMetric#overall", cancellationToken);
+        var overall = new OverallCashPerTransport(everything.Sum(r => r.Transports), everything.Sum(r => r.Cash));
+
+        return new CashPerTransport(ICashPerTransportMetric.Definition, period, from, through, serviceLine, group.Length == 0 ? null : group, payers, overall);
+    }
+
+    private async Task<IReadOnlyList<(string Payer, int Transports, decimal Cash)>> ReadAsync(
+        int warehouseId, ApPeriod period, ServiceLineFilter serviceLine, string group, ReportingDivision? division, string name, CancellationToken cancellationToken)
+    {
+        ApPeriod from = period.AddMonths(-(ICashPerTransportMetric.MaturityMonths + ICashPerTransportMetric.CohortMonths - 1));
+        ApPeriod after = period.AddMonths(-ICashPerTransportMetric.MaturityMonths + 1);
+        var query = new WarehouseQuery(
+            CashPerTransportSql,
+            new Dictionary<string, object?>
+            {
+                [WarehouseQuery.ProviderParameter] = warehouseId,
+                ["period"] = period.ToString(),
+                ["from_date"] = new DateOnly(from.Year, from.Month, 1),
+                ["to_date"] = new DateOnly(after.Year, after.Month, 1),
+                ["include_air"] = serviceLine is ServiceLineFilter.Both or ServiceLineFilter.Air,
+                ["include_ground"] = serviceLine is ServiceLineFilter.Both or ServiceLineFilter.Ground,
+                [DivisionSql.Parameter] = division?.Name ?? string.Empty,
+                ["group_key"] = group,
+            }) { Name = name };
+
+        return await warehouse.QueryAsync(query, reader => (reader.GetString(0), (int)reader.GetInt64(1), reader.GetDecimal(2)), cancellationToken);
     }
 }

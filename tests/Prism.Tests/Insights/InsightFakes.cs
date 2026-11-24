@@ -34,4 +34,21 @@ internal static class InsightFakes
         public Task<NetCashByGroup> GetNetCashByGroupAsync(int providerId, ApPeriod period, ServiceLineFilter serviceLine, ReportingDivision? division, CancellationToken cancellationToken) =>
             Task.FromResult(new NetCashByGroup(INetCashByGroupMetric.Definition, period, INetCashByGroupMetric.MonthsBefore, serviceLine, points));
     }
+
+    /// <summary>A net cash breakdown built from vehicle rows: the groups are those rows added up, as the real Metric does. Records what it was asked for.</summary>
+    internal sealed class BreakdownFake(IReadOnlyList<NetCashBreakdownRow> rows) : INetCashBreakdownMetric
+    {
+        public List<(int ProviderId, ApPeriod Period, ServiceLineFilter Line, ReportingDivision? Division)> Calls { get; } = [];
+
+        public Task<NetCashBreakdown> GetBreakdownAsync(int providerId, ApPeriod period, ServiceLineFilter serviceLine, ReportingDivision? division, CancellationToken cancellationToken)
+        {
+            Calls.Add((providerId, period, serviceLine, division));
+            NetCashBreakdownGroup[] groups =
+            [
+                .. rows.GroupBy(r => (r.GroupKey, r.GroupName, r.IsAir))
+                    .Select(g => new NetCashBreakdownGroup(g.Key.GroupKey, g.Key.GroupName, g.Key.IsAir, g.Aggregate(BreakdownFigures.None, (sum, r) => sum.Plus(r.Current)), g.Aggregate(BreakdownFigures.None, (sum, r) => sum.Plus(r.Prior)))),
+            ];
+            return Task.FromResult(new NetCashBreakdown(INetCashBreakdownMetric.Definition, period, period.AddMonths(-1), serviceLine, false, groups, rows));
+        }
+    }
 }

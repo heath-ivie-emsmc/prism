@@ -50,6 +50,8 @@ public static class InsightText
         AgedPaymentsFinding aged => AgedCard(aged, insight),
         VolumeFinding volume => VolumeCard(volume),
         PayerMixFinding mix => MixCard(mix, insight.Headline),
+        AircraftMixFinding aircraft => SegmentCard("aircraft-mix", aircraft, insight.Headline),
+        BaseMixFinding division => SegmentCard("base-mix", division, insight.Headline),
         _ => throw new ArgumentOutOfRangeException(nameof(finding), "Unknown Finding."),
     };
 
@@ -87,6 +89,28 @@ public static class InsightText
             + $"At what transports have earned once paid, the shift in payer mix is expected to make cash about {Money(mix.Impact)} {effect} a month as those claims are paid. "
             + "This is an expected effect, not part of what moved this month's cash.";
         return new InsightCard("payer-mix", mix.Label, mix.Basis, title, body, mix.Impact);
+    }
+
+    /// <summary>
+    /// The card for a shift of transports between types or divisions. The words name the segment and the dollar figures only: a Provider's own term for a Reporting Division
+    /// is not known here, so the text does not use one.
+    /// </summary>
+    private static InsightCard SegmentCard(string kind, SegmentMixFinding mix, InsightHeadline headline)
+    {
+        string group = Lower(headline.GroupName);
+        bool toward = mix.ShareTo > mix.ShareFrom;
+        string title = (toward ? "Transports shifted toward " : "Transports shifted away from ") + mix.SegmentName;
+        string rate = mix.SegmentRate >= mix.AverageRate ? "more" : "less";
+        string effect = mix.Impact < 0m ? "lowered" : "raised";
+        string body = $"{mix.SegmentName}'s share of {group} transports with cash posted went from {Percent(mix.ShareFrom)} to {Percent(mix.ShareTo)}. "
+            + $"Last month a transport there brought in {Money(mix.SegmentRate)}, {rate} than the {Money(mix.AverageRate)} average, "
+            + $"so the shift in mix {effect} posted cash by about {Money(mix.Impact)}.";
+        if (mix.Basis == FindingBasis.AlternativeCut)
+        {
+            body += " This is another view of the same change, so it is not added to the drivers or the remainder.";
+        }
+
+        return new InsightCard(kind, mix.Label, mix.Basis, title, body, mix.Impact);
     }
 
     private static string Count(decimal transports) => Math.Round(transports, 0, MidpointRounding.AwayFromZero).ToString("0", CultureInfo.InvariantCulture);

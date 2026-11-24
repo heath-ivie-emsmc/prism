@@ -15,6 +15,7 @@
         "ground",
         "both"
       ],
+      "appliesTo": "both",
       "divisionSupport": "none",
       "freshness": "dailyLoad",
       "helpKey": "net_collections",
@@ -34,6 +35,7 @@
         "ground",
         "both"
       ],
+      "appliesTo": "both",
       "divisionSupport": "none",
       "freshness": "dailyLoad",
       "helpKey": "net_cash_projection",
@@ -52,6 +54,7 @@
         "ground",
         "both"
       ],
+      "appliesTo": "both",
       "divisionSupport": "supported",
       "freshness": "dailyLoad",
       "helpKey": "net_cash_breakdown",
@@ -77,6 +80,7 @@
         "ground",
         "both"
       ],
+      "appliesTo": "both",
       "divisionSupport": "supported",
       "freshness": "dailyLoad",
       "helpKey": "net_cash_by_group",
@@ -95,6 +99,7 @@
         "ground",
         "both"
       ],
+      "appliesTo": "both",
       "divisionSupport": "supported",
       "freshness": "dailyLoad",
       "helpKey": "cash_per_transport_by_payer",
@@ -112,6 +117,7 @@
         "ground",
         "both"
       ],
+      "appliesTo": "both",
       "divisionSupport": "supported",
       "freshness": "dailyLoad",
       "helpKey": "payment_age",
@@ -132,6 +138,7 @@
         "ground",
         "both"
       ],
+      "appliesTo": "both",
       "divisionSupport": "supported",
       "freshness": "dailyLoad",
       "helpKey": "payer_mix",
@@ -157,6 +164,7 @@
         "ground",
         "both"
       ],
+      "appliesTo": "both",
       "divisionSupport": "supported",
       "freshness": "dailyLoad",
       "helpKey": "transport_volume",
@@ -176,9 +184,190 @@
         "ground",
         "both"
       ],
+      "appliesTo": "both",
       "divisionSupport": "none",
       "freshness": "dailyLoad",
       "helpKey": "clean_claim_rate",
+      "drills": []
+    },
+    {
+      "key": "transport_mix_by_call_type",
+      "status": "available",
+      "placeable": true,
+      "presentations": [
+        "column",
+        "stacked",
+        "donut",
+        "line",
+        "table"
+      ],
+      "serviceLines": [
+        "air",
+        "ground",
+        "both"
+      ],
+      "appliesTo": "both",
+      "divisionSupport": "supported",
+      "freshness": "dailyLoad",
+      "helpKey": "transport_mix_by_call_type",
+      "drills": []
+    },
+    {
+      "key": "aircraft_performance",
+      "status": "available",
+      "placeable": true,
+      "presentations": [
+        "table",
+        "column"
+      ],
+      "serviceLines": [
+        "air",
+        "both"
+      ],
+      "appliesTo": "air",
+      "divisionSupport": "supported",
+      "freshness": "dailyLoad",
+      "helpKey": "aircraft_performance",
+      "drills": []
+    },
+    {
+      "key": "base_analysis",
+      "status": "available",
+      "placeable": true,
+      "presentations": [
+        "table",
+        "column"
+      ],
+      "serviceLines": [
+        "air",
+        "ground",
+        "both"
+      ],
+      "appliesTo": "both",
+      "divisionSupport": "supported",
+      "freshness": "dailyLoad",
+      "helpKey": "base_analysis",
+      "drills": []
+    },
+    {
+      "key": "loaded_miles_by_aircraft",
+      "status": "available",
+      "placeable": true,
+      "presentations": [
+        "column",
+        "line",
+        "table"
+      ],
+      "serviceLines": [
+        "air",
+        "both"
+      ],
+      "appliesTo": "air",
+      "divisionSupport": "supported",
+      "freshness": "dailyLoad",
+      "helpKey": "loaded_miles_by_aircraft",
+      "drills": []
+    },
+    {
+      "key": "payer_mix_financial_effect",
+      "status": "available",
+      "placeable": true,
+      "presentations": [
+        "column",
+        "tile",
+        "table"
+      ],
+      "serviceLines": [
+        "air",
+        "ground",
+        "both"
+      ],
+      "appliesTo": "both",
+      "divisionSupport": "supported",
+      "freshness": "dailyLoad",
+      "helpKey": "payer_mix_financial_effect",
+      "drills": []
+    },
+    {
+      "key": "cash_contribution_by_aircraft",
+      "status": "available",
+      "placeable": true,
+      "presentations": [
+        "table",
+        "column"
+      ],
+      "serviceLines": [
+        "air",
+        "both"
+      ],
+      "appliesTo": "air",
+      "divisionSupport": "supported",
+      "freshness": "dailyLoad",
+      "helpKey": "cash_contribution_by_aircraft",
+      "drills": []
+    },
+    {
+      "key": "cash_contribution_by_division",
+      "status": "available",
+      "placeable": true,
+      "presentations": [
+        "table",
+        "column"
+      ],
+      "serviceLines": [
+        "air",
+        "ground",
+        "both"
+      ],
+      "appliesTo": "both",
+      "divisionSupport": "supported",
+      "freshness": "dailyLoad",
+      "helpKey": "cash_contribution_by_division",
+      "drills": []
+    },
+    {
+      "key": "cash_contribution_by_payer",
+      "status": "available",
+      "placeable": true,
+      "presentations": [
+        "table",
+        "column"
+      ],
+      "serviceLines": [
+        "air",
+        "ground",
+        "both"
+      ],
+      "appliesTo": "both",
+      "divisionSupport": "supported",
+      "freshness": "dailyLoad",
+      "helpKey": "cash_contribution_by_payer",
+      "drills": [
+        {
+          "rel": "drill",
+          "targetKey": "payer_mix_detail",
+          "bindsDimension": "payerGroup"
+        }
+      ]
+    },
+    {
+      "key": "transports_by_pickup_location",
+      "status": "available",
+      "placeable": true,
+      "presentations": [
+        "column",
+        "donut",
+        "table"
+      ],
+      "serviceLines": [
+        "air",
+        "ground",
+        "both"
+      ],
+      "appliesTo": "both",
+      "divisionSupport": "supported",
+      "freshness": "dailyLoad",
+      "helpKey": "transports_by_pickup_location",
       "drills": []
     },
     {
@@ -191,6 +380,7 @@
         "ground",
         "both"
       ],
+      "appliesTo": "both",
       "divisionSupport": "supported",
       "freshness": "dailyLoad",
       "helpKey": "payer_mix_detail",

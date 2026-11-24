@@ -1,3 +1,4 @@
+using Prism.Testing.Common;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Npgsql;
@@ -19,7 +20,7 @@ public sealed class NetCashProjectionMetricTests(PostgresFixture postgres) : ICl
         await SeedLock.WaitAsync(ct);
         try
         {
-            await using var admin = new NpgsqlConnection(postgres.ConnectionString);
+            await using var admin = new NpgsqlConnection(TestDatabaseGuard.Assert(postgres.ConnectionString));
             await admin.OpenAsync(ct);
             await using var seed = new NpgsqlCommand(
                 """
@@ -70,6 +71,19 @@ public sealed class NetCashProjectionMetricTests(PostgresFixture postgres) : ICl
         Assert.Equal(310m, projection.Total);
         Assert.Equal(new DateOnly(2026, 11, 5), projection.SnapshotDate);
         Assert.Equal("net_cash_projection", projection.Metric.Key);
+    }
+
+    [Fact]
+    public async Task The_two_components_are_summed_as_read_and_null_when_the_warehouse_has_none()
+    {
+        NetCashProjectionMetric metric = await NewMetricAsync();
+
+        NetCashProjection projection = await metric.GetProjectionAsync(2026, new ApPeriod(2026, 10), ServiceLineFilter.Both, TestContext.Current.CancellationToken);
+
+        // Nov: existing 90 + 40, future 130 + 60, value 150. The components (130 and 190) do not add up to the value and are reported as they are. Dec has no budget forecast.
+        Assert.Equal(
+            [(130m, 190m), (80m, null), (70m, 90m)],
+            projection.Months.Select(m => (m.FromExistingTrips, m.FromFutureTrips)));
     }
 
     [Fact]

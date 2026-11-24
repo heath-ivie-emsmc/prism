@@ -92,13 +92,56 @@ public enum FreshnessPolicy
     NoCache,
 }
 
-/// <summary>Where a Metric applies. <paramref name="TimeGrain"/> is <c>period</c> or <c>month</c>.</summary>
+/// <summary>
+/// Which Service Lines a Metric is about. <see cref="Both"/> is the default. An <see cref="Air"/> Metric (tail numbers, aircraft) has air data only, and a
+/// <see cref="Ground"/> Metric has ground data only. The rule for <see cref="MetricContext.ServiceLines"/> follows from it: <c>both</c> lists air, ground and both,
+/// <c>air</c> lists air and both, <c>ground</c> lists ground and both.
+/// </summary>
+public enum MetricAppliesTo
+{
+    /// <summary>Air and ground. The Service Line filter splits it.</summary>
+    Both,
+
+    /// <summary>Air only. <c>serviceLine=air</c> and <c>all</c> both mean air, and <c>ground</c> is refused.</summary>
+    Air,
+
+    /// <summary>Ground only. <c>serviceLine=ground</c> and <c>all</c> both mean ground, and <c>air</c> is refused.</summary>
+    Ground,
+}
+
+/// <summary>Where a Metric applies. <paramref name="TimeGrain"/> is <c>period</c> or <c>month</c>. <paramref name="AppliesTo"/> says whether the Metric is air only, ground only or both.</summary>
 public sealed record MetricContext(
     bool ProviderScoped,
     IReadOnlyList<string> ServiceLines,
     DivisionSupport DivisionSupport,
     IReadOnlyList<string> GroupDimensions,
-    string TimeGrain);
+    string TimeGrain,
+    MetricAppliesTo AppliesTo = MetricAppliesTo.Both);
+
+/// <summary>The Service Line a Metric answers for, given the one asked for and what the Metric is about.</summary>
+public static class ServiceLineScope
+{
+    /// <summary>
+    /// The filter to run: <paramref name="requested"/> for a Metric about both lines, and the Metric's own line for an air-only or ground-only Metric when
+    /// <c>all</c> or that line was asked for. Null when the Metric has no data for the line asked for (ground on an air-only Metric, air on a ground-only one).
+    /// </summary>
+    public static ServiceLineFilter? Effective(MetricAppliesTo appliesTo, ServiceLineFilter requested) => (appliesTo, requested) switch
+    {
+        (MetricAppliesTo.Both, _) => requested,
+        (MetricAppliesTo.Air, ServiceLineFilter.Ground) => null,
+        (MetricAppliesTo.Air, _) => ServiceLineFilter.Air,
+        (MetricAppliesTo.Ground, ServiceLineFilter.Air) => null,
+        _ => ServiceLineFilter.Ground,
+    };
+
+    /// <summary>The Service Line filter values a Metric accepts, in catalog words: <c>air</c> and <c>both</c>, <c>ground</c> and <c>both</c>, or all three.</summary>
+    public static IReadOnlyList<string> LinesFor(MetricAppliesTo appliesTo) => appliesTo switch
+    {
+        MetricAppliesTo.Air => ["air", "both"],
+        MetricAppliesTo.Ground => ["ground", "both"],
+        _ => ["air", "ground", "both"],
+    };
+}
 
 /// <summary>The caching policy of a Metric.</summary>
 public sealed record MetricFreshness(FreshnessPolicy Policy);
@@ -136,6 +179,7 @@ public static class MetricCatalog
     private static readonly string[] PeriodLineAndDivision = [MetricDimensions.Period, MetricDimensions.ServiceLine, MetricDimensions.Division];
     private static readonly string[] PeriodGroupAndDivision = [MetricDimensions.Period, MetricDimensions.ServiceLine, MetricDimensions.Group, MetricDimensions.Division];
     private static readonly string[] PayerMixDetailDimensions = [MetricDimensions.Period, MetricDimensions.ServiceLine, MetricDimensions.Group, MetricDimensions.Division, MetricDimensions.PayerGroup];
+    private static readonly string[] TrendGroupAndDivision = [MetricDimensions.Period, MetricDimensions.Months, MetricDimensions.ServiceLine, MetricDimensions.Group, MetricDimensions.Division];
     private static readonly string[] PeriodAndDivision = [MetricDimensions.Period, MetricDimensions.Division];
     private static readonly string[] PeriodAndMonths = [MetricDimensions.Period, MetricDimensions.Months];
     private static readonly string[] MonthChoices = ["6", "12"];
@@ -177,7 +221,8 @@ public static class MetricCatalog
         string category,
         IReadOnlyList<string> serviceLines,
         IReadOnlyList<string> dimensions,
-        IReadOnlyList<WidgetPresentation> presentations) =>
+        IReadOnlyList<WidgetPresentation> presentations,
+        MetricAppliesTo appliesTo = MetricAppliesTo.Both) =>
         new(
             definition.Key,
             definition.Name,
@@ -197,7 +242,8 @@ public static class MetricCatalog
                 serviceLines,
                 dimensions.Contains(MetricDimensions.Division) ? DivisionSupport.Supported : DivisionSupport.None,
                 dimensions.Contains(MetricDimensions.Group) ? [MetricDimensions.Group] : [],
-                dimensions.Contains(MetricDimensions.Months) ? "month" : "period"),
+                dimensions.Contains(MetricDimensions.Months) ? "month" : "period",
+                appliesTo),
         };
 
     private static MetricCatalogEntry Planned(string key, string name, string description, string unit, string category, bool claimLevel = false) =>
@@ -217,6 +263,23 @@ public static class MetricCatalog
         Available(ITransportVolumeMetric.Definition, "transports", AllLines, SeriesAndDivision, [Tile with { IsDefault = true }, Column(false), Table]),
         Available(ICleanClaimRateMetric.Definition, "claims", AllLines, PeriodAndMonths, [Tile with { IsDefault = true }, Line(false), Table]),
 
+        Available(ITransportMixByCallTypeMetric.Definition, "transports", AllLines, TrendGroupAndDivision, [Column(true), Stacked(), Donut(), Line(false), Table]),
+
+        Available(IAircraftPerformanceMetric.Definition, "fleet", ServiceLineScope.LinesFor(MetricAppliesTo.Air), PeriodGroupAndDivision, [Table with { IsDefault = true }, Column(false)], MetricAppliesTo.Air),
+
+        Available(IBaseAnalysisMetric.Definition, "fleet", AllLines, PeriodGroupAndDivision, [Table with { IsDefault = true }, Column(false)]),
+
+        Available(ILoadedMilesByAircraftMetric.Definition, "fleet", ServiceLineScope.LinesFor(MetricAppliesTo.Air), TrendGroupAndDivision, [Column(true), Line(false), Table], MetricAppliesTo.Air),
+
+        Available(IPayerMixFinancialEffectMetric.Definition, "payer", AllLines, PeriodGroupAndDivision, [Column(true), Tile with { IsDefault = false }, Table]),
+
+        Available(ICashContributionByAircraftMetric.Definition, "cash", ServiceLineScope.LinesFor(MetricAppliesTo.Air), PeriodGroupAndDivision, [Table with { IsDefault = true }, Column(false)], MetricAppliesTo.Air),
+        Available(ICashContributionByDivisionMetric.Definition, "cash", AllLines, PeriodGroupAndDivision, [Table with { IsDefault = true }, Column(false)]),
+        Available(ICashContributionByPayerMetric.Definition, "cash", AllLines, PeriodGroupAndDivision, [Table with { IsDefault = true }, Column(false)])
+            with { Drills = [new MetricDrill("drill", "payer_mix_detail", MetricDimensions.PayerGroup)] },
+
+        Available(ITransportsByPickupLocationMetric.Definition, "transports", AllLines, PeriodGroupAndDivision, [Column(true), Donut(), Table]),
+
         // A drill target only: reached from a payer group on payer mix, never placed on a Saved View, so it has no presentations of its own.
         Available(IPayerMixDetailMetric.Definition, "payer", AllLines, PayerMixDetailDimensions, []) with { Placeable = false },
 
@@ -224,14 +287,8 @@ public static class MetricCatalog
         new("what_changed", "What changed", "A written summary of the findings behind a change in net cash. Shown on the dashboard only.", "text", "insights", MetricStatus.Available, false, false, AllLines, PeriodAndLine, [], []),
 
         Planned("net_cash_by_aircraft_type", "Net cash by aircraft type", "Rotor wing and fixed wing cash, with the six-month trend.", "USD", "fleet"),
-        Planned("aircraft_performance", "Aircraft performance", "Transports, loaded miles and net cash by tail number, with change from the prior month.", "USD", "fleet"),
-        Planned("base_analysis", "Base analysis", "Net cash and transport volume by Reporting Division, and the aircraft operating from each.", "USD", "fleet"),
-        Planned("loaded_miles_by_aircraft", "Loaded miles by aircraft", "Loaded miles for each tail number.", "miles", "fleet"),
-        Planned("transport_mix_by_call_type", "Scene and interfacility mix", "Transports by call type, split by aircraft type.", "transports", "transports"),
-        Planned("transports_by_pickup_location", "Transports by pickup location", "Transport counts by sending facility and scene response area.", "transports", "transports"),
         Planned("expected_cash_by_payer", "Expected cash by payer", "Projected cash by payer class, spread over the months payers are expected to pay.", "USD", "payer"),
         Planned("payment_timing_by_payer", "Payment timing by payer", "How long each payer class usually takes to pay.", "days", "payer"),
-        Planned("payer_mix_financial_effect", "Financial effect of payer mix", "The estimated cash effect of a shift in payer mix.", "USD", "payer"),
         Planned("ar_days", "AR days", "Days in accounts receivable, with the trend.", "days", "claims"),
         Planned("open_negotiations", "Open negotiations", "No Surprises Act negotiations that are open, close to expiring, or settled.", "negotiations", "claims"),
         Planned("claim_status_distribution", "Claim status distribution", "Claims by status: denied, IDR, patient due, in review, pending and paid.", "claims", "claims"),

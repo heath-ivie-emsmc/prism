@@ -77,7 +77,9 @@ test.describe('data frame', () => {
   test('the Transports and Loaded miles tiles expand, and the tiles with no picture to enlarge do not', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
     await openDashboard(page);
-    await expect(page.getByRole('button', { name: /^Expand .+ to full screen$/ })).toHaveCount(3);
+    await expect(page.getByRole('button', { name: /^Expand .+ to full screen$/ })).toHaveCount(4);
+    // The fourth is the projection panel, which can also be enlarged.
+    await expect(page.locator('app-projection-panel .frame__expand')).toHaveCount(1);
     await expect(page.locator('app-kpi-card', { hasText: 'Clean claim rate' }).locator('.frame__expand')).toHaveCount(0);
     await expect(page.locator('app-kpi-card', { hasText: 'Open negotiation' }).locator('.frame__expand')).toHaveCount(0);
 

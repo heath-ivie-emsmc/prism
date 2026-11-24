@@ -9,6 +9,7 @@ export const announce = {
   limitReached: (title: string, max: number): string => `Can't add ${title}. A view holds up to ${max} metrics.`,
   noRoom: (title: string): string => `Can't add ${title}. There is no room left on the grid.`,
   planned: (title: string): string => `${title} is coming soon and can't be added yet.`,
+  lineNotCovered: (title: string, reason: string): string => `${title} can't be added under this Service Line. ${reason}.`,
   moveStart: (title: string, x: number, y: number): string =>
     `Moving ${title}. Row ${y + 1}, column ${x + 1}. Use the arrow keys to move, Enter to drop, Escape to cancel.`,
   moveStep: (x: number, y: number, pushed: number): string =>

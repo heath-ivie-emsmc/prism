@@ -6,9 +6,22 @@ import { BASE, bootstrap, settle } from '../saved-views/saved-views.testing';
 import { AttentionClaimDto, CLAIMS_PERMISSION } from './attention.service';
 import { NeedsAttentionComponent } from './needs-attention.component';
 
+/** Warehouse text can hold markup. It must reach the page as text. */
+const HOSTILE = '<img src=x onerror=alert(1)>';
 const COUNTS = {
   providerId: '526', period: '202610', dataThrough: '2026-11-05', deniedBalanceDue: 48200,
   counts: [{ key: 'denied', name: 'Denied', count: 2 }, { key: 'needs_attention', name: 'Needs attention', count: 4 }, { key: 'all', name: 'All', count: 8 }],
+  deniedRate: 0.25,
+  reasons: [
+    { reason: HOSTILE, isOther: false, count: 2, balanceDue: 40000 },
+    { reason: 'Other reason', isOther: false, count: 1, balanceDue: 5000 },
+    { reason: 'Other', isOther: true, count: 3, balanceDue: 3200 },
+  ],
+  categories: [{ key: 'denied', name: 'Denied', count: 2, balanceDue: 48200 }, { key: 'on_hold', name: 'On hold', count: 1, balanceDue: 1200 }, { key: 'in_collections', name: 'In collections', count: 0, balanceDue: 0 }],
+  filingBands: [
+    { key: 'past_due', name: 'Past due', claims: 1, balanceDue: 1200 }, { key: 'due_within_10_days', name: 'Due within 10 days', claims: 0, balanceDue: 0 },
+    { key: 'due_within_30_days', name: 'Due within 30 days', claims: 2, balanceDue: 48200 }, { key: 'due_later', name: 'Due later', claims: 1, balanceDue: 800 },
+  ],
 };
 const claim = (id: string, over: Partial<AttentionClaimDto> = {}): AttentionClaimDto => ({
   id, claimRef: `FW-${id}`, serviceDate: '2026-09-28', payer: 'Meridian Health Plan', payerCategory: 'Insurance', vehicle: 'N418CV', reportingDivision: 'Sky Harbor base',
@@ -32,10 +45,10 @@ describe('NeedsAttentionComponent', () => {
   it('lists the claims with words for status, money and deadline, and a tab for each check with its count', async () => {
     const { root } = await create();
 
-    expect(root.querySelector('h2')?.textContent).toContain('Air claims, October 2026');
+    expect(root.querySelector('#claims-title')?.textContent).toContain('Air claims, October 2026');
     expect([...root.querySelectorAll('[role="radio"]')].map((r) => r.textContent?.trim())).toEqual(['Denied (2)', 'Needs attention (4)', 'All (8)']);
     expect(root.querySelector('ems-chip')?.textContent).toContain('2 of 8');
-    const cells = [...root.querySelectorAll('tbody tr')[0]!.querySelectorAll('th, td')].map((c) => c.textContent?.replace(/\s+/g, ' ').trim());
+    const cells = [...root.querySelectorAll('.claims tbody tr')[0]!.querySelectorAll('th, td')].map((c) => c.textContent?.replace(/\s+/g, ' ').trim());
     expect(cells.join('|')).toContain('FW-1Service date 09/28/2026');
     expect(cells.join('|')).toContain('DeniedMissing documentation');
     expect(cells.join('|')).toContain('$24,600.00');
@@ -104,7 +117,7 @@ describe('NeedsAttentionComponent', () => {
     const { root } = await create({ ...CLAIMS, total: 0, claims: [] });
 
     expect(root.textContent).toContain('No denied claims for October 2026.');
-    expect(root.querySelector('table')).toBeNull();
+    expect(root.querySelector('.claims table')).toBeNull();
   });
 
   it('explains, and asks for nothing, when the user lacks the claims permission', async () => {
@@ -114,6 +127,46 @@ describe('NeedsAttentionComponent', () => {
 
     expect(fixture.nativeElement.textContent).toContain("You don't have access to claim details");
     http.expectNone((r) => r.url.includes('/claims/attention'));
+  });
+
+  it('shows the summary above the list: denial rate, top reasons, overlapping categories and the four estimated filing bands', async () => {
+    const { root } = await create();
+    const summary = root.querySelector('app-attention-summary')!;
+
+    expect(summary.querySelector('h2')?.textContent).toContain('Summary, October 2026');
+    expect(summary.textContent).toContain('25.0%');
+    expect(summary.textContent).toContain('All other reasons');
+    expect(summary.textContent).toContain('Other reason');
+    expect(summary.textContent).toContain('overlap and are not added together');
+    expect(summary.textContent).toContain('These are estimates. The filing limits are a placeholder');
+    expect(summary.querySelectorAll('table')).toHaveLength(3);
+    expect(summary.querySelectorAll('table')[2]!.querySelectorAll('tbody tr')).toHaveLength(4);
+    expect(root.querySelector('app-attention-summary')!.compareDocumentPosition(root.querySelector('#claims-title')!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('shows a hostile denial reason as literal text and builds no element from it', async () => {
+    const { root } = await create();
+    const summary = root.querySelector('app-attention-summary')!;
+
+    expect(summary.textContent).toContain(HOSTILE);
+    expect(root.querySelector('img')).toBeNull();
+    expect(summary.innerHTML).not.toContain('<img');
+  });
+
+  it('says there is no rate, not zero, when the period has no claims', async () => {
+    const http = bootstrap({ me: { permissions: PERMISSIONS } });
+    const fixture: ComponentFixture<NeedsAttentionComponent> = TestBed.createComponent(NeedsAttentionComponent);
+    await settle(fixture, http, { [`${ATTENTION}/counts`]: { ...COUNTS, deniedRate: null, reasons: [] }, [`${ATTENTION}/denied`]: CLAIMS });
+
+    const text = (fixture.nativeElement as HTMLElement).querySelector('app-attention-summary')!.textContent;
+    expect(text).toContain('No claims');
+    expect(text).toContain('No denied claims in this period.');
+  });
+
+  it('names the vehicle column Tail number', async () => {
+    const { root } = await create();
+
+    expect([...root.querySelectorAll('thead th')].map((h) => h.textContent?.trim())).toContain('Tail number');
   });
 
   it('passes axe', async () => {

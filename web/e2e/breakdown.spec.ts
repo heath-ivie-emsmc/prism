@@ -18,7 +18,7 @@ test.describe('net cash breakdown', () => {
 
     await expect(page).toHaveURL(/\/dashboard\/net-cash\?period=202610&line=air$/);
     await expect(page.getByRole('heading', { level: 2, name: 'Air net cash by aircraft type' })).toBeVisible();
-    await expect(page.getByRole('heading', { level: 2, name: /By base and aircraft, October 2026/ })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 2, name: /By base location and aircraft, October 2026/ })).toBeVisible();
   });
 
   test('the headline link is reachable and usable from the keyboard', async ({ page }) => {
@@ -67,7 +67,7 @@ test.describe('net cash breakdown', () => {
 
     await expect(page.getByRole('heading', { level: 2, name: 'Ground net cash by level of service' })).toBeVisible();
     await expect(page.getByRole('heading', { level: 3, name: 'Basic life support' })).toBeVisible();
-    await expect(page.getByRole('columnheader', { name: 'Unit' })).toBeVisible();
+    await expect(page.getByRole('columnheader', { name: 'Tail number' })).toBeVisible();
     await expect(page.getByRole('columnheader', { name: 'Reporting division' })).toBeVisible();
   });
 

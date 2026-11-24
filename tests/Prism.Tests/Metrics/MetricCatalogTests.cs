@@ -149,6 +149,15 @@ public sealed class MetricCatalogTests
         ["cash_per_transport_by_payer"] = "CashPerTransportMetricTests",
         ["net_cash_breakdown"] = "NetCashBreakdownMetricTests",
         ["net_cash_by_group"] = "NetCashByGroupMetricTests",
+        ["transport_mix_by_call_type"] = "TransportMixByCallTypeMetricTests",
+        ["aircraft_performance"] = "AircraftPerformanceMetricTests",
+        ["base_analysis"] = "BaseAnalysisMetricTests",
+        ["loaded_miles_by_aircraft"] = "LoadedMilesByAircraftMetricTests",
+        ["payer_mix_financial_effect"] = "PayerMixFinancialEffectMetricTests",
+        ["transports_by_pickup_location"] = "TransportsByPickupLocationMetricTests",
+        ["cash_contribution_by_aircraft"] = "CashContributionMetricTests",
+        ["cash_contribution_by_division"] = "CashContributionMetricTests",
+        ["cash_contribution_by_payer"] = "CashContributionMetricTests",
     };
 
     [Fact]

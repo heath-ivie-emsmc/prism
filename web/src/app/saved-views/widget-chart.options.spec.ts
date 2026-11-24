@@ -51,3 +51,30 @@ describe('buildWidgetOption payer colours', () => {
     expect(option.series[0]!.data.map((d) => d.itemStyle?.color)).toEqual([payerColor('commercial').fill, payerColor('medicare').fill, payerColor('va').fill]);
   });
 });
+
+describe('buildWidgetOption trend and tooltips', () => {
+  const trend = { categories: ['Sep 2026', 'Oct 2026'], series: [{ name: 'Scene', values: [5, 10] }, { name: 'Interfacility', values: [5, 4] }] };
+
+  it('draws the trend, not the one period, for the line and stacked presentations, and the one period for columns', () => {
+    const withTrend = data({ unit: 'count', trend });
+    const stacked = buildWidgetOption(withTrend, 'stacked', COLORS) as unknown as { xAxis: { data: string[] }; series: { name: string; stack?: string; data: number[] }[] };
+    const line = buildWidgetOption(withTrend, 'line', COLORS) as unknown as { xAxis: { data: string[] }; series: { name: string }[] };
+    const column = buildWidgetOption(withTrend, 'column', COLORS) as unknown as { xAxis: { data: string[] } };
+
+    expect(stacked.xAxis.data).toEqual(trend.categories);
+    expect(stacked.series.map((s) => [s.name, s.stack, s.data])).toEqual([['Scene', 'total', [5, 10]], ['Interfacility', 'total', [5, 4]]]);
+    expect(line.series.map((s) => s.name)).toEqual(['Scene', 'Interfacility']);
+    expect(column.xAxis.data).toEqual(['Commercial', 'Medicare', 'Mystery']);
+  });
+
+  it('escapes warehouse text in the axis and donut tooltips', () => {
+    const hostile = '<img src=x onerror=alert(1)>';
+    const axis = (buildWidgetOption(data({ unit: 'count' }), 'column', COLORS) as unknown as { tooltip: { formatter: (p: unknown) => string } }).tooltip.formatter([{ axisValueLabel: hostile, seriesName: hostile, value: 3, marker: '' }]);
+    const pie = (buildWidgetOption(data({ unit: 'count' }), 'donut', COLORS) as unknown as { tooltip: { formatter: (p: unknown) => string } }).tooltip.formatter({ name: hostile, value: 3, percent: 50, marker: '' });
+
+    for (const html of [axis, pie]) {
+      expect(html).not.toContain('<img');
+      expect(html).toContain('&lt;img src=x onerror=alert(1)&gt;');
+    }
+  });
+});

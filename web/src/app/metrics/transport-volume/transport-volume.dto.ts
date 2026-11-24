@@ -15,6 +15,11 @@ export interface TransportVolumeGroupDto {
   readonly name: string;
   readonly serviceLine: 'air' | 'ground';
   readonly transports: number;
+  /** The month before the last, same basis and filters. */
+  readonly priorTransports: number;
+  readonly changeTransports: number;
+  /** Percent units (12.5 is 12.5%), null when the prior month had none. */
+  readonly changePercent: number | null;
 }
 
 /** Response of GET /api/v1/providers/{providerId}/metrics/net-collections/transports. */

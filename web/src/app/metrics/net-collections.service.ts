@@ -40,8 +40,9 @@ export class NetCollectionsService {
     return loadNetCollections(this.http, { providerId, period: endPeriod, months, serviceLine });
   }
 
-  projection(providerId: string, afterPeriod: string, serviceLine: ServiceLine): Observable<NetCashProjectionDto> {
-    return loadNetCashProjection(this.http, { providerId, period: afterPeriod, months: 0, serviceLine });
+  /** The forecast for the months after `afterPeriod`. `horizon` is 1 to 3 months and defaults to 3. */
+  projection(providerId: string, afterPeriod: string, serviceLine: ServiceLine, horizon = 3): Observable<NetCashProjectionDto> {
+    return loadNetCashProjection(this.http, { providerId, period: afterPeriod, months: 0, serviceLine }, horizon);
   }
 
   breakdown(providerId: string, period: string, serviceLine: ServiceLine, division?: string): Observable<NetCashBreakdownDto> {

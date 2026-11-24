@@ -22,14 +22,22 @@ public sealed partial class NpgsqlWarehouse(NpgsqlDataSource dataSource, IOption
         return RunAsync(query, map, cancellationToken);
     }
 
+    /// <summary>
+    /// For tests only: runs the query without the checks in <see cref="Validate"/>, so a test can prove that the read-only transaction and the database
+    /// refuse a write even when the policy is bypassed. Nothing in the application calls this.
+    /// </summary>
+    internal Task<IReadOnlyList<T>> QueryWithoutValidationAsync<T>(WarehouseQuery query, Func<DbDataReader, T> map, CancellationToken cancellationToken) =>
+        RunAsync(query, map, cancellationToken);
+
     private async Task<IReadOnlyList<T>> RunAsync<T>(WarehouseQuery query, Func<DbDataReader, T> map, CancellationToken cancellationToken)
     {
         int maxRows = options.Value.MaxRows;
         long started = Stopwatch.GetTimestamp();
         try
         {
-            await using NpgsqlCommand command = dataSource.CreateCommand(query.Sql);
-            command.CommandTimeout = options.Value.CommandTimeoutSeconds;
+            // Read-only transaction, always rolled back: see ReadOnlyWarehouseSession. The read-only setting is the first statement, before the query.
+            await using ReadOnlyWarehouseSession session = await ReadOnlyWarehouseSession.BeginAsync(dataSource, options.Value.CommandTimeoutSeconds, cancellationToken);
+            await using NpgsqlCommand command = session.CreateCommand(query.Sql, options.Value.CommandTimeoutSeconds);
             foreach ((string name, object? value) in query.Parameters)
             {
                 command.Parameters.AddWithValue(name, value ?? DBNull.Value);
@@ -86,6 +94,18 @@ public sealed partial class NpgsqlWarehouse(NpgsqlDataSource dataSource, IOption
         if (!ProviderParameterUse().IsMatch(query.Sql))
         {
             throw new WarehouseQueryRejectedException("A query must filter on @provider_id.");
+        }
+
+        // The policy reads the text the way PostgreSQL does, so a verb, a side-effect function or the Provider parameter inside a literal or comment counts for nothing.
+        WarehouseSqlAnalysis analysis = WarehouseSqlPolicy.Analyze(query.Sql);
+        if (analysis.Violation is not null)
+        {
+            throw new WarehouseQueryRejectedException(analysis.Violation);
+        }
+
+        if (!analysis.UsesProviderParameter)
+        {
+            throw new WarehouseQueryRejectedException("A query must filter on @provider_id outside any string or comment.");
         }
 
         if (!query.Parameters.ContainsKey(WarehouseQuery.ProviderParameter))

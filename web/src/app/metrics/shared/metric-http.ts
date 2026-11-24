@@ -20,3 +20,8 @@ export function periodParams(period: string, serviceLine: string, group?: string
   if (group) params = params.set('group', group);
   return division ? params.set('division', division) : params;
 }
+
+/** The period, Service Line and Division, plus the number of months for the Metrics that draw a trend. */
+export function trendParams(q: Pick<MetricQuery, 'period' | 'serviceLine' | 'months' | 'division'>): HttpParams {
+  return periodParams(q.period, q.serviceLine, undefined, q.division).set('months', q.months);
+}

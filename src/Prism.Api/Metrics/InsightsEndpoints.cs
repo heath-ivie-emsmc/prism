@@ -21,7 +21,8 @@ internal static class InsightsEndpoints
             .WithDescription(
                 "Explains the change in posted net cash for `period` (`yyyyMM`, default the newest period with net cash data) against the month before, for one aircraft type or level of service (`group`, a `key` from the breakdown route such as `fixed-wing`) "
                 + "or the whole Service Line (`serviceLine` is `all`, `air` (default) or `ground`). `drivers` are the findings that explain part of the posted change, largest first, and with `remainder` they add up to `delta`. "
-                + "`expected` are findings on another basis, such as what a shift in payer mix is expected to do to cash as claims are paid, and are not part of `delta`. "
+                + "`expected` are findings on another basis, such as what a shift in payer mix is expected to do to cash as claims are paid, or a shift of transports between Reporting Divisions that is another view of a change already explained by aircraft type, and are not part of `delta`. "
+                + "The findings are `aged-payments`, `volume`, `payer-mix`, `aircraft-mix` (transports moving between aircraft types or levels of service that earn different amounts, a driver) and `base-mix` (the same between Reporting Divisions: a driver only when no aircraft mix explains the change, otherwise listed in `expected`). "
                 + "`remainder.judgment` is `withinNormalRange` only when the unexplained part is inside the usual month-to-month range of the last twelve months, `outsideNormalRange` when it is not, and `notEnoughHistory` when there are not twelve months to judge by. "
                 + "`normalizedDeltaRatio` is the change with unusually high aged payments taken out of both months, or null when there were none. Every figure in the text comes from a finding. "
                 + "Aggregates only: no patient, claim or payer names. Returns 204 when neither month has cash to explain, and 404 when the Provider is not one the caller may read in full.")
@@ -105,7 +106,7 @@ internal static class InsightsEndpoints
             h.DeltaRatio,
             result.Insight.NormalizedDeltaRatio,
             [.. cards.Where(c => c.Basis == FindingBasis.PostedCash).Select(Card)],
-            [.. cards.Where(c => c.Basis == FindingBasis.ExpectedEffect).Select(Card)],
+            [.. cards.Where(c => c.Basis != FindingBasis.PostedCash).Select(Card)],
             new RemainderResponse(result.Insight.Remainder.Amount, JudgmentName(result.Insight.Remainder.Judgment), result.Narrative.RemainderLine));
     }
 

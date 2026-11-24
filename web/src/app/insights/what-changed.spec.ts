@@ -73,6 +73,20 @@ describe('what changed display', () => {
     expect(toCardViews(null)).toEqual([]);
   });
 
+  it('draws the aircraft and base mix cards, in the drivers or beside them, and any unknown kind from its own words and the label icon', () => {
+    const card = (kind: string, label: 'watch' | 'info') => ({ kind, label, title: `<b>${kind}</b>`, body: 'A mix shift.', impact: -1_200 });
+    const dto: WhatChangedDto = { ...DTO, drivers: [card('aircraft-mix', 'watch'), card('base-mix', 'watch')], expected: [card('base-mix', 'watch'), card('brand-new-kind', 'info')] };
+    const views = toCardViews(dto);
+    expect(views.map((v) => [v.kind, v.icon, v.amountNote])).toEqual([
+      ['aircraft-mix', 'flight', 'this month'],
+      ['base-mix', 'location_on', 'this month'],
+      ['base-mix', 'location_on', 'expected per month'],
+      ['brand-new-kind', 'info', 'expected per month'],
+    ]);
+    expect(new Set(views.map((v) => v.key)).size).toBe(4);
+    expect(views[3]!.title).toBe('<b>brand-new-kind</b>');
+  });
+
   it('formats Data Through as a date, and says nothing for anything else', () => {
     expect(formatDataThrough('2026-10-31')).toBe('10/31/2026');
     expect(formatDataThrough(null)).toBe('');

@@ -169,6 +169,32 @@ describe('MetricWidgetComponent', () => {
     expect(root.textContent).toContain('Air · All bases');
   });
 
+  it('shows no help by default, a disclosure button only when compact, and the summary too when full, always above the stamp', async () => {
+    const { fixture, root } = await create(widget('a', 0, 0));
+    expect(root.querySelector('app-metric-help')).toBeNull();
+
+    fixture.componentRef.setInput('help', 'compact');
+    fixture.detectChanges();
+    expect(root.querySelector('.help__summary')).toBeNull();
+    expect(root.querySelector('.help__toggle')?.textContent?.replace(/\s+/g, ' ').trim()).toBe('What these numbers mean for Net cash collected');
+
+    fixture.componentRef.setInput('help', 'full');
+    fixture.detectChanges();
+    expect(root.querySelector('.help__summary')).not.toBeNull();
+    const help = root.querySelector('app-metric-help')!;
+    const foot = root.querySelector('app-scope-foot')!;
+    expect(help.compareDocumentPosition(foot) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(await axeViolations(root)).toEqual([]);
+  });
+
+  it('still offers the help when the Metric is not available for the Service Line, since that is where the air-only rule is explained', async () => {
+    const { fixture, root } = await create(widget('a', 0, 0), { ...NET_CASH, serviceLines: ['ground'] }, {});
+    fixture.componentRef.setInput('help', 'full');
+    fixture.detectChanges();
+    expect(root.textContent).toContain("isn't available for");
+    expect(root.querySelector('app-metric-help .help__toggle')).not.toBeNull();
+  });
+
   it('sends the page Division to a Metric that honors it, and the badge names the selected one', async () => {
     const supported = { ...PAYER_MIX_METRIC };
     const http = bootstrap();

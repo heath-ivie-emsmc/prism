@@ -38,8 +38,8 @@ export function plainMoney(amount: number): string {
   return money.format(Math.abs(amount));
 }
 
-/** An icon for what the finding is about, so two cards with the same label do not look alike. Anything not listed uses the label's icon. */
-const KIND_ICONS: Readonly<Record<string, string>> = { 'aged-payments': 'calendar_clock', volume: 'bar_chart', 'payer-mix': 'groups' };
+/** An icon for what the finding is about, so two cards with the same label do not look alike. Anything not listed, including a kind a newer API adds, uses the label's icon and the card's own title and body. */
+const KIND_ICONS: Readonly<Record<string, string>> = { 'aged-payments': 'calendar_clock', volume: 'bar_chart', 'payer-mix': 'groups', 'aircraft-mix': 'flight', 'base-mix': 'location_on' };
 
 export function toCardView(card: InsightCardDto, expected: boolean, index: number): CardView {
   const label = LABELS[card.label];

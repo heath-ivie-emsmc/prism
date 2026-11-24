@@ -8,13 +8,26 @@ namespace Prism.Application.Metrics;
 public sealed record PayerCashPerTransport(string Key, string Name, int Transports, decimal Cash)
 {
     public decimal? CashPerTransport => Transports == 0 ? null : Cash / Transports;
+
+    /// <summary>This group's cash per transport minus <paramref name="overall"/> (USD). Null when the group has no transports or there is no overall figure.</summary>
+    public decimal? DifferenceFrom(decimal? overall) => CashPerTransport is { } own && overall is { } all ? own - all : null;
+
+    /// <summary>The difference as percent units of the overall figure (12.5 is 12.5%, one decimal). Null when the overall figure is null or zero, or the group has no transports.</summary>
+    public decimal? PercentFrom(decimal? overall) =>
+        DifferenceFrom(overall) is { } difference && overall is { } all and not 0m ? Math.Round(difference / all * 100m, 1, MidpointRounding.AwayFromZero) : null;
+}
+
+/// <summary>Transports and net cash across every payer group, for the same cohorts and Service Line (and Division) but not narrowed to one aircraft type or level of service.</summary>
+public sealed record OverallCashPerTransport(int Transports, decimal Cash)
+{
+    public decimal? CashPerTransport => Transports == 0 ? null : Cash / Transports;
 }
 
 /// <summary>
 /// What a transport earns by payer group, for transports that are old enough to have been paid. The cohorts are the twelve date-of-service months that
 /// ended <see cref="ICashPerTransportMetric.MaturityMonths"/> or more months before <paramref name="Period"/>, from <paramref name="CohortFrom"/> to
 /// <paramref name="CohortThrough"/>. <paramref name="GroupKey"/> narrows it to one aircraft type or level of service, and is null for the whole Service Line.
-/// <paramref name="Payers"/> always lists every payer group, in a fixed order, with zeros.
+/// <paramref name="Payers"/> always lists every payer group, in a fixed order, with zeros. <paramref name="Overall"/> is the all-payer figure to compare each group with.
 /// </summary>
 public sealed record CashPerTransport(
     MetricDefinition Metric,
@@ -23,7 +36,8 @@ public sealed record CashPerTransport(
     ApPeriod CohortThrough,
     ServiceLineFilter ServiceLine,
     string? GroupKey,
-    IReadOnlyList<PayerCashPerTransport> Payers);
+    IReadOnlyList<PayerCashPerTransport> Payers,
+    OverallCashPerTransport? Overall = null);
 
 /// <summary>
 /// Matured net cash per transport by primary payer group. Net cash is payments less refunds, without the Old AR import, posted up to and including the

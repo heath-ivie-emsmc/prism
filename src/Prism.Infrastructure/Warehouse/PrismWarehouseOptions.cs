@@ -28,6 +28,12 @@ public sealed class PrismWarehouseOptions
     /// </summary>
     public int? DevelopmentProviderId { get; set; }
 
+    /// <summary>
+    /// Temporary, local use only: skip the startup check of the login's privileges (for example while a SELECT-only login is being issued).
+    /// It never lets Prism write. Logged as an error on every start. Every query still runs in a read-only transaction. A deployed host refuses to start with this set.
+    /// </summary>
+    public bool SkipLoginCheck { get; set; }
+
     public bool IsConfigured => !string.IsNullOrWhiteSpace(ConnectionString);
 }
 
@@ -35,12 +41,22 @@ public static class PrismWarehouseOptionsRules
 {
     private static readonly SslMode[] SafeModes = [SslMode.Require, SslMode.VerifyCA, SslMode.VerifyFull];
 
+    private static void AddOverrideProblem(PrismWarehouseOptions options, bool deployed, List<string> problems)
+    {
+        if (deployed && options.SkipLoginCheck)
+        {
+            problems.Add("Warehouse:SkipLoginCheck must not be set in a deployed environment.");
+        }
+    }
+
     /// <summary>Returns the problems with these options, or none. A deployed host must have a warehouse and must encrypt the connection.</summary>
     public static IReadOnlyList<string> Problems(PrismWarehouseOptions options, bool deployed)
     {
         ArgumentNullException.ThrowIfNull(options);
 
         List<string> problems = [];
+        AddOverrideProblem(options, deployed, problems);
+
         if (options.MaxPoolSize is < 1 or > 200)
         {
             problems.Add("Warehouse:MaxPoolSize must be between 1 and 200.");

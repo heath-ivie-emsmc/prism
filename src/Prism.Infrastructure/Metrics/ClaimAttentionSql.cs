@@ -25,15 +25,72 @@ internal static class ClaimAttentionSql
           AND (@group_key = '' OR lower(replace(trim(COALESCE(level_of_service, '')), ' ', '-')) = @group_key)
         """;
 
+    internal const string OnHoldRule = "(status = 'On_Hold')";
+
+    internal const string InCollectionsRule = "(in_collections = 'Yes')";
+
+    // Only positive balances are added, so a credit never reduces what is owed.
+    internal const string OwedBalance = "GREATEST(COALESCE(balance_due, 0), 0)";
+
     internal const string CountsSql =
         $"""
         SELECT COUNT(*) FILTER (WHERE {DeniedRule}) AS denied,
                COUNT(*) FILTER (WHERE {NeedsAttentionRule}) AS needs_attention,
                COUNT(*) AS all_claims,
                COALESCE(SUM(balance_due) FILTER (WHERE {DeniedRule}), 0) AS denied_balance,
-               MAX(snapshot_date) AS data_through
+               MAX(snapshot_date) AS data_through,
+               COUNT(*) FILTER (WHERE {OnHoldRule}) AS on_hold,
+               COALESCE(SUM({OwedBalance}) FILTER (WHERE {OnHoldRule}), 0) AS on_hold_balance,
+               COUNT(*) FILTER (WHERE {InCollectionsRule}) AS in_collections,
+               COALESCE(SUM({OwedBalance}) FILTER (WHERE {InCollectionsRule}), 0) AS in_collections_balance
         FROM {Table}
         WHERE {Scope}
+        """;
+
+    // Reason text is untrusted warehouse text: control characters and whitespace runs become one space, it is trimmed, cut to 120 characters (the input is bounded first),
+    // trimmed again and, if nothing is left, called "No reason given". A real reason called "Other" is shown as "Other reason" so it cannot be mistaken for the summary row.
+    internal static readonly string ReasonExpression =
+        $"COALESCE(NULLIF(btrim(left(btrim(regexp_replace(left(denial_reason, 2000), '[[:cntrl:][:space:]]+', ' ', 'g')), {AttentionCounts.ReasonMaxLength})), ''), '{AttentionCounts.NoReasonGiven}')";
+
+    internal static readonly string ReasonsSql =
+        $"""
+        WITH denied AS (
+            SELECT CASE WHEN lower(cleaned) = 'other' THEN 'Other reason' ELSE cleaned END AS reason, balance_due
+            FROM (SELECT {ReasonExpression} AS cleaned, balance_due FROM {Table} WHERE {Scope} AND {DeniedRule}) AS cleaned_rows
+        ),
+        grouped AS (
+            SELECT reason, COUNT(*) AS cnt, SUM(balance_due) AS bal FROM denied GROUP BY reason
+        ),
+        ranked AS (
+            SELECT reason, cnt, bal, row_number() OVER (ORDER BY cnt DESC, bal DESC, reason) AS rn FROM grouped
+        )
+        SELECT reason, false AS is_other, cnt, bal, rn AS ord FROM ranked WHERE rn <= {AttentionCounts.MaxReasons}
+        UNION ALL
+        SELECT 'Other', true, SUM(cnt), SUM(bal), {AttentionCounts.MaxReasons + 1} FROM ranked WHERE rn > {AttentionCounts.MaxReasons} HAVING COUNT(*) > 0
+        ORDER BY ord
+        """;
+
+    // The needs-attention claims, banded by days left (derived due date minus the load date, the same rule FilingDeadline applies). Due today is 0 days left, so it is in the 10 day band, not past due.
+    internal static readonly string FilingBandsSql =
+        $"""
+        SELECT COUNT(*) FILTER (WHERE days_left < 0) AS past_due,
+               COALESCE(SUM(owed) FILTER (WHERE days_left < 0), 0) AS past_due_balance,
+               COUNT(*) FILTER (WHERE days_left >= 0 AND days_left <= {FilingBands.SoonDays}) AS soon,
+               COALESCE(SUM(owed) FILTER (WHERE days_left >= 0 AND days_left <= {FilingBands.SoonDays}), 0) AS soon_balance,
+               COUNT(*) FILTER (WHERE days_left > {FilingBands.SoonDays} AND days_left <= {FilingBands.NearDays}) AS near,
+               COALESCE(SUM(owed) FILTER (WHERE days_left > {FilingBands.SoonDays} AND days_left <= {FilingBands.NearDays}), 0) AS near_balance,
+               COUNT(*) FILTER (WHERE days_left > {FilingBands.NearDays}) AS later,
+               COALESCE(SUM(owed) FILTER (WHERE days_left > {FilingBands.NearDays}), 0) AS later_balance
+        FROM (
+            SELECT (dos::date + COALESCE(filing.days, @default_limit_days)) - snapshot_date::date AS days_left, {OwedBalance} AS owed
+            FROM {Table}
+            LEFT JOIN LATERAL (
+                SELECT l.days
+                FROM unnest(@limit_categories::text[], @limit_days::int[]) AS l(category, days)
+                WHERE lower(l.category) = lower(prim_pay_category)
+                LIMIT 1) AS filing ON TRUE
+            WHERE {Scope} AND {NeedsAttentionRule}
+        ) AS banded
         """;
 
     // The filing limit per payer category is passed as two parallel arrays and joined here, so the order, the page and the total all come from the database:

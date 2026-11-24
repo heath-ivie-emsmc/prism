@@ -77,13 +77,13 @@ describe('DataFrameComponent', () => {
     const fixture = TestBed.createComponent(StampedHostComponent);
     fixture.detectChanges();
     const root = fixture.nativeElement as HTMLElement;
-    expect(root.querySelector('.frame__foot')?.textContent).toContain('Data through Nov 22');
-    expect(root.querySelector('.frame__foot')?.textContent).toContain('Ground');
+    expect(root.querySelector('app-scope-foot .foot')?.textContent).toContain('Data through Nov 22');
+    expect(root.querySelector('app-scope-foot .foot')?.textContent).toContain('Ground');
     expect(await axeViolations(root)).toEqual([]);
 
     fixture.componentInstance.through.set(null);
     fixture.detectChanges();
-    expect(root.querySelector('.frame__foot')).toBeNull();
+    expect(root.querySelector('app-scope-foot .foot')).toBeNull();
   });
 
   it('draws the heading, the actions and the content in one card', () => {

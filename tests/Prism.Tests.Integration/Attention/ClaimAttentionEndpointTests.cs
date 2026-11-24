@@ -17,6 +17,7 @@ public sealed class ClaimAttentionEndpointTests : IDisposable
 {
     private const string Base = "/api/v1/providers/100/claims/attention";
     private const string Marker = "=cmd|' /C calc'!A0";
+    private const string ReasonMarker = "REASON-TEXT-MARKER";
 
     private readonly FakeClaims claims = new();
     private readonly FakeDataThrough dataThrough = new();
@@ -131,6 +132,61 @@ public sealed class ClaimAttentionEndpointTests : IDisposable
         Assert.DoesNotContain("FW-2610418", text, StringComparison.Ordinal);
         Assert.Equal(ServiceLineFilter.Air, claims.LastServiceLine);
         Assert.Empty(factory.Audit.Calls);
+    }
+
+    [Fact]
+    public async Task Counts_add_the_denied_rate_the_reasons_the_categories_and_the_filing_bands()
+    {
+        (HttpStatusCode status, string text, HttpResponseMessage response) = await GetAsync($"{Base}/counts?period=202610", WithClaims);
+
+        Assert.Equal(HttpStatusCode.OK, status);
+        JsonElement body = JsonElement.Parse(text);
+        Assert.Equal(0.25m, body.GetProperty("deniedRate").GetDecimal());
+        JsonElement reasons = body.GetProperty("reasons");
+        Assert.Equal(("Missing documentation", false, 1, 24600m), (reasons[0].GetProperty("reason").GetString(), reasons[0].GetProperty("isOther").GetBoolean(), reasons[0].GetProperty("count").GetInt32(), reasons[0].GetProperty("balanceDue").GetDecimal()));
+        Assert.True(reasons[2].GetProperty("isOther").GetBoolean());
+        Assert.Equal(["denied", "on_hold", "in_collections"], body.GetProperty("categories").EnumerateArray().Select(c => c.GetProperty("key").GetString()));
+        Assert.Equal(["past_due", "due_within_10_days", "due_within_30_days", "due_later"], body.GetProperty("filingBands").EnumerateArray().Select(b => b.GetProperty("key").GetString()));
+        Assert.Equal(20m, body.GetProperty("filingBands")[1].GetProperty("balanceDue").GetDecimal());
+        Assert.Equal(2, body.GetProperty("filingBands")[1].GetProperty("claims").GetInt32());
+        // The existing fields are unchanged and the response is still never cacheable.
+        Assert.Equal(48200m, body.GetProperty("deniedBalanceDue").GetDecimal());
+        Assert.Equal(3, body.GetProperty("counts").GetArrayLength());
+        Assert.True(response.Headers.CacheControl?.NoStore);
+        Assert.Null(response.Headers.ETag);
+        Assert.Equal(["Missing documentation", ReasonMarker, "Other"], reasons.EnumerateArray().Select(r => r.GetProperty("reason").GetString()));
+        response.Dispose();
+    }
+
+    [Fact]
+    public async Task The_extra_counts_are_refused_without_the_claims_permission_to_anonymous_callers_and_across_providers()
+    {
+        (HttpStatusCode forbidden, string forbiddenText, _) = await GetAsync($"{Base}/counts?period=202610", WithoutClaims);
+        using CookieClient anonymous = factory.NewClient();
+        using HttpResponseMessage unauthenticated = await anonymous.GetAsync($"{Base}/counts?period=202610");
+        (HttpStatusCode other, string otherText, _) = await GetAsync("/api/v1/providers/999/claims/attention/counts?period=202610", WithClaims);
+        (HttpStatusCode limited, string limitedText, _) = await GetAsync("/api/v1/providers/200/claims/attention/counts?period=202610", WithClaims);
+
+        Assert.Equal(HttpStatusCode.Forbidden, forbidden);
+        Assert.Equal(HttpStatusCode.Unauthorized, unauthenticated.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, other);
+        Assert.Equal(HttpStatusCode.NotFound, limited);
+        Assert.DoesNotContain(ReasonMarker, forbiddenText + otherText + limitedText, StringComparison.Ordinal);
+        Assert.Equal(0, claims.Reads);
+    }
+
+    [Fact]
+    public async Task Reason_text_from_the_warehouse_never_reaches_the_logs()
+    {
+        (HttpStatusCode ok, _, _) = await GetAsync($"{Base}/counts?period=202610", WithClaims);
+        claims.Failure = new WarehouseUnavailableException();
+        (HttpStatusCode failed, string text, _) = await GetAsync($"{Base}/counts?period=202610", WithClaims);
+        await Task.Delay(200, TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.OK, ok);
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, failed);
+        Assert.DoesNotContain(ReasonMarker, text, StringComparison.Ordinal);
+        Assert.DoesNotContain(factory.Logs.Entries, entry => entry.Text.Contains(ReasonMarker, StringComparison.Ordinal) || entry.Text.Contains("Missing documentation", StringComparison.Ordinal));
     }
 
     [Theory]
@@ -449,8 +505,13 @@ public sealed class ClaimAttentionEndpointTests : IDisposable
             LastProviderId = providerId;
             LastServiceLine = serviceLine;
             LastGroup = groupKey;
-            return Task.FromResult(new AttentionCounts(
-                new DateOnly(2026, 11, 5), [new AttentionCount("denied", 2), new AttentionCount("needs_attention", 4), new AttentionCount("all", 8)], 48200m));
+            return Failure is { } failure ? throw failure : Task.FromResult(new AttentionCounts(
+                new DateOnly(2026, 11, 5),
+                [new AttentionCount("denied", 2), new AttentionCount("needs_attention", 4), new AttentionCount("all", 8)],
+                48200m,
+                [new AttentionCategoryCount("denied", "Denied", 2, 48200m), new AttentionCategoryCount("on_hold", "On hold", 1, 100m), new AttentionCategoryCount("in_collections", "In collections", 1, 50m)],
+                [new DenialReasonCount("Missing documentation", false, 1, 24600m), new DenialReasonCount(ReasonMarker, false, 1, 23600m), new DenialReasonCount("Other", true, 0, 0m)],
+                [new FilingBandCount("past_due", "Past due", 1, 10m), new FilingBandCount("due_within_10_days", "Due within 10 days", 2, 20m), new FilingBandCount("due_within_30_days", "Due in 11 to 30 days", 0, 0m), new FilingBandCount("due_later", "Due later", 1, 5m)]));
         }
 
         public Task<AttentionClaims> GetClaimsAsync(int providerId, AttentionCheck check, ApPeriod period, ServiceLineFilter serviceLine, string? groupKey, AttentionPage? page, CancellationToken cancellationToken)

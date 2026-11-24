@@ -16,6 +16,7 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="Prism.Tests" />
+    <InternalsVisibleTo Include="Prism.Tests.Integration" />
   </ItemGroup>
 
 </Project>

@@ -6,7 +6,7 @@ export interface NetCashMonth {
   readonly year: number;
   readonly value: number;
   readonly kind: 'actual' | 'projected';
-  /** Likely range, for projected months. */
+  /** Forecast range, for projected months. */
   readonly low?: number;
   readonly high?: number;
 }

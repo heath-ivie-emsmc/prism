@@ -79,7 +79,7 @@ describe('net cash breakdown model', () => {
   });
 
   it('has an empty page for each Service Line', () => {
-    expect(emptyBreakdown('ground')).toMatchObject({ groups: [], rows: [], stillPosting: false, terms: { idHeading: 'Unit' } });
+    expect(emptyBreakdown('ground')).toMatchObject({ groups: [], rows: [], stillPosting: false, terms: { idHeading: 'Tail number' } });
   });
 
   it('reads each group card link from the API links and has none where the API gave none', () => {

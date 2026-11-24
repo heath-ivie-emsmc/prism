@@ -1,9 +1,9 @@
 import { LiveAnnouncer } from '@angular/cdk/a11y';
 import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, computed, inject, input, output, signal } from '@angular/core';
 import { EmsButtonDirective, EmsCardComponent, EmsIconComponent } from '@ems-management-consultants/ui';
-import { ContextBadgeComponent } from './context-badge.component';
-import { FreshnessStampComponent } from './freshness-stamp.component';
+import { ScopeFootComponent } from './scope-foot.component';
 import { Labels } from '../dashboard/service-line';
+import { AppliesTo } from '../metrics/shared/applies-to';
 import { EXITED_ANNOUNCEMENT, UNAVAILABLE_ANNOUNCEMENT, enteredAnnouncement, expandButtonName, fullscreenSupported } from './fullscreen';
 
 /**
@@ -16,7 +16,7 @@ import { EXITED_ANNOUNCEMENT, UNAVAILABLE_ANNOUNCEMENT, enteredAnnouncement, exp
  */
 @Component({
   selector: 'app-data-frame',
-  imports: [ContextBadgeComponent, EmsButtonDirective, EmsCardComponent, EmsIconComponent, FreshnessStampComponent],
+  imports: [EmsButtonDirective, EmsCardComponent, EmsIconComponent, ScopeFootComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: { '(document:fullscreenchange)': 'sync()' },
   template: `
@@ -31,12 +31,7 @@ import { EXITED_ANNOUNCEMENT, UNAVAILABLE_ANNOUNCEMENT, enteredAnnouncement, exp
         <p class="frame__context">{{ context() }}</p>
       }
       <ng-content />
-      @if (dataThrough()) {
-        <div class="frame__foot">
-          <app-freshness-stamp [dataThrough]="dataThrough()" />
-          <app-context-badge [serviceLine]="serviceLine()" [divisionApplied]="divisionApplied()" [labels]="labels()" />
-        </div>
-      }
+      <app-scope-foot [dataThrough]="dataThrough()" [serviceLine]="serviceLine()" [divisionApplied]="divisionApplied()" [labels]="labels()" [appliesTo]="appliesTo()" />
     </ems-card>
   `,
   styles: `
@@ -74,16 +69,6 @@ import { EXITED_ANNOUNCEMENT, UNAVAILABLE_ANNOUNCEMENT, enteredAnnouncement, exp
     .frame__expand {
       min-width: 2rem;
       min-height: 2rem;
-    }
-    /* Wraps instead of overflowing at 320px; the two statements are separate lines when there is no room side by side. */
-    .frame__foot {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 0 1rem;
-      margin-top: auto;
-      padding-top: 0.5rem;
-      min-width: 0;
-      overflow-wrap: anywhere;
     }
     .frame__context {
       margin: 0 0 0.5rem;
@@ -126,6 +111,8 @@ export class DataFrameComponent {
   readonly dataThrough = input<string | null>(null);
   readonly serviceLine = input<'all' | 'air' | 'ground'>('all');
   readonly divisionApplied = input(false);
+  /** The Metric's own scope (air only, ground only), shown beside the Context Badge. */
+  readonly appliesTo = input<AppliesTo | null>(null);
   readonly labels = input<Labels | null>(null);
 
   /** Tells the content when it is full screen, for content that has to draw larger (a fixed-height picture). Report only: the frame owns the state. */

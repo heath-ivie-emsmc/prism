@@ -1,5 +1,39 @@
-import { NONE, WidgetData, limit, moneyExact } from '../../saved-views/widget-data';
-import { PaymentAgeDto } from './payment-age.dto';
+import { NONE, WidgetData, WidgetTable, limit, moneyExact } from '../../saved-views/widget-data';
+import { PaymentAgeBandKey, PaymentAgeDto, PaymentAgePayerDto } from './payment-age.dto';
+
+/** The five age bands in the order they are shown, as column headings. Ages are whole months. */
+export const BAND_HEADINGS: Readonly<Record<PaymentAgeBandKey, string>> = {
+  '0-1': '0-1 months',
+  '2-3': '2-3 months',
+  '4-6': '4-6 months',
+  '7-12': '7-12 months',
+  '13+': '13+ months',
+};
+export const BAND_ORDER: readonly PaymentAgeBandKey[] = ['0-1', '2-3', '4-6', '7-12', '13+'];
+
+const sharePercent = (share: number): string => `${(share * 100).toFixed(1)}%`;
+
+/** "2 months", "1 month", or "n/a" when the payer group has no cash. Whole months only: the ledger has no payment day. */
+export function typicalAgeText(months: number | null): string {
+  if (months === null) return 'n/a';
+  return `${months} ${months === 1 ? 'month' : 'months'}`;
+}
+
+/** One row per payer group: typical months to payment, then the share of its cash that arrived in each age band. A group with no bands shows n/a. */
+export function timingTable(payers: readonly PaymentAgePayerDto[]): WidgetTable {
+  return {
+    caption: 'Payer timing: typical months to payment and share of cash by age band',
+    columns: ['Payer group', 'Typical months to payment', ...BAND_ORDER.map((k) => BAND_HEADINGS[k])],
+    rows: payers.map((p) => [
+      p.payerName,
+      typicalAgeText(p.typicalAgeMonths),
+      ...BAND_ORDER.map((key) => {
+        const band = p.bands.find((b) => b.key === key);
+        return band ? sharePercent(band.share) : 'n/a';
+      }),
+    ]),
+  };
+}
 
 export function fromPaymentAge(dto: PaymentAgeDto): WidgetData {
   const caption = 'Net cash by payer group and how old the transport was when paid';
@@ -20,12 +54,13 @@ export function fromPaymentAge(dto: PaymentAgeDto): WidgetData {
       columns: ['Payer group', 'Net cash', 'Average age when paid'],
       rows: payers.map(([key, name]) => [name, moneyExact(cashFor(key)), meanAge(key)]),
     },
+    extraTables: dto.payers.length > 0 ? [timingTable(dto.payers)] : [],
     categories: payers.map(([, name]) => name),
     categoryKeys: payers.map(([key]) => key),
     series: [{ name: 'Net cash', values: payers.map(([key]) => cashFor(key)) }],
     headline: null,
     dataThrough: dto.dataThrough ?? null,
-    caveat: '',
+    caveat: 'Age is counted in whole months, not days.',
     empty: false,
     unit: 'usd',
   };

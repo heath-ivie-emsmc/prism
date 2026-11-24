@@ -2,14 +2,14 @@ import { readFileSync } from 'node:fs';
 import { expect, test } from './fixtures';
 import { axeViolations, layoutErrors, openNeedsAttention } from './support';
 
-const rows = (page: import('@playwright/test').Page) => page.locator('app-needs-attention tbody tr');
+const rows = (page: import('@playwright/test').Page) => page.locator('app-needs-attention .claims tbody tr');
 const send = (page: import('@playwright/test').Page) => page.locator('app-needs-attention button.send');
 
 test.describe('needs attention', () => {
   test('lists the denied claims with the tabs, counts and a sort note', async ({ page }) => {
     await openNeedsAttention(page);
 
-    await expect(page.getByRole('heading', { level: 2 })).toContainText('Fixed-wing claims, October 2026');
+    await expect(page.locator('#claims-title')).toContainText('Fixed-wing claims, October 2026');
     await expect(page.getByRole('radio')).toHaveText(['Denied (2)', 'Needs attention (4)', 'All (8)']);
     await expect(rows(page)).toHaveCount(2);
     await expect(rows(page).first()).toContainText('FW-2610418');

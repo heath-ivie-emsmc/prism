@@ -15,3 +15,10 @@ export function shortDate(iso: string | null | undefined): string {
   const [year, month, day] = iso.split('-').map(Number) as [number, number, number];
   return new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', timeZone: 'UTC' }).format(new Date(Date.UTC(year, month - 1, day)));
 }
+
+/** "Jan 2025" for the accounting period 202501, in the user's locale. The period has no day or time zone, so it is read and written in UTC. Empty when not a yyyyMM period. */
+export function shortMonthYear(period: string | null | undefined): string {
+  const match = typeof period === 'string' ? /^(\d{4})(0[1-9]|1[0-2])$/.exec(period) : null;
+  if (!match) return '';
+  return new Intl.DateTimeFormat(undefined, { month: 'short', year: 'numeric', timeZone: 'UTC' }).format(new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, 1)));
+}

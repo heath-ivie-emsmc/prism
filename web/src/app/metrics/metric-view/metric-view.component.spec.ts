@@ -4,7 +4,9 @@ import { Router, provideRouter } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
 import { describe, expect, it } from 'vitest';
 import { axeViolations } from '../../axe';
-import { BASE, METRIC_REPLIES, bootstrap, answer } from '../../saved-views/saved-views.testing';
+import { BASE, CATALOG, METRIC_REPLIES, NET_CASH, bootstrap, answer } from '../../saved-views/saved-views.testing';
+import { DashboardFilterContext } from '../../dashboard/dashboard-filter-context';
+import { HOSTILE, NEW_REPLIES } from '../new-metrics.testing';
 import { MetricViewComponent } from './metric-view.component';
 
 const ROUTES = [
@@ -14,7 +16,21 @@ const ROUTES = [
   { path: 'dashboard/metrics/payer-mix/:group/:payerKey', component: MetricViewComponent },
 ];
 
-async function open(url: string): Promise<{ harness: RouterTestingHarness; http: HttpTestingController; root: HTMLElement; router: Router }> {
+const NEW_METRICS = Object.values(NEW_REPLIES).map((r) => ({
+  ...NET_CASH,
+  key: r.key,
+  name: r.key.replaceAll('_', ' '),
+  serviceLines: r.airOnly ? ['air', 'both'] : ['air', 'ground', 'both'],
+  context: { divisionSupport: 'supported' as const, appliesTo: r.airOnly ? ('air' as const) : ('both' as const) },
+  presentations: [{ key: 'table', name: 'Table', icon: 'x', sizes: ['M', 'L'], minWidth: 3, minHeight: 2, maxWidth: 12, maxHeight: 6, isDefault: true }],
+}));
+const WITH_NEW = {
+  ...METRIC_REPLIES,
+  [`${BASE}/metrics/catalog`]: { ...CATALOG, metrics: [...CATALOG.metrics, ...NEW_METRICS] },
+  ...Object.fromEntries(Object.values(NEW_REPLIES).map((r) => [`${BASE}/metrics/net-collections/${r.route}`, r.reply])),
+};
+
+async function open(url: string, replies: Record<string, object> = METRIC_REPLIES): Promise<{ harness: RouterTestingHarness; http: HttpTestingController; root: HTMLElement; router: Router }> {
   const http = bootstrap({ providers: [provideRouter(ROUTES)] });
   const harness = await RouterTestingHarness.create();
   await harness.navigateByUrl(url);
@@ -22,7 +38,7 @@ async function open(url: string): Promise<{ harness: RouterTestingHarness; http:
     await Promise.resolve();
     harness.detectChanges();
     TestBed.tick();
-    answer(http, METRIC_REPLIES);
+    answer(http, replies);
   }
   await harness.fixture.whenStable();
   harness.detectChanges();
@@ -80,5 +96,47 @@ describe('MetricViewComponent', () => {
     const { root } = await open('/dashboard/metrics/net_collections');
 
     expect(document.activeElement).toBe(root.querySelector('h1'));
+  });
+
+  describe('the six new Metrics', () => {
+    it.each(Object.keys(NEW_REPLIES))('%s renders through the widget path with its table, help, stamp and badge, and passes axe', async (key) => {
+      const { root } = await open(`/dashboard/metrics/${key}?period=202610&line=air`, WITH_NEW);
+
+      expect(root.querySelector('h1')?.textContent).toBe(key.replaceAll('_', ' '));
+      expect(root.querySelector('app-metric-widget table caption')).not.toBeNull();
+      expect(root.querySelector('app-freshness-stamp')?.textContent).toContain('Data through');
+      expect(root.querySelector('app-context-badge')).not.toBeNull();
+      expect(root.querySelector('app-metric-help')?.textContent?.length).toBeGreaterThan(40);
+      expect(await axeViolations(root)).toEqual([]);
+    });
+
+    it('defaults to air and shows the Air only text for an air-only Metric', async () => {
+      const { root } = await open('/dashboard/metrics/aircraft_performance', WITH_NEW);
+
+      expect(root.querySelector('app-context-badge')?.textContent).toBe('Air · All bases · Air only');
+      expect(TestBed.inject(DashboardFilterContext).serviceLine()).toBe('air');
+    });
+
+    it('shows the not-available state for an air-only Metric with line=ground, and calls nothing', async () => {
+      const { root, http } = await open('/dashboard/metrics/loaded_miles_by_aircraft?line=ground', WITH_NEW);
+
+      expect(root.textContent).toContain("isn't available for ground");
+      expect(root.querySelector('app-metric-widget table')).toBeNull();
+      http.expectNone((r) => r.url.includes('loaded-miles-by-aircraft'));
+    });
+
+    it('shows a Metric for both lines under line=ground', async () => {
+      const { root } = await open('/dashboard/metrics/base_analysis?line=ground', WITH_NEW);
+
+      expect(root.querySelector('app-metric-widget table')).not.toBeNull();
+      expect(root.querySelector('app-context-badge')?.textContent).toBe('Ground · All reporting divisions');
+    });
+
+    it('shows warehouse text literally', async () => {
+      const { root } = await open('/dashboard/metrics/aircraft_performance?line=air', WITH_NEW);
+
+      expect(root.textContent).toContain(HOSTILE);
+      expect(root.querySelector('app-metric-widget img')).toBeNull();
+    });
   });
 });

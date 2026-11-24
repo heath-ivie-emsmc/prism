@@ -1,6 +1,6 @@
 import type { ElementHandle } from '@playwright/test';
 import { expect, test } from './fixtures';
-import { lastAnnouncement, openDashboard, expandHelp, openDashboardWithNotice, openMetricView, openMetricViewNotFound, openNeedsAttention, openPayerDetail, openPayerMixPage, openView } from './support';
+import { lastAnnouncement, openDashboard, expandHelp, openDashboardWithNotice, openDashboardHelp, openMetricView, openMetricViewNotFound, openNeedsAttention, openPayerDetail, openPayerMixPage, openProjection, openView, SIX_METRICS, openMetricViewGroundOnly, openSixMetricView, CONTRIBUTION_METRICS } from './support';
 
 /** Everything works without a mouse (WCAG 2.1.1, 2.1.2, 2.4.3, 2.4.7, 2.4.11). */
 /**
@@ -170,7 +170,7 @@ test.describe('keyboard', () => {
       await page.keyboard.press('ArrowRight');
 
       await expect(page.getByRole('radio', { name: 'Needs attention (4)' })).toHaveAttribute('aria-checked', 'true');
-      await expect(page.locator('app-needs-attention tbody tr')).toHaveCount(4);
+      await expect(page.locator('app-needs-attention .claims tbody tr')).toHaveCount(4);
     });
   });
 
@@ -324,7 +324,7 @@ test.describe('keyboard', () => {
 });
 
 test.describe('keyboard: payer mix and its drill target', () => {
-  for (const [name, open, least = 3] of [['payer mix', openPayerMixPage], ['payer breakdown', openPayerDetail], ['metric view', openMetricView, 1], ['metric view, not found', openMetricViewNotFound, 1]] as const) {
+  for (const [name, open, least = 3] of [['payer mix', openPayerMixPage], ['payer breakdown', openPayerDetail], ['metric view', openMetricView, 1], ['metric view, not found', openMetricViewNotFound, 1], ...SIX_METRICS.map((m) => [`metric view, ${m.name}`, (p: import('@playwright/test').Page) => openMetricView(p, m.key), 1] as const), ['metric view, air-only Metric under Ground only', openMetricViewGroundOnly, 1], ['saved view, the six new Metrics', openSixMetricView, 3], ...CONTRIBUTION_METRICS.map((m) => [`metric view, ${m.name}`, (p: import('@playwright/test').Page) => openMetricView(p, m.key), 1] as const), ['saved view, the contribution Metrics', (p: import('@playwright/test').Page) => openSixMetricView(p, 'c'), 3]] as const) {
     test(`${name}: Tab reaches every control with a visible focus indicator and nothing traps focus`, async ({ page }) => {
       await open(page);
 
@@ -421,6 +421,30 @@ test.describe('keyboard: help panel, drill and notice', () => {
     await expect(page).toHaveURL(/\/dashboard\/net-cash\/rotor-wing\?period=202610&line=air$/);
   });
 
+  test('a dashboard card help disclosure toggles with Enter and Space, closes with Escape keeping focus, and shows a visible focus ring', async ({ page }) => {
+    await openDashboard(page);
+    const toggle = page.locator('app-kpi-card', { hasText: 'Transports' }).locator('button.help__toggle');
+    await toggle.focus();
+    const indicator = await focusIndicator((await toggle.elementHandle()) as ElementHandle<Element>);
+    expect(indicator.visible, 'card help focus indicator').toBe(true);
+
+    await page.keyboard.press('Enter');
+    await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    await page.keyboard.press('Escape');
+    await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    await expect(toggle).toBeFocused();
+    await page.keyboard.press('Space');
+    await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    expect(await page.evaluate(() => document.querySelectorAll('app-kpi-card .help__panel dl [tabindex]:not([tabindex="-1"])').length)).toBe(0);
+  });
+
+  test('the dashboard has no control that pretends to work: no disabled call type or pickup filter', async ({ page }) => {
+    await openDashboardHelp(page);
+    await expect(page.locator('app-net-cash-panel [aria-label="Call type"]')).toHaveCount(0);
+    await expect(page.getByLabel('Pickup location')).toHaveCount(0);
+    await expect(page.locator('app-net-cash-panel [disabled]')).toHaveCount(0);
+  });
+
   test('the Update view notice is reached by Tab, never takes focus on its own, and Enter updates and announces', async ({ page }) => {
     await openDashboardWithNotice(page);
     const button = page.locator('app-data-updated-notice').getByRole('button', { name: 'Update view' });
@@ -441,5 +465,62 @@ test.describe('keyboard: help panel, drill and notice', () => {
     await expect.poll(() => lastAnnouncement(page)).toBe('Updated to Nov 23');
     // The button went away; focus must not be stranded on a removed element.
     await expect.poll(() => page.evaluate(() => document.activeElement !== null)).toBe(true);
+  });
+
+  test.describe('figures from the metric catalog', () => {
+    test('the projection horizon is one tab stop, reached by Tab with a visible focus, and moves with the arrow keys', async ({ page }) => {
+      await openProjection(page);
+      const radios = page.locator('app-projection-panel [aria-label="Months to project"] [role="radio"]');
+
+      let reached = false;
+      for (let i = 0; i < 40 && !reached; i++) {
+        await page.keyboard.press('Tab');
+        reached = await radios.nth(2).evaluate((el) => el === document.activeElement);
+      }
+      expect(reached, 'the horizon control is reachable by Tab').toBe(true);
+      const indicator = await focusIndicator((await radios.nth(2).elementHandle()) as ElementHandle<Element>);
+      expect(indicator.visible, 'horizon focus indicator').toBe(true);
+      expect(await radios.evaluateAll((els) => els.map((e) => (e as HTMLElement).tabIndex))).toEqual([-1, -1, 0]);
+
+      await page.keyboard.press('ArrowLeft');
+      await expect(radios.nth(1)).toBeFocused();
+      await expect(page.locator('app-projection-panel thead th')).toHaveCount(3);
+      await page.keyboard.press('ArrowRight');
+      await expect(radios.nth(2)).toBeFocused();
+      await expect(page.locator('app-projection-panel thead th')).toHaveCount(4);
+    });
+
+    test('the projection table scroll region is reachable by Tab and shows focus, so a narrow screen can read it with the keyboard', async ({ page }) => {
+      await page.setViewportSize({ width: 320, height: 700 });
+      await openProjection(page);
+      const region = page.locator('app-projection-panel .panel__table-wrap');
+
+      let reached = false;
+      for (let i = 0; i < 60 && !reached; i++) {
+        await page.keyboard.press('Tab');
+        reached = await region.evaluate((el) => el === document.activeElement);
+      }
+      expect(reached, 'the table region is reachable by Tab').toBe(true);
+      const indicator = await focusIndicator((await region.elementHandle()) as ElementHandle<Element>);
+      expect(indicator.visible, 'table region focus indicator').toBe(true);
+    });
+
+    test('the help beside the projection opens with Enter, closes with Escape and keeps focus on its button', async ({ page }) => {
+      await openProjection(page);
+      const toggle = page.locator('app-projection-panel button.help__toggle');
+      await toggle.focus();
+
+      await page.keyboard.press('Enter');
+      await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+      await page.keyboard.press('Escape');
+      await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+      await expect(toggle).toBeFocused();
+    });
+
+    test('the claims summary adds no tab stops, so the list controls stay as reachable as before', async ({ page }) => {
+      await openNeedsAttention(page);
+
+      expect(await page.locator('app-attention-summary').evaluate((el) => el.querySelectorAll('a[href], button, input, [tabindex]:not([tabindex="-1"])').length)).toBe(0);
+    });
   });
 });

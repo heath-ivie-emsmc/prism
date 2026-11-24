@@ -34,14 +34,14 @@ describe('widget data', () => {
   it('says there is nothing to show when a Metric has no data', () => {
     const empties = [
       fromNetCash({ metric: METRIC, providerId: '1', endPeriod: null, months: 6, snapshotDate: null, points: [] }),
-      fromProjection({ metric: METRIC, providerId: '1', afterPeriod: null, serviceLine: 'all', snapshotDate: null, total: 0, low: 0, high: 0, months: [] }),
+      fromProjection({ metric: METRIC, providerId: '1', afterPeriod: null, serviceLine: 'all', snapshotDate: null, total: 0, low: 0, high: 0, months: [], horizon: { value: 0, low: 0, high: 0, months: 0, fromExistingTrips: null, fromFutureTrips: null, existingTripsShare: null, futureTripsShare: null }, latestActual: null }),
       fromTransports({ metric: METRIC, providerId: '1', endPeriod: null, months: 6, serviceLine: 'all', periodOpen: false, points: [], groups: [] }),
       fromCleanClaims({ metric: METRIC, providerId: '1', endPeriod: null, months: 6, snapshotDate: null, points: [] }),
       fromPayerMix({ metric: METRIC, providerId: '1', period: null, priorPeriod: null, serviceLine: 'all', group: null, groupName: null, shares: [] }),
       fromBreakdown({ metric: METRIC, providerId: '1', period: null, priorPeriod: null, serviceLine: 'all', periodOpen: false, groups: [], rows: [] }),
       fromByGroup({ metric: METRIC, providerId: '1', period: null, serviceLine: 'all', points: [] }),
-      fromCashPerTransport({ metric: METRIC, providerId: '1', period: null, cohortFrom: null, cohortThrough: null, serviceLine: 'all', group: null, payers: [] }),
-      fromPaymentAge({ metric: METRIC, providerId: '1', period: null, serviceLine: 'all', group: null, cells: [] }),
+      fromCashPerTransport({ metric: METRIC, providerId: '1', period: null, cohortFrom: null, cohortThrough: null, serviceLine: 'all', group: null, overall: null, cohorts: null, payers: [] }),
+      fromPaymentAge({ metric: METRIC, providerId: '1', period: null, serviceLine: 'all', group: null, cells: [], payers: [] }),
     ];
 
     expect(empties.every((d) => d.empty && d.table.rows.length === 0)).toBe(true);
@@ -89,7 +89,7 @@ describe('widget data', () => {
 
   it('averages the age cash was paid at, weighted by cash', () => {
     const data = fromPaymentAge({
-      metric: METRIC, providerId: '1', period: '202610', serviceLine: 'air', group: null,
+      metric: METRIC, providerId: '1', period: '202610', serviceLine: 'air', group: null, payers: [],
       cells: [
         { payerKey: 'c', payerName: 'Commercial', postingPeriod: '202610', ageMonths: 2, cash: 100, transports: 1 },
         { payerKey: 'c', payerName: 'Commercial', postingPeriod: '202610', ageMonths: 4, cash: 300, transports: 1 },

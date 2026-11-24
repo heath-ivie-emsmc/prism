@@ -1,3 +1,4 @@
+using Prism.Testing.Common;
 using Prism.Application.Warehouse;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -20,7 +21,7 @@ public sealed class TransportVolumeMetricTests(PostgresFixture postgres) : IClas
         await SeedLock.WaitAsync(ct);
         try
         {
-            await using var admin = new NpgsqlConnection(postgres.ConnectionString);
+            await using var admin = new NpgsqlConnection(TestDatabaseGuard.Assert(postgres.ConnectionString));
             await admin.OpenAsync(ct);
             await using var seed = new NpgsqlCommand(
                 """
@@ -181,5 +182,44 @@ public sealed class TransportVolumeMetricTests(PostgresFixture postgres) : IClas
 
         // The empty name is "no division": it is the unfiltered figure, never an error and never a match on an empty division.
         Assert.Equal(name.Length == 0 ? await TotalAsync(metric, null) : 0, total);
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(6)]
+    public async Task Each_group_carries_the_month_before_and_the_change_whatever_the_number_of_months(int months)
+    {
+        TransportVolumeMetric metric = await NewMetricAsync();
+
+        TransportVolume volume = await metric.GetVolumeAsync(2026, new ApPeriod(2026, 10), months, ServiceLineFilter.Both, null, TestContext.Current.CancellationToken);
+
+        // October: rotor 3, ALS 1, fixed 1. September: rotor 1 (encounter 6), fixed 1 (encounter 7), no ALS.
+        Assert.Equal(
+            [("rotor-wing", 3, 1, 2, 200.0m), ("als", 1, 0, 1, null), ("fixed-wing", 1, 1, 0, 0.0m)],
+            volume.Groups.Select(g => (g.Key, g.Transports, g.PriorTransports, g.Change, g.ChangePercent)));
+    }
+
+    [Fact]
+    public async Task The_prior_month_follows_the_same_service_line_and_division_filters()
+    {
+        TransportVolumeMetric metric = await NewMetricAsync();
+        CancellationToken ct = TestContext.Current.CancellationToken;
+
+        TransportVolume ground = await metric.GetVolumeAsync(2026, new ApPeriod(2026, 10), 2, ServiceLineFilter.Ground, null, ct);
+        TransportVolume rotor = await metric.GetVolumeAsync(2026, new ApPeriod(2026, 10), 2, ServiceLineFilter.Both, Rotor, ct);
+
+        Assert.Equal([("als", 1, 0)], ground.Groups.Select(g => (g.Key, g.Transports, g.PriorTransports)));
+        // The Rotor division is the even encounters: October 2 (rotor) and 4 (ALS), September 6 (rotor).
+        Assert.Equal([("als", 1, 0), ("rotor-wing", 1, 1)], rotor.Groups.Select(g => (g.Key, g.Transports, g.PriorTransports)));
+    }
+
+    [Fact]
+    public async Task The_prior_month_never_counts_another_provider_or_an_older_load()
+    {
+        TransportVolumeMetric metric = await NewMetricAsync();
+
+        TransportVolume volume = await metric.GetVolumeAsync(2026, new ApPeriod(2026, 10), 1, ServiceLineFilter.Air, null, TestContext.Current.CancellationToken);
+
+        Assert.Equal(2, volume.Groups.Sum(g => g.PriorTransports));
     }
 }

@@ -50,6 +50,17 @@ public static class PersistenceServiceCollectionExtensions
         const string key = "warehouse";
         services.AddKeyedSingleton<NpgsqlDataSource>(key, (provider, _) =>
             WarehouseDataSourceFactory.Create(provider.GetRequiredService<IOptions<PrismWarehouseOptions>>().Value));
+
+        // Write protection: in every environment, a configured warehouse login that can write, create or own anything stops the host from starting.
+        // Registered after ValidateOnStart, so a misconfigured connection string is reported as such before the login is inspected.
+        services.AddSingleton<IWarehouseWriteProtectionCheck>(provider =>
+            provider.GetRequiredService<IOptions<PrismWarehouseOptions>>().Value.IsConfigured
+                ? new WarehouseWriteProtectionCheck(
+                    provider.GetRequiredKeyedService<NpgsqlDataSource>(key),
+                    provider.GetRequiredService<IOptions<PrismWarehouseOptions>>(),
+                    provider.GetRequiredService<ILogger<WarehouseWriteProtectionCheck>>())
+                : new NotConfiguredWarehouseWriteProtectionCheck());
+        services.AddHostedService<WarehouseWriteProtectionStartup>();
         services.AddSingleton<IWarehouse>(provider =>
             provider.GetRequiredService<IOptions<PrismWarehouseOptions>>().Value.IsConfigured
                 ? new NpgsqlWarehouse(

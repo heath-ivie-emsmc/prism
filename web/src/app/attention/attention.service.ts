@@ -11,6 +11,31 @@ export interface AttentionCountDto {
   readonly count: number;
 }
 
+/** A denial reason with how many denied claims have it. The text is warehouse text and may hold markup: it is only ever bound as text. */
+export interface DenialReasonDto {
+  readonly reason: string;
+  /** The one row that stands for every reason outside the top ten. */
+  readonly isOther: boolean;
+  readonly count: number;
+  readonly balanceDue: number;
+}
+
+/** One category of claim. A claim can be in more than one, so the categories overlap and are never added together. */
+export interface AttentionCategoryDto {
+  readonly key: 'denied' | 'on_hold' | 'in_collections';
+  readonly name: string;
+  readonly count: number;
+  readonly balanceDue: number;
+}
+
+/** Claims needing attention by days left to file. Estimates: the filing limits are a placeholder. Always four rows. */
+export interface FilingBandDto {
+  readonly key: 'past_due' | 'due_within_10_days' | 'due_within_30_days' | 'due_later';
+  readonly name: string;
+  readonly claims: number;
+  readonly balanceDue: number;
+}
+
 /** Response of GET .../claims/attention/counts. Aggregates only. */
 export interface AttentionCountsDto {
   readonly providerId: string;
@@ -19,6 +44,11 @@ export interface AttentionCountsDto {
   readonly counts: readonly AttentionCountDto[];
   /** What is still owed on the denied claims. */
   readonly deniedBalanceDue: number;
+  /** Denied claims divided by all claims in the period, 0 to 1. Null when there are no claims. */
+  readonly deniedRate: number | null;
+  readonly reasons: readonly DenialReasonDto[];
+  readonly categories: readonly AttentionCategoryDto[];
+  readonly filingBands: readonly FilingBandDto[];
 }
 
 /** One flagged claim. Every field is PHI: it is shown, never logged or stored by the browser. */
