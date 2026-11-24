@@ -1,3 +1,4 @@
+import { flushDivisions } from '../../shared/division.testing';
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
@@ -68,7 +69,11 @@ describe('PayerMixDetailComponent', () => {
       fixture.detectChanges();
     };
     detect();
-    http.expectOne(`${BASE}/periods`).flush({ providerId: '526', periods: [{ period: '202610', label: 'Oct 2026' }, { period: '202609', label: 'Sep 2026' }], dataThrough: '2026-11-22' });
+    // The page and the shared filter context (behind the Reporting Division control) each ask for the periods.
+    for (const periods of http.match((r) => r.url === `${BASE}/periods`)) {
+      periods.flush({ providerId: '526', periods: [{ period: '202610', label: 'Oct 2026' }, { period: '202609', label: 'Sep 2026' }], dataThrough: '2026-11-22' });
+    }
+    flushDivisions(http);
     await Promise.resolve();
     detect();
     // The page also reads the Metric Catalog for the Division badge.

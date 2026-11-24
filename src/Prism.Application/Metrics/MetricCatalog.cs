@@ -171,7 +171,6 @@ public static class MetricCatalog
     private static readonly string[] AllLines = ["air", "ground", "both"];
     private static readonly string[] Sizes = ["S", "M", "L"];
     private static readonly string[] MediumUp = ["M", "L"];
-    private static readonly string[] SeriesDimensions = [MetricDimensions.Period, MetricDimensions.Months, MetricDimensions.ServiceLine];
     private static readonly string[] PeriodAndLine = [MetricDimensions.Period, MetricDimensions.ServiceLine];
 
     // Metrics that read reporting.trip_detail_snapshot honor the Reporting Division. Each one listed here needs an integration test (see MetricCatalogTests).
@@ -251,7 +250,7 @@ public static class MetricCatalog
 
     private static List<MetricCatalogEntry> Build() =>
     [
-        Available(INetCollectionsMetric.Definition, "cash", AllLines, SeriesDimensions, [Line(true), Column(false), Table]),
+        Available(INetCollectionsMetric.Definition, "cash", AllLines, SeriesAndDivision, [Line(true), Column(false), Table]),
         Available(INetCashProjectionMetric.Definition, "cash", AllLines, PeriodAndLine, [Column(true), Line(false), Table]),
         Available(INetCashBreakdownMetric.Definition, "cash", AllLines, PeriodLineAndDivision, [Table with { IsDefault = true }, Column(false)])
             with { Drills = [new MetricDrill("drill", "payer_mix", MetricDimensions.Group)] },
@@ -284,7 +283,8 @@ public static class MetricCatalog
         Available(IPayerMixDetailMetric.Definition, "payer", AllLines, PayerMixDetailDimensions, []) with { Placeable = false },
 
         // Computed on the dashboard from other Metrics. Not placeable on a Saved View.
-        new("what_changed", "What changed", "A written summary of the findings behind a change in net cash. Shown on the dashboard only.", "text", "insights", MetricStatus.Available, false, false, AllLines, PeriodAndLine, [], []),
+        new MetricCatalogEntry("what_changed", "What changed", "A written summary of the findings behind a change in net cash. Shown on the dashboard only.", "text", "insights", MetricStatus.Available, false, false, AllLines, PeriodLineAndDivision, [], [])
+            with { Context = new MetricContext(true, AllLines, DivisionSupport.Supported, [], "period") },
 
         Planned("net_cash_by_aircraft_type", "Net cash by aircraft type", "Rotor wing and fixed wing cash, with the six-month trend.", "USD", "fleet"),
         Planned("expected_cash_by_payer", "Expected cash by payer", "Projected cash by payer class, spread over the months payers are expected to pay.", "USD", "payer"),

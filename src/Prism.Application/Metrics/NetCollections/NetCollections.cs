@@ -1,3 +1,5 @@
+using Prism.Application.Warehouse;
+
 namespace Prism.Application.Metrics;
 
 /// <summary>A Metric as the API describes it. Defined once here, so cards, charts and the public API say the same thing.</summary>
@@ -37,6 +39,8 @@ public interface INetCollectionsMetric
     /// The <paramref name="months"/> months that end with <paramref name="endPeriod"/>. Months with no data are left out, never shown as zero.
     /// <see cref="ServiceLineFilter.Both"/> is the Provider's whole figure from the KPI table. The KPI table has no air or ground column, so air or ground alone
     /// is added up from the transaction ledger by the encounter's level of service, which is the rule that makes the breakdown groups add up to the headline.
+    /// The KPI table has no Reporting Division either, so with a <paramref name="division"/> the series is added up from the ledger joined to the trip table, with the
+    /// same net cash rule as net cash by group: cash for encounters with no trip row (or no division) is not in any division.
     /// </summary>
-    Task<NetCollectionsSeries> GetSeriesAsync(int providerId, ApPeriod endPeriod, int months, ServiceLineFilter serviceLine, CancellationToken cancellationToken);
+    Task<NetCollectionsSeries> GetSeriesAsync(int providerId, ApPeriod endPeriod, int months, ServiceLineFilter serviceLine, ReportingDivision? division, CancellationToken cancellationToken);
 }

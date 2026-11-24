@@ -1,8 +1,9 @@
-import { ChangeDetectionStrategy, Component, computed, input } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, input } from '@angular/core';
+import { DashboardFilterContext } from '../dashboard/dashboard-filter-context';
 import { Labels, defaultLabels } from '../dashboard/service-line';
 import { AppliesTo, appliesToText } from '../metrics/shared/applies-to';
 
-/** Visible statement of what the figures cover, for example "Air · All bases". Division wording comes from the Labels. */
+/** Visible statement of what the figures cover, for example "Air · All bases" or "Air · Mercy Flights Base 1". The all-divisions wording comes from the Labels, the chosen division is named from the Provider's loaded list (text only). */
 @Component({
   selector: 'app-context-badge',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -20,9 +21,18 @@ import { AppliesTo, appliesToText } from '../metrics/shared/applies-to';
   `,
 })
 export class ContextBadgeComponent {
+  private readonly filters = inject(DashboardFilterContext);
+  /** The warehouse name of the chosen division, or '' when it is not in the loaded list (the Label wording is used then). */
+  private readonly divisionName = computed(() => {
+    const key = this.divisionKey() ?? this.filters.divisionKey();
+    return key ? (this.filters.divisionName(key) ?? '') : '';
+  });
+
   readonly serviceLine = input<'all' | 'air' | 'ground'>('all');
   /** True only when the figures really are narrowed to one Reporting Division. No Metric does that yet. */
   readonly divisionApplied = input(false);
+  /** The chosen division's key when the page takes it from the address. Without it the shared filter's choice is used. */
+  readonly divisionKey = input<string | undefined>(undefined);
   readonly labels = input<Labels | null>(null);
   /** The Metric's own scope. "Air only" and "Ground only" are shown beside the badge, and they decide the line the badge names, since such a Metric covers that line whatever the page filter says. "Air and ground" shows nothing unless `showBoth` is set. */
   readonly appliesTo = input<AppliesTo | null>(null);
@@ -45,6 +55,6 @@ export class ContextBadgeComponent {
     // The Labels passed in belong to the page filter. When the Metric overrides the line, the default Labels of the line in effect apply.
     const labels = (line === this.serviceLine() ? this.labels() : null) ?? defaultLabels(line === 'air' ? 'air' : 'both');
     const lineText = { all: 'All service lines', air: 'Air', ground: 'Ground' }[line];
-    return `${lineText} · ${this.divisionApplied() ? `Selected ${labels.reportingDivision.toLowerCase()}` : labels.allReportingDivisions}`;
+    return `${lineText} · ${this.divisionApplied() ? (this.divisionName() || `Selected ${labels.reportingDivision.toLowerCase()}`) : labels.allReportingDivisions}`;
   });
 }

@@ -122,7 +122,8 @@ describe('MetricWidgetComponent', () => {
   it('says there is no data for the period instead of drawing an empty chart', async () => {
     const { root } = await create(widget('a', 0, 0), NET_CASH, { ...METRIC_REPLIES, [NET]: { ...SERIES, points: [] } });
 
-    expect(root.textContent).toContain('No net cash collected data for October 2026.');
+    // The page is on Air only and the Provider also has ground, so the line is named as what narrowed it.
+    expect(root.textContent).toContain('No net cash collected under Air only in October 2026. Try Air + ground.');
     expect(root.querySelector('app-chart')).toBeNull();
   });
 
@@ -157,6 +158,78 @@ describe('MetricWidgetComponent', () => {
 
     // A division that is not in the list falls back to all, so the note shows only for a real division. The rule itself is covered by the catalog test.
     expect(filters.selectedDivision()).toBe('all');
+  });
+
+  describe('empty answers', () => {
+    const EMPTY_MIX = { ...PAYER_MIX_REPLY, shares: [] };
+    const MIX_URL = `${BASE}/metrics/net-collections/payer-mix`;
+
+    it.each(['column', 'table', 'donut'] as const)('names the chosen division and line in the %s presentation when a Metric that honors the division has no data, and keeps the help', async (presentation) => {
+      const http = bootstrap();
+      const fixture = TestBed.createComponent(MetricWidgetComponent);
+      fixture.componentRef.setInput('widget', widget('a', 0, 0, { metricKey: 'payer_mix', presentation }));
+      fixture.componentRef.setInput('metric', { ...PAYER_MIX_METRIC, presentations: [...PAYER_MIX_METRIC.presentations, { ...PAYER_MIX_METRIC.presentations[0]!, key: presentation }] });
+      fixture.componentRef.setInput('help', 'compact');
+      TestBed.inject(DashboardFilterContext).division.setValue('riverside');
+      await settle(fixture, http, { [MIX_URL]: EMPTY_MIX });
+      const root = fixture.nativeElement as HTMLElement;
+
+      expect(root.querySelector('[data-testid="widget-empty"]')?.textContent).toBe('No payer mix for Riverside Base under Air only in October 2026. Try All bases or Air + ground.');
+      expect(root.querySelector('app-metric-help .help__toggle')).not.toBeNull();
+      expect(root.querySelector('app-chart')).toBeNull();
+      expect(root.querySelector('table')).toBeNull();
+    });
+
+    it('names only the division when the page is on Air + ground, and only the line when no division is chosen', async () => {
+      const http = bootstrap();
+      const fixture = TestBed.createComponent(MetricWidgetComponent);
+      fixture.componentRef.setInput('widget', widget('a', 0, 0, { metricKey: 'payer_mix', presentation: 'column' }));
+      fixture.componentRef.setInput('metric', PAYER_MIX_METRIC);
+      const filters = TestBed.inject(DashboardFilterContext);
+      filters.division.setValue('riverside');
+      filters.serviceLine.set('both');
+      await settle(fixture, http, { [MIX_URL]: EMPTY_MIX });
+      const text = (): string => (fixture.nativeElement as HTMLElement).querySelector('[data-testid="widget-empty"]')!.textContent!;
+
+      expect(text()).toBe('No payer mix for Riverside Base in October 2026. Try All reporting divisions.');
+
+      filters.division.setValue('all');
+      filters.serviceLine.set('ground');
+      await settle(fixture, http, { [MIX_URL]: EMPTY_MIX });
+      expect(text()).toBe('No payer mix under Ground only in October 2026. Try Air + ground.');
+    });
+
+    it('says the plain words when nothing narrows it: one line, no division', async () => {
+      const http = bootstrap();
+      const fixture = TestBed.createComponent(MetricWidgetComponent);
+      fixture.componentRef.setInput('widget', widget('a', 0, 0, { metricKey: 'payer_mix', presentation: 'column' }));
+      fixture.componentRef.setInput('metric', PAYER_MIX_METRIC);
+      TestBed.inject(DashboardFilterContext).serviceLine.set('both');
+      await settle(fixture, http, { [MIX_URL]: EMPTY_MIX });
+
+      expect((fixture.nativeElement as HTMLElement).querySelector('[data-testid="widget-empty"]')?.textContent).toBe('No payer mix data for October 2026.');
+    });
+
+    it('never blames the division for an empty answer of a Metric that ignores it, and does not ask again when the division changes', async () => {
+      const http = bootstrap();
+      const fixture = TestBed.createComponent(MetricWidgetComponent);
+      fixture.componentRef.setInput('widget', widget('a', 0, 0));
+      fixture.componentRef.setInput('metric', { ...NET_CASH, context: { divisionSupport: 'none' as const } });
+      const filters = TestBed.inject(DashboardFilterContext);
+      filters.serviceLine.set('both');
+      await settle(fixture, http, { ...METRIC_REPLIES, [NET]: { ...SERIES, points: [] } });
+      const root = fixture.nativeElement as HTMLElement;
+      expect(root.querySelector('[data-testid="widget-empty"]')?.textContent).toBe('No net cash collected data for October 2026.');
+      expect(http.match((r) => r.url === NET)).toHaveLength(0);
+
+      filters.division.setValue('riverside');
+      await settle(fixture, http, {});
+
+      // No new request, no division in any, and the sentence has not changed. The note says the filter is not applied.
+      http.expectNone((r) => r.url === NET);
+      expect(root.querySelector('[data-testid="widget-empty"]')?.textContent).toBe('No net cash collected data for October 2026.');
+      expect(root.textContent).toContain('Not filtered by Reporting division: showing all reporting divisions.');
+    });
   });
 
   it('shows one freshness stamp and one context badge per widget, in the shared wording', async () => {
@@ -201,11 +274,11 @@ describe('MetricWidgetComponent', () => {
     const fixture = TestBed.createComponent(MetricWidgetComponent);
     fixture.componentRef.setInput('widget', widget('a', 0, 0, { metricKey: 'payer_mix', presentation: 'column' }));
     fixture.componentRef.setInput('metric', supported);
-    TestBed.inject(DashboardFilterContext).division.setValue('a1');
+    TestBed.inject(DashboardFilterContext).division.setValue('riverside');
     await settle(fixture, http, { [`${BASE}/metrics/net-collections/payer-mix`]: PAYER_MIX_REPLY });
 
-    expect(TestBed.inject(DashboardFilterContext).selectedDivision()).toBe('a1');
-    expect((fixture.nativeElement as HTMLElement).querySelector('app-context-badge')?.textContent).toContain('Air · Selected base location');
+    expect(TestBed.inject(DashboardFilterContext).selectedDivision()).toBe('riverside');
+    expect((fixture.nativeElement as HTMLElement).querySelector('app-context-badge')?.textContent).toContain('Air · Riverside Base');
     http.verify();
   });
 
@@ -214,7 +287,7 @@ describe('MetricWidgetComponent', () => {
     const fixture = TestBed.createComponent(MetricWidgetComponent);
     fixture.componentRef.setInput('widget', widget('a', 0, 0));
     fixture.componentRef.setInput('metric', NET_CASH);
-    TestBed.inject(DashboardFilterContext).division.setValue('a1');
+    TestBed.inject(DashboardFilterContext).division.setValue('riverside');
     await settle(fixture, http, METRIC_REPLIES);
 
     expect((fixture.nativeElement as HTMLElement).querySelector('app-context-badge')?.textContent).toContain('Air · All bases');

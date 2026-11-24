@@ -2,6 +2,7 @@ import type { CustomSeriesRenderItem } from 'echarts';
 import type { EChartsCoreOption } from 'echarts/core';
 import type { ChartColors } from './chart.component';
 import { escapeHtml } from '../shared/escape-html';
+import { planValueLabels, valueLabelStyle } from './value-labels';
 import { NetCashMonth, boundedMonths, changeFromPrior, formatCompact, formatExact, formatLabel } from './net-cash';
 
 export type NetCashChartKind = 'line' | 'bar';
@@ -55,6 +56,7 @@ export function buildNetCashOption(allMonths: readonly NetCashMonth[], kind: Net
   const yMin = Math.floor(rawMin / step) * step;
   const yMax = Math.ceil(rawMax / step) * step;
 
+  const labels = planValueLabels({ kind: kind === 'bar' ? 'column' : 'line', categories: months.length, series: 1, narrow: colors.narrow });
   const base = {
     animation: !dense,
     grid: { left: 8, right: 16, top: 36, bottom: 8, containLabel: true },
@@ -144,7 +146,8 @@ export function buildNetCashOption(allMonths: readonly NetCashMonth[], kind: Net
                 : { color: i === lastActual ? colors.highlight : colors.actual, borderRadius: 4 },
             label: m.kind === 'projected' ? { show: false } : i === lastActual ? { fontWeight: 'bold' } : undefined,
           })),
-          label: { show: !colors.narrow && months.length <= 12, position: 'top', color: colors.text, formatter: (p: { value: number }) => formatLabel(p.value) },
+          label: { ...valueLabelStyle(colors.text, formatLabel), show: labels.values },
+          labelLayout: { hideOverlap: true },
         },
         range,
         ...(dividerSeries ? [dividerSeries] : []),
@@ -175,6 +178,9 @@ export function buildNetCashOption(allMonths: readonly NetCashMonth[], kind: Net
         showSymbol: true,
         symbol: 'circle',
         symbolSize: 8,
+        // Every actual point carries its figure when there is room; the latest keeps its own callout.
+        label: { ...valueLabelStyle(colors.text, formatLabel), show: labels.values },
+        labelLayout: { hideOverlap: true },
         lineStyle: { width: 2, color: colors.projected },
         itemStyle: { color: '#ffffff', borderColor: colors.projected, borderWidth: 2 },
       },

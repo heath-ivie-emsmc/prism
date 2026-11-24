@@ -9,6 +9,7 @@ import { drillLinkName } from '../metrics/drill-link';
 import { metricDivisionSupport } from '../metrics/metric-catalog.service';
 import { coversLine, metricAppliesTo } from '../metrics/shared/applies-to';
 import { DataFreshnessService } from '../shared/data-freshness.service';
+import { EmptyScope, emptyMessage } from '../shared/empty-scope';
 import { LoadProblemComponent } from '../shared/load-problem.component';
 import { MetricHelpComponent } from '../shared/metric-help.component';
 import { ScopeFootComponent } from '../shared/scope-foot.component';
@@ -21,6 +22,8 @@ import { WidgetData } from './widget-data';
 /** How a widget reports its state up, so the page can announce one message for all of them. */
 export type WidgetStatus = 'loading' | 'ready' | 'failed' | 'idle';
 
+/** The Metric whose warehouse table has no Service Line, so the page's line narrows nothing for it (see its help text). */
+const NOT_SPLIT_BY_LINE = 'clean_claim_rate';
 const CHART_KINDS: ReadonlySet<string> = new Set(['line', 'column', 'stacked', 'donut']);
 
 /**
@@ -48,7 +51,10 @@ const CHART_KINDS: ReadonlySet<string> = new Set(['line', 'column', 'stacked', '
       <ng-container [ngTemplateOutlet]="helpText" />
     } @else if (data(); as data) {
       @if (data.empty) {
-        <p class="widget__note">No {{ metric().name.toLowerCase() }} data for {{ periodLabel() }}.</p>
+        <p class="widget__note" data-testid="widget-empty">{{ emptyText() }}</p>
+        @if (extraNote()) {
+          <p class="widget__foot">{{ extraNote() }}</p>
+        }
         <ng-container [ngTemplateOutlet]="helpText" />
       } @else {
         @if (isTile()) {
@@ -252,6 +258,19 @@ export class MetricWidgetComponent {
   protected readonly ready = computed(() => !!this.filters.providerId() && !!this.filters.endPeriod() && !this.filters.periodsLoading());
   protected readonly isTile = computed(() => this.widget().presentation === 'tile');
   protected readonly periodLabel = computed(() => this.filters.periods().find((p) => p.value === this.filters.endPeriod())?.label ?? 'this period');
+
+  /**
+   * What narrowed this Metric's answer, for the empty-state sentence. The Service Line counts only when the Provider has more than one, the Metric covers both and it is split by
+   * line; the Reporting Division only when the Metric honors it. A filter the Metric ignores is never named, so an empty answer is not blamed on it.
+   */
+  protected readonly emptyScope = computed<EmptyScope>(() => {
+    const line = this.badgeLine();
+    const splitByLine = this.filters.showServiceLineToggle() && this.appliesTo() === 'both' && this.metric().key !== NOT_SPLIT_BY_LINE;
+    return { line: splitByLine ? line : null, divisionApplied: this.divisionApplied(), divisionName: this.filters.selectedDivisionName(), labels: this.filters.labels() };
+  });
+  protected readonly emptyText = computed(() =>
+    emptyMessage(this.metric().name.toLowerCase(), this.periodLabel(), `No ${this.metric().name.toLowerCase()} data for ${this.periodLabel()}.`, this.emptyScope()),
+  );
 
   /** The query, or null when the widget cannot or should not load yet. The key changes only when something the Metric depends on changes. */
   private readonly query = computed<WidgetQuery | null>(() => {

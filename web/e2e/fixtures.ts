@@ -340,6 +340,24 @@ function contributionFor(kind: 'aircraft' | 'division' | 'payer', url: URL) {
   };
 }
 
+/** Names by key, the same as the mocked divisions list. A key outside it is unknown, as for the API (which answers 400, so tests do not send one). */
+const DIVISION_NAMES: Record<string, string> = {
+  riverside: 'Riverside Base',
+  summit: 'Summit Base',
+  'x-img': '<img src=x onerror="window.__divisionXss=1"> Base',
+  'ground-critical-care': 'Mercy Flights - Ground Critical Care',
+};
+
+/** The one division with no transports under air: the picker offers it only under Ground only and Air + ground, and every Metric answers empty for it. */
+export const GROUND_ONLY_DIVISION = 'ground-critical-care';
+
+/** What a Division-aware response carries: the key and name applied, and (net cash only) the note about cash that belongs to no division. */
+export function divisionEcho(url: URL, note?: string): { division: string | null; divisionName: string | null; divisionNote?: string } {
+  const key = url.searchParams.get('division') || null;
+  const name = key ? (DIVISION_NAMES[key] ?? null) : null;
+  return { division: key, divisionName: name, ...(key && note ? { divisionNote: note } : {}) };
+}
+
 /** The what-changed answer for a request, as the mocked API gives it. */
 export function whatChangedFor(url: URL) {
   const period = url.searchParams.get('period') ?? '202610';
@@ -350,6 +368,7 @@ export function whatChangedFor(url: URL) {
     priorPeriod: String(Number(period) - 1),
     serviceLine: url.searchParams.get('serviceLine') === 'ground' ? 'ground' : 'air',
     group,
+    ...divisionEcho(url),
     groupName: group === 'fixed-wing' ? 'Fixed wing' : group === 'als' ? 'ALS' : group,
     dataThrough: '2026-10-31',
     headline: 'Fixed wing cash fell $137,770.00 (22%) from September. Most of it is timing, not a lasting change.',
@@ -439,6 +458,19 @@ async function mockMetricSix(page: import('@playwright/test').Page): Promise<voi
 
 /** Answers the net cash routes the way the API does, for the provider the mocked user has. */
 async function mockNetCollections(page: import('@playwright/test').Page): Promise<void> {
+  // The Provider's Reporting Divisions. The last name is hostile on purpose: the page must show it as plain text and nothing may run.
+  // `serviceLine` air or ground lists only the divisions with a transport under it (the keys are the same under every line). Left out, it is all of them.
+  await page.route('**/api/v1/providers/*/metrics/net-collections/divisions**', (route) => {
+    const line = new URL(route.request().url()).searchParams.get('serviceLine');
+    const air = [
+      { key: 'riverside', name: DIVISION_NAMES['riverside'] },
+      { key: 'summit', name: DIVISION_NAMES['summit'] },
+      { key: 'x-img', name: DIVISION_NAMES['x-img'] },
+    ];
+    const ground = [{ key: 'summit', name: DIVISION_NAMES['summit'] }, { key: GROUND_ONLY_DIVISION, name: DIVISION_NAMES[GROUND_ONLY_DIVISION] }];
+    const all = [...air, ground[1]];
+    return route.fulfill({ json: { providerId: '526', divisions: line === 'air' ? air : line === 'ground' ? ground : all } });
+  });
   await page.route('**/api/v1/providers/*/metrics/net-collections/periods', (route) =>
     route.fulfill({ json: { providerId: '526', dataThrough: DATA_THROUGH, periods: [...MONTHS].reverse().map((m) => ({ period: m.period, label: `${m.label} ${m.year}` })) } }),
   );
@@ -481,7 +513,7 @@ async function mockNetCollections(page: import('@playwright/test').Page): Promis
         serviceLine: line,
         dataThrough: DATA_THROUGH,
         periodOpen: end >= '202609',
-        ...transportsFor(end, line),
+        ...(url.searchParams.get('division') === GROUND_ONLY_DIVISION ? { points: [], groups: [] } : transportsFor(end, line)),
       },
     });
   });
@@ -591,7 +623,8 @@ async function mockNetCollections(page: import('@playwright/test').Page): Promis
     const endIndex = MONTHS.findIndex((m) => m.period === end);
     // Air is the page's starting line and keeps the mockup figures. Ground is a fifth of that and both together add up, so changing the Service Line visibly changes the figures.
     const share = { air: 1, ground: 0.2, all: 1.2 }[url.searchParams.get('serviceLine') ?? ''] ?? 1;
-    const points = (endIndex < 0 ? [] : MONTHS.slice(Math.max(0, endIndex - months + 1), endIndex + 1)).map((m) => ({ ...m, value: Math.round(m.value * share) }));
+    const noData = url.searchParams.get('division') === GROUND_ONLY_DIVISION;
+    const points = (endIndex < 0 || noData ? [] : MONTHS.slice(Math.max(0, endIndex - months + 1), endIndex + 1)).map((m) => ({ ...m, value: Math.round(m.value * share) }));
     return route.fulfill({
       json: {
         metric: { key: 'net_collections', name: 'Net cash collected', description: 'Cash collected in the accounting period.', unit: 'USD' },
@@ -601,6 +634,7 @@ async function mockNetCollections(page: import('@playwright/test').Page): Promis
         snapshotDate: '2026-11-05',
         dataThrough: DATA_THROUGH,
         points,
+        ...divisionEcho(url, 'Cash on encounters with no trip row or no division belongs to no division, so the divisions add up to the headline less that cash.'),
       },
     });
   });
@@ -618,7 +652,7 @@ const DONUT = (d: boolean) => pres('donut', 'Donut', 'donut_large', d);
 const TILE = (d: boolean) => pres('tile', 'Tile', 'pin', d, ['S', 'M', 'L'], [3, 2, 6, 3]);
 
 const DIVISION_SUPPORTED = new Set([
-  'payer_mix', 'transport_volume', 'payment_age', 'cash_per_transport_by_payer',
+  'net_collections', 'payer_mix', 'transport_volume', 'payment_age', 'cash_per_transport_by_payer',
   'transport_mix_by_call_type', 'aircraft_performance', 'base_analysis', 'loaded_miles_by_aircraft', 'payer_mix_financial_effect', 'transports_by_pickup_location',
   'cash_contribution_by_aircraft', 'cash_contribution_by_division', 'cash_contribution_by_payer',
 ]);

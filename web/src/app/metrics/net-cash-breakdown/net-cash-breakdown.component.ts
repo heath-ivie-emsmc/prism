@@ -1,3 +1,4 @@
+import { DivisionSelectComponent } from '../../shared/division-select.component';
 import { ChangeDetectionStrategy, Component, computed, effect, inject, untracked } from '@angular/core';
 import { rxResource, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, ReactiveFormsModule } from '@angular/forms';
@@ -9,7 +10,9 @@ import { AuthService } from '../../auth/auth.service';
 import { MetricHelpComponent } from '../../shared/metric-help.component';
 import { LoadProblemComponent } from '../../shared/load-problem.component';
 import { SkeletonComponent } from '../../shared/skeleton.component';
+import { DashboardFilterContext } from '../../dashboard/dashboard-filter-context';
 import { defaultLabels } from '../../dashboard/service-line';
+import { emptyMessage } from '../../shared/empty-scope';
 import { formatExact } from '../../charts/net-cash';
 import { NetCollectionsService } from '../net-collections.service';
 import { NetCashBreakdownDto } from './net-cash-breakdown.dto';
@@ -19,7 +22,6 @@ import { monthName, percentChange, priorMonthName, summarizeBreakdown } from './
 import { BreakdownLine, breakdownTableTitle, emptyBreakdown, toBreakdown } from './net-cash-breakdown.model';
 
 /** The page has no picker of its own: the dashboard's choice arrives in the address and is applied. The control says so instead of offering a choice it cannot take. */
-const NOT_AVAILABLE = 'Set on the dashboard. This page follows that choice.';
 /** A change smaller than this is "steady": shown in neutral, not as good or bad news. */
 const STEADY_PERCENT = 5;
 
@@ -68,7 +70,7 @@ const percent = (value: number | null): string => (value === null ? '' : `${Math
  */
 @Component({
   selector: 'app-net-cash-breakdown',
-  imports: [MetricHelpComponent, SkeletonComponent, LoadProblemComponent, EmsBreadcrumbsComponent, EmsChipComponent, EmsIconComponent, EmsMessageComponent, EmsSelectComponent, ReactiveFormsModule, RouterLink],
+  imports: [DivisionSelectComponent, MetricHelpComponent, SkeletonComponent, LoadProblemComponent, EmsBreadcrumbsComponent, EmsChipComponent, EmsIconComponent, EmsMessageComponent, EmsSelectComponent, ReactiveFormsModule, RouterLink],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <main class="page">
@@ -81,7 +83,7 @@ const percent = (value: number | null): string => (value === null ? '' : `${Math
         </div>
         <form class="page__filters" aria-label="Breakdown filters" (submit)="$event.preventDefault()">
           <ems-select class="page__select" label="Period" [options]="periods()" [formControl]="period" [clearable]="false" />
-          <ems-select class="page__select" [label]="locationLabel()" [options]="allLocations()" [formControl]="location" [clearable]="false" [title]="notAvailable" />
+          <app-division-select class="page__select" mode="follow" [selectedKey]="division()" [line]="line()" />
         </form>
       </header>
 
@@ -102,7 +104,7 @@ const percent = (value: number | null): string => (value === null ? '' : `${Math
             }
           </div>
         } @else if (empty()) {
-          <ems-message state="neutral">There is no net cash for {{ periodLabel() }}.</ems-message>
+          <ems-message state="neutral">{{ emptyText() }}</ems-message>
         }
         @if (data().stillPosting && loadError() === undefined && !empty()) {
           <ems-message state="warn">
@@ -410,12 +412,10 @@ export class NetCashBreakdownComponent {
   private readonly netCollections = inject(NetCollectionsService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
+  private readonly filters = inject(DashboardFilterContext);
 
-  protected readonly notAvailable = NOT_AVAILABLE;
-  protected readonly allLocations = computed<EmsPickerOption<string>[]>(() => [{ value: 'all', label: this.division() ? 'Chosen on the dashboard' : defaultLabels(this.line()).allReportingDivisions }]);
 
   protected readonly period = new FormControl<string>('', { nonNullable: true });
-  protected readonly location = new FormControl<string>({ value: 'all', disabled: true }, { nonNullable: true });
 
   private readonly query = toSignal(this.route.queryParamMap.pipe(map((q) => ({ period: q.get('period') ?? '', line: q.get('line'), division: q.get('division') }))), {
     initialValue: { period: '', line: null as string | null, division: null as string | null },
@@ -475,6 +475,11 @@ export class NetCashBreakdownComponent {
   /** Waiting for the months, then for the groups. */
   protected readonly loading = computed(() => this.periodsResource.isLoading() || this.breakdown.isLoading());
   protected readonly placeholders = [1, 2, 3];
+  /** The empty-state sentence. This page is already on one Service Line, so only the Reporting Division is named. Net cash breakdown honors the division. */
+  protected readonly emptyText = computed(() => {
+    const key = this.division();
+    return emptyMessage('net cash', this.periodLabel(), `There is no net cash for ${this.periodLabel()}.`, { line: null, divisionApplied: key !== undefined, divisionName: key ? this.filters.divisionName(key) : undefined, labels: defaultLabels(this.line()) });
+  });
   protected readonly empty = computed(() => this.breakdown.hasValue() && !this.failed() && this.data().groups.length === 0 && this.breakdown.value() !== null);
   /** The Provider's term for a Reporting Division, from the Labels for the Service Line, never typed here. */
   protected readonly locationLabel = computed(() => defaultLabels(this.line()).reportingDivision);

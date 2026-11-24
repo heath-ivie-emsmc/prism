@@ -2,6 +2,7 @@ using System.Security.Claims;
 using Prism.Application.Auth;
 using Prism.Application.Insights;
 using Prism.Application.Metrics;
+using Prism.Application.Warehouse;
 
 namespace Prism.Api.Metrics;
 
@@ -25,6 +26,8 @@ internal static class InsightsEndpoints
                 + "The findings are `aged-payments`, `volume`, `payer-mix`, `aircraft-mix` (transports moving between aircraft types or levels of service that earn different amounts, a driver) and `base-mix` (the same between Reporting Divisions: a driver only when no aircraft mix explains the change, otherwise listed in `expected`). "
                 + "`remainder.judgment` is `withinNormalRange` only when the unexplained part is inside the usual month-to-month range of the last twelve months, `outsideNormalRange` when it is not, and `notEnoughHistory` when there are not twelve months to judge by. "
                 + "`normalizedDeltaRatio` is the change with unusually high aged payments taken out of both months, or null when there were none. Every figure in the text comes from a finding. "
+                + "`division` limits the whole explanation (the headline, every driver and the remainder) to one Reporting Division, using a `key` from the divisions route (an unknown key is a 400), so they still add up to `delta` within that division: aged payments, volume, payer mix and aircraft mix are worked out inside the division, "
+                + "and `base-mix` is left out because it is a cut across divisions. Cash for an encounter with no Transport record or no Reporting Division belongs to no division. "
                 + "Aggregates only: no patient, claim or payer names. Returns 204 when neither month has cash to explain, and 404 when the Provider is not one the caller may read in full.")
             .Produces<WhatChangedResponse>()
             .Produces(StatusCodes.Status204NoContent)
@@ -43,7 +46,7 @@ internal static class InsightsEndpoints
         IInsightService insights,
         CancellationToken cancellationToken)
     {
-        (string providerId, string? period, string? serviceLine, string? groupKey) = (request.ProviderId, request.Period, request.ServiceLine, request.Group);
+        (string providerId, string? period, string? serviceLine, string? groupKey, string? divisionKey) = (request.ProviderId, request.Period, request.ServiceLine, request.Group, request.Division);
         if (await access.ResolveAsync(user, providerId, cancellationToken) is not { } id)
         {
             return Results.NotFound();
@@ -60,6 +63,13 @@ internal static class InsightsEndpoints
             return MetricEndpointSupport.Invalid("group", "group must be a key from the breakdown route, such as fixed-wing.");
         }
 
+        DivisionSelection selection = await access.ResolveDivisionAsync(id, divisionKey, cancellationToken);
+        if (selection.Error is { } divisionError)
+        {
+            return MetricEndpointSupport.Invalid("division", divisionError);
+        }
+
+        ReportingDivision? division = selection.Division;
         ApPeriod chosen;
         if (period is null)
         {
@@ -76,7 +86,7 @@ internal static class InsightsEndpoints
             return MetricEndpointSupport.Invalid("period", "period must be a month written yyyyMM, for example 202610.");
         }
 
-        InsightResult? result = await insights.GetWhatChangedAsync(id, chosen, filter, groupKey, cancellationToken);
+        InsightResult? result = await insights.GetWhatChangedAsync(id, chosen, filter, groupKey, division, cancellationToken);
         if (result is null)
         {
             return Results.NoContent();
@@ -84,7 +94,7 @@ internal static class InsightsEndpoints
 
         // The date comes from the shared reader, like every Metric response, not from the Insight's own computation.
         string? through = await access.DataThroughAsync(id, MetricDataThrough.WhatChanged, filter, cancellationToken);
-        return Results.Ok(ToResponse(providerId, filter, result) with { DataThrough = through });
+        return Results.Ok(ToResponse(providerId, filter, result) with { DataThrough = through, Division = division?.Key, DivisionName = division?.Name });
     }
 
     private static WhatChangedResponse ToResponse(string providerId, ServiceLineFilter filter, InsightResult result)
@@ -148,7 +158,14 @@ public sealed record WhatChangedResponse(
     decimal? NormalizedDeltaRatio,
     IReadOnlyList<InsightCardResponse> Drivers,
     IReadOnlyList<InsightCardResponse> Expected,
-    RemainderResponse Remainder);
+    RemainderResponse Remainder)
+{
+    /// <summary>The <c>key</c> of the Reporting Division the whole explanation is limited to, or null for every division.</summary>
+    public string? Division { get; init; }
+
+    /// <summary>The warehouse's name for that division, or null for every division.</summary>
+    public string? DivisionName { get; init; }
+}
 
 /// <summary>
 /// One finding. <c>Kind</c> is a stable key (`aged-payments`, `volume`, `payer-mix`). <c>Label</c> is `temporary`, `structural`, `watch` or `info`.

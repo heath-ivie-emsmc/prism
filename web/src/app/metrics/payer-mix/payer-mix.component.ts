@@ -1,3 +1,4 @@
+import { DivisionSelectComponent } from '../../shared/division-select.component';
 import { ChangeDetectionStrategy, Component, computed, effect, inject, signal, untracked } from '@angular/core';
 import { rxResource, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, ReactiveFormsModule } from '@angular/forms';
@@ -6,6 +7,8 @@ import { map, of } from 'rxjs';
 import { EmsBreadcrumb, EmsBreadcrumbsComponent, EmsMessageComponent, EmsPickerOption, EmsSelectComponent } from '@ems-management-consultants/ui';
 import { AuthService } from '../../auth/auth.service';
 import { DataFreshnessService } from '../../shared/data-freshness.service';
+import { DashboardFilterContext } from '../../dashboard/dashboard-filter-context';
+import { emptyMessage } from '../../shared/empty-scope';
 import { MetricCatalogService } from '../metric-catalog.service';
 import { ChartElementEvent } from '../../charts/chart.component';
 import { DataFrameComponent } from '../../shared/data-frame.component';
@@ -61,7 +64,7 @@ interface TableRow {
  */
 @Component({
   selector: 'app-payer-mix',
-  imports: [RouterLink, ContextBadgeComponent, FreshnessStampComponent, MetricHelpComponent, DataFrameComponent, WhatChangedComponent, SkeletonComponent, LoadProblemComponent, PayerDonutsComponent, PayerLegendComponent, PayerStackedComponent, ChartComponent, EmsBreadcrumbsComponent, EmsMessageComponent, EmsSelectComponent, ReactiveFormsModule, SegmentedControlComponent],
+  imports: [DivisionSelectComponent, RouterLink, ContextBadgeComponent, FreshnessStampComponent, MetricHelpComponent, DataFrameComponent, WhatChangedComponent, SkeletonComponent, LoadProblemComponent, PayerDonutsComponent, PayerLegendComponent, PayerStackedComponent, ChartComponent, EmsBreadcrumbsComponent, EmsMessageComponent, EmsSelectComponent, ReactiveFormsModule, SegmentedControlComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <main class="page">
@@ -72,16 +75,16 @@ interface TableRow {
           <h1>{{ providerName() }}</h1>
           <p class="page__subtitle">Revenue overview</p>
           <app-freshness-stamp [dataThrough]="dataThroughIso()" />
-          <app-context-badge [serviceLine]="line()" [divisionApplied]="divisionApplied()" />
+          <app-context-badge [serviceLine]="line()" [divisionApplied]="divisionApplied()" [divisionKey]="division()" />
         </div>
         <form class="page__filters" aria-label="Payer mix filters" (submit)="$event.preventDefault()">
           <ems-select class="page__select" label="Period" [options]="periods()" [formControl]="period" [clearable]="false" />
-          <ems-select class="page__select" [label]="labels().reportingDivision" [options]="allLocations()" [formControl]="location" [clearable]="false" [title]="notAvailable" />
+          <app-division-select class="page__select" mode="follow" [selectedKey]="division()" [line]="line()" />
         </form>
       </header>
 
       <div class="page__panels">
-        <app-what-changed [providerId]="providerId()" [period]="month()" [line]="line()" [group]="group()" [groupName]="groupName()" />
+        <app-what-changed [providerId]="providerId()" [period]="month()" [line]="line()" [group]="group()" [groupName]="groupName()" [division]="division()" />
 
         <app-data-frame [heading]="groupName() + ' payer mix'" [context]="context()">
           <div frameActions class="mix__controls">
@@ -99,7 +102,7 @@ interface TableRow {
               <app-skeleton height="16rem" />
             </div>
           } @else if (empty()) {
-            <ems-message state="neutral">There are no {{ groupLower() }} transports for {{ periodLabel() }}.</ems-message>
+            <ems-message state="neutral">{{ emptyText() }}</ems-message>
           } @else if (loaded()) {
             <p class="mix__summary">{{ summary() }}</p>
             @if (view() === 'bar') {
@@ -336,13 +339,11 @@ export class PayerMixComponent {
   private readonly router = inject(Router);
   private readonly freshness = inject(DataFreshnessService);
   private readonly catalog = inject(MetricCatalogService);
+  private readonly filters = inject(DashboardFilterContext);
 
   protected readonly views = VIEWS;
   protected readonly view = signal<PayerView>('bar');
-  /** The page has no picker of its own: the dashboard's choice arrives in the address and is applied. The control says so instead of offering a choice it cannot take. */
-  protected readonly notAvailable = 'Set on the dashboard. This page follows that choice.';
   protected readonly period = new FormControl<string>('', { nonNullable: true });
-  protected readonly location = new FormControl<string>({ value: 'all', disabled: true }, { nonNullable: true });
 
   private readonly params = toSignal(this.route.paramMap.pipe(map((p) => p.get('group') ?? '')), { initialValue: '' });
   private readonly query = toSignal(this.route.queryParamMap.pipe(map((q) => ({ period: q.get('period') ?? '', line: q.get('line'), division: q.get('division') }))), {
@@ -356,7 +357,6 @@ export class PayerMixComponent {
   protected readonly line = computed<BreakdownLine>(() => (this.query().line === 'ground' ? 'ground' : 'air'));
   /** The Provider's term for a Reporting Division (a Label, by Service Line), never a hard-coded one. */
   protected readonly labels = computed(() => defaultLabels(this.line()));
-  protected readonly allLocations = computed<EmsPickerOption<string>[]>(() => [{ value: 'all', label: this.division() ? 'Chosen on the dashboard' : this.labels().allReportingDivisions }]);
   protected readonly providerName = computed(() => this.auth.activeProvider()?.name ?? '');
   private readonly providerId = computed(() => this.auth.activeProviderId());
 
@@ -412,6 +412,11 @@ export class PayerMixComponent {
   protected readonly groupName = computed(() => {
     const named = this.mix.hasValue() ? this.mix.value()?.groupName : null;
     return named ? displayName(named) : displayName(this.group().replace(/-/g, ' '));
+  });
+  /** The empty-state sentence. This page is already on one Service Line, so only the Reporting Division is named when it narrowed the answer. */
+  protected readonly emptyText = computed(() => {
+    const key = this.division();
+    return emptyMessage(`${this.groupLower()} transports`, this.periodLabel(), `There are no ${this.groupLower()} transports for ${this.periodLabel()}.`, { line: null, divisionApplied: this.divisionApplied(), divisionName: key ? this.filters.divisionName(key) : undefined, labels: defaultLabels(this.line()) });
   });
   protected readonly groupLower = computed(() => this.groupName().toLowerCase());
 

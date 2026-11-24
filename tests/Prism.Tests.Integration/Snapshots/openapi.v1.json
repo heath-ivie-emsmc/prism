@@ -168,7 +168,7 @@
           "Metrics"
         ],
         "summary": "Net cash collected by month",
-        "description": "Net cash collected for the Provider in each of the last \u0060months\u0060 accounting periods ending with \u0060endPeriod\u0060, from the latest warehouse load. \u0060endPeriod\u0060 is \u0060yyyyMM\u0060 and defaults to the newest period that has data. \u0060months\u0060 defaults to 6 and is at most 24. \u0060serviceLine\u0060 is \u0060all\u0060 (default, the Provider\u0027s whole figure), \u0060air\u0060 or \u0060ground\u0060: air or ground alone is added up from the payments ledger by the transport\u0027s level of service, because the warehouse\u0027s summary table has no such split. Months with no data are left out, not returned as zero. The figures are aggregates: no patient or claim detail. Returns 404 when the Provider is not one the caller may read in full (not assigned, or limited to some Facilities).",
+        "description": "Net cash collected for the Provider in each of the last \u0060months\u0060 accounting periods ending with \u0060endPeriod\u0060, from the latest warehouse load. \u0060endPeriod\u0060 is \u0060yyyyMM\u0060 and defaults to the newest period that has data. \u0060months\u0060 defaults to 6 and is at most 24. \u0060serviceLine\u0060 is \u0060all\u0060 (default, the Provider\u0027s whole figure), \u0060air\u0060 or \u0060ground\u0060: air or ground alone is added up from the payments ledger by the transport\u0027s level of service, because the warehouse\u0027s summary table has no such split. \u0060division\u0060 limits the figures to one Reporting Division, using a \u0060key\u0060 from the divisions route (an unknown key is a 400): the warehouse\u0027s summary table has no division either, so the months are added up from the payments ledger by the division on the transport\u0027s record, with the same rule as net cash by group. Cash for an encounter with no Transport record or no Reporting Division belongs to no division, so the divisions add up to the whole figure less that cash, and \u0060divisionNote\u0060 says so. Months with no data are left out, not returned as zero. The figures are aggregates: no patient or claim detail. Returns 404 when the Provider is not one the caller may read in full (not assigned, or limited to some Facilities).",
         "operationId": "GetNetCollections",
         "parameters": [
           {
@@ -200,6 +200,13 @@
           },
           {
             "name": "ServiceLine",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Division",
             "in": "query",
             "schema": {
               "type": "string"
@@ -2340,13 +2347,20 @@
           "Metrics"
         ],
         "summary": "Reporting Divisions of the Provider",
-        "description": "The Reporting Divisions the Provider\u0027s transports are filed under in the latest warehouse load, in name order, each with the stable \u0060key\u0060 that the \u0060division\u0060 query parameter of the Transport-based Metrics accepts and the warehouse\u0027s \u0060name\u0060 for it. A division that only exists under a legacy \u0022- Old AR\u0022 name is listed under its current name. At most 500 are returned. Names and keys only, no counts and no patient data. Returns 404 when the Provider is not one the caller may read in full.",
+        "description": "The Reporting Divisions the Provider\u0027s transports are filed under in the latest warehouse load, in name order, each with the stable \u0060key\u0060 that the \u0060division\u0060 query parameter of the Transport-based Metrics accepts and the warehouse\u0027s \u0060name\u0060 for it. A division that only exists under a legacy \u0022- Old AR\u0022 name is listed under its current name. The optional \u0060serviceLine\u0060 (\u0060air\u0060, \u0060ground\u0060 or \u0060all\u0060, default \u0060all\u0060) keeps only the divisions that have at least one Transport under that Service Line in the latest load; keys are the same under every value. At most 500 are returned. Names and keys only, no counts and no patient data. Returns 404 when the Provider is not one the caller may read in full.",
         "operationId": "GetReportingDivisions",
         "parameters": [
           {
             "name": "providerId",
             "in": "path",
             "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "serviceLine",
+            "in": "query",
             "schema": {
               "type": "string"
             }
@@ -2359,6 +2373,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ReportingDivisionsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             }
@@ -2474,7 +2498,7 @@
           "Insights"
         ],
         "summary": "What changed in net cash against the month before",
-        "description": "Explains the change in posted net cash for \u0060period\u0060 (\u0060yyyyMM\u0060, default the newest period with net cash data) against the month before, for one aircraft type or level of service (\u0060group\u0060, a \u0060key\u0060 from the breakdown route such as \u0060fixed-wing\u0060) or the whole Service Line (\u0060serviceLine\u0060 is \u0060all\u0060, \u0060air\u0060 (default) or \u0060ground\u0060). \u0060drivers\u0060 are the findings that explain part of the posted change, largest first, and with \u0060remainder\u0060 they add up to \u0060delta\u0060. \u0060expected\u0060 are findings on another basis, such as what a shift in payer mix is expected to do to cash as claims are paid, or a shift of transports between Reporting Divisions that is another view of a change already explained by aircraft type, and are not part of \u0060delta\u0060. The findings are \u0060aged-payments\u0060, \u0060volume\u0060, \u0060payer-mix\u0060, \u0060aircraft-mix\u0060 (transports moving between aircraft types or levels of service that earn different amounts, a driver) and \u0060base-mix\u0060 (the same between Reporting Divisions: a driver only when no aircraft mix explains the change, otherwise listed in \u0060expected\u0060). \u0060remainder.judgment\u0060 is \u0060withinNormalRange\u0060 only when the unexplained part is inside the usual month-to-month range of the last twelve months, \u0060outsideNormalRange\u0060 when it is not, and \u0060notEnoughHistory\u0060 when there are not twelve months to judge by. \u0060normalizedDeltaRatio\u0060 is the change with unusually high aged payments taken out of both months, or null when there were none. Every figure in the text comes from a finding. Aggregates only: no patient, claim or payer names. Returns 204 when neither month has cash to explain, and 404 when the Provider is not one the caller may read in full.",
+        "description": "Explains the change in posted net cash for \u0060period\u0060 (\u0060yyyyMM\u0060, default the newest period with net cash data) against the month before, for one aircraft type or level of service (\u0060group\u0060, a \u0060key\u0060 from the breakdown route such as \u0060fixed-wing\u0060) or the whole Service Line (\u0060serviceLine\u0060 is \u0060all\u0060, \u0060air\u0060 (default) or \u0060ground\u0060). \u0060drivers\u0060 are the findings that explain part of the posted change, largest first, and with \u0060remainder\u0060 they add up to \u0060delta\u0060. \u0060expected\u0060 are findings on another basis, such as what a shift in payer mix is expected to do to cash as claims are paid, or a shift of transports between Reporting Divisions that is another view of a change already explained by aircraft type, and are not part of \u0060delta\u0060. The findings are \u0060aged-payments\u0060, \u0060volume\u0060, \u0060payer-mix\u0060, \u0060aircraft-mix\u0060 (transports moving between aircraft types or levels of service that earn different amounts, a driver) and \u0060base-mix\u0060 (the same between Reporting Divisions: a driver only when no aircraft mix explains the change, otherwise listed in \u0060expected\u0060). \u0060remainder.judgment\u0060 is \u0060withinNormalRange\u0060 only when the unexplained part is inside the usual month-to-month range of the last twelve months, \u0060outsideNormalRange\u0060 when it is not, and \u0060notEnoughHistory\u0060 when there are not twelve months to judge by. \u0060normalizedDeltaRatio\u0060 is the change with unusually high aged payments taken out of both months, or null when there were none. Every figure in the text comes from a finding. \u0060division\u0060 limits the whole explanation (the headline, every driver and the remainder) to one Reporting Division, using a \u0060key\u0060 from the divisions route (an unknown key is a 400), so they still add up to \u0060delta\u0060 within that division: aged payments, volume, payer mix and aircraft mix are worked out inside the division, and \u0060base-mix\u0060 is left out because it is a cut across divisions. Cash for an encounter with no Transport record or no Reporting Division belongs to no division. Aggregates only: no patient, claim or payer names. Returns 204 when neither month has cash to explain, and 404 when the Provider is not one the caller may read in full.",
         "operationId": "GetWhatChanged",
         "parameters": [
           {
@@ -6531,6 +6555,27 @@
               "string"
             ],
             "description": "The date of the warehouse load the figures come from, \u0060yyyy-MM-dd\u0060 (Data Through). Null when the Provider has no data in the table the Metric reads."
+          },
+          "division": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "The \u0060key\u0060 of the Reporting Division the figures are limited to, or null for every division."
+          },
+          "divisionName": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "The warehouse\u0027s name for that division, or null for every division."
+          },
+          "divisionNote": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "With a division: how the figures were added up and that cash with no division is in none of them. Null for every division."
           }
         },
         "description": "Net cash collected for a Provider, by accounting period."
@@ -8438,6 +8483,20 @@
           },
           "remainder": {
             "$ref": "#/components/schemas/RemainderResponse"
+          },
+          "division": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "The \u0060key\u0060 of the Reporting Division the whole explanation is limited to, or null for every division."
+          },
+          "divisionName": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "The warehouse\u0027s name for that division, or null for every division."
           }
         },
         "description": "What changed in posted net cash (USD) for \u0060Period\u0060 against \u0060PriorPeriod\u0060. \u0060DeltaRatio\u0060 is the change as a share of last month\u0027s cash (-0.22 is a 22% fall),\nnull when last month had none. \u0060Headline\u0060 is the one-sentence summary. \u0060DataThrough\u0060 is the date of the warehouse load, \u0060yyyy-MM-dd\u0060."

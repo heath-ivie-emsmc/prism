@@ -106,8 +106,8 @@ public sealed class NetCashBreakdownMetricTests(PostgresFixture postgres) : ICla
         var series = new NetCollectionsMetric(warehouse, new FakeProviderResolver(null));
         CancellationToken ct = TestContext.Current.CancellationToken;
 
-        NetCollectionsSeries air = await series.GetSeriesAsync(2026, new ApPeriod(2026, 10), 2, ServiceLineFilter.Air, ct);
-        NetCollectionsSeries ground = await series.GetSeriesAsync(2026, new ApPeriod(2026, 10), 2, ServiceLineFilter.Ground, ct);
+        NetCollectionsSeries air = await series.GetSeriesAsync(2026, new ApPeriod(2026, 10), 2, ServiceLineFilter.Air, null, ct);
+        NetCollectionsSeries ground = await series.GetSeriesAsync(2026, new ApPeriod(2026, 10), 2, ServiceLineFilter.Ground, null, ct);
 
         // Air: Oct 1000 - 50 + 100 + 200 + 3000 = 4250, Sep 600 + 250 = 850. Ground: Oct 400 + 70 (no trip row) = 470, nothing in Sep.
         Assert.Equal([(new ApPeriod(2026, 9), 850m), (new ApPeriod(2026, 10), 4250m)], air.Points.Select(p => (p.Period, p.Value)));

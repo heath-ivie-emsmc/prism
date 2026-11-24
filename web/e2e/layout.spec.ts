@@ -1,7 +1,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, mockNoDeniedClaims, test } from './fixtures';
-import { REPORT_DIR, SCHEMES, SIZES, axeViolations, chooseNetCashView, layoutErrors, expandHelp, openDashboard, openDashboardWithNotice, openDashboardHelp, openViewHelp, openMetricView, openMetricViewNotFound, openNeedsAttention, openPayerDetail, openProjection, openTransportsFullScreen, openPayerMixPage, openSavedViews, openView, SIX_METRICS, openMetricViewGroundOnly, openPaletteUnderGround, openSixMetricView, CONTRIBUTION_METRICS, openInsightNewKinds } from './support';
+import { REPORT_DIR, SCHEMES, SIZES, axeViolations, chooseNetCashView, layoutErrors, expandHelp, openDashboard, openDashboardWithNotice, openDashboardHelp, openViewHelp, openMetricView, openMetricViewNotFound, openNeedsAttention, openPayerDetail, openBreakdownPage, openProjection, openTransportsFullScreen, openPayerMixPage, openSavedViews, openView, SIX_METRICS, openMetricViewGroundOnly, openPaletteUnderGround, openEmptyDivisionView, openSixMetricView, CONTRIBUTION_METRICS, openInsightNewKinds } from './support';
 
 /**
  * Responsive layout and accessibility of the dashboard at every window size, light and dark. In a real browser it checks that:
@@ -136,6 +136,11 @@ test.describe('app icons', () => {
 const PAYER_PAGES = [
   { name: 'payer-mix', open: (p: import('@playwright/test').Page) => openPayerMixPage(p) },
   { name: 'payer-detail', open: (p: import('@playwright/test').Page) => openPayerDetail(p) },
+  // The Reporting Division control on the pages that follow the dashboard's choice, with a division key in the address whose name is hostile text.
+  { name: 'payer-mix-division', open: (p: import('@playwright/test').Page) => openPayerMixPage(p, 'rotor-wing', 'period=202610&line=air&division=x-img') },
+  { name: 'payer-detail-division', open: (p: import('@playwright/test').Page) => openPayerDetail(p, 'period=202610&line=air&division=x-img') },
+  { name: 'net-cash-breakdown', open: (p: import('@playwright/test').Page) => openBreakdownPage(p) },
+  { name: 'net-cash-breakdown-division', open: (p: import('@playwright/test').Page) => openBreakdownPage(p, 'period=202610&line=air&division=x-img') },
   {
     name: 'payer-detail-table',
     open: async (p: import('@playwright/test').Page) => {
@@ -229,6 +234,7 @@ const PAYER_PAGES = [
   { name: 'metric-view-contribution-air-only-under-ground', open: (p: import('@playwright/test').Page) => openMetricViewGroundOnly(p, 'cash_contribution_by_aircraft') },
   { name: 'contribution-view', open: (p: import('@playwright/test').Page) => openSixMetricView(p, 'c') },
   { name: 'insight-new-card-kinds', open: (p: import('@playwright/test').Page) => openInsightNewKinds(p) },
+  { name: 'view-empty-division', open: (p: import('@playwright/test').Page) => openEmptyDivisionView(p) },
   { name: 'palette-under-ground', open: (p: import('@playwright/test').Page) => openPaletteUnderGround(p) },
 ] as const;
 for (const state of PAYER_PAGES) {

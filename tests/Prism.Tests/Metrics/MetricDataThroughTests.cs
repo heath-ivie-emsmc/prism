@@ -32,6 +32,12 @@ public sealed class MetricDataThroughTests
         Assert.Equal([expected], MetricDataThrough.SourcesFor(key, line));
 
     [Theory]
+    [InlineData(ServiceLineFilter.Both)]
+    [InlineData(ServiceLineFilter.Air)]
+    public void Net_cash_for_one_division_reads_the_trip_table_not_the_kpi_table(ServiceLineFilter line) =>
+        Assert.Equal([DataThroughSource.TripDetail], MetricDataThrough.SourcesFor("net_collections", line, byDivision: true));
+
+    [Theory]
     [InlineData(ServiceLineFilter.Both, DataThroughSource.NetCollectionsKpi)]
     [InlineData(ServiceLineFilter.Air, DataThroughSource.TripDetail)]
     public void The_projection_reads_the_forecast_and_the_actual_series_it_compares_with(ServiceLineFilter line, DataThroughSource actual) =>

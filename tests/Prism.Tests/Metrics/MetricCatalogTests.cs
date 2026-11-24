@@ -158,6 +158,8 @@ public sealed class MetricCatalogTests
         ["cash_contribution_by_aircraft"] = "CashContributionMetricTests",
         ["cash_contribution_by_division"] = "CashContributionMetricTests",
         ["cash_contribution_by_payer"] = "CashContributionMetricTests",
+        ["net_collections"] = "NetCollectionsMetricTests",
+        ["what_changed"] = "WhatChangedDivisionTests",
     };
 
     [Fact]
@@ -178,9 +180,11 @@ public sealed class MetricCatalogTests
     }
 
     [Fact]
-    public void Metrics_that_do_not_read_the_trip_table_do_not_claim_the_division_filter()
+    public void Metrics_whose_tables_have_no_division_column_do_not_claim_the_division_filter()
     {
-        string[] unsupported = ["net_collections", "net_cash_projection", "clean_claim_rate", "what_changed"];
+        // The forecast table (reporting.forecast_cash_per_trip) and the clean claim table (reporting.kpi_clean_claim_rate__prov, split by pod only) have no Reporting Division
+        // column and no known link from a pod to a division, so they cannot be split honestly. See docs/warehouse.md.
+        string[] unsupported = ["net_cash_projection", "clean_claim_rate"];
 
         Assert.All(unsupported, key =>
         {

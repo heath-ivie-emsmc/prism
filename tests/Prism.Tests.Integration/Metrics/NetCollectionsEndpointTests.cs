@@ -1275,6 +1275,7 @@ public sealed class NetCollectionsEndpointTests : IDisposable
         "/breakdown" => breakdown.LastDivision,
         "/by-group" => byGroup.LastDivision,
         "/transports" => transports.LastDivision,
+        "" => metric.LastDivision,
         _ => throw new ArgumentOutOfRangeException(nameof(route)),
     };
 
@@ -1286,6 +1287,7 @@ public sealed class NetCollectionsEndpointTests : IDisposable
         "/breakdown" => breakdown.Calls,
         "/by-group" => byGroup.Calls,
         "/transports" => transports.Calls,
+        "" => metric.SeriesCalls,
         _ => throw new ArgumentOutOfRangeException(nameof(route)),
     };
 
@@ -1296,6 +1298,7 @@ public sealed class NetCollectionsEndpointTests : IDisposable
     [InlineData("/breakdown")]
     [InlineData("/by-group")]
     [InlineData("/transports")]
+    [InlineData("")]
     public async Task A_division_key_of_the_provider_is_passed_to_the_metric_and_echoed_in_the_response(string route)
     {
         (HttpStatusCode status, JsonElement body) = await GetAsync($"{Series}{route}?division=rotor-base");
@@ -1313,6 +1316,7 @@ public sealed class NetCollectionsEndpointTests : IDisposable
     [InlineData("/breakdown")]
     [InlineData("/by-group")]
     [InlineData("/transports")]
+    [InlineData("")]
     public async Task Without_a_division_or_with_an_empty_one_the_metric_is_asked_for_every_division_and_nothing_is_looked_up(string route)
     {
         (_, JsonElement none) = await GetAsync($"{Series}{route}");
@@ -1331,6 +1335,7 @@ public sealed class NetCollectionsEndpointTests : IDisposable
     [InlineData("/breakdown", "rotor")]
     [InlineData("/by-group", "ROTOR-BASE")]
     [InlineData("/transports", "rotor-base-")]
+    [InlineData("", "other-provider-base")]
     public async Task A_key_that_is_not_one_of_the_providers_divisions_is_a_400_and_nothing_is_queried(string route, string key)
     {
         (HttpStatusCode status, JsonElement body) = await GetAsync($"{Series}{route}?division={key}");
@@ -1400,14 +1405,162 @@ public sealed class NetCollectionsEndpointTests : IDisposable
         Assert.Equal(0, payerMix.Calls + breakdown.Calls);
     }
 
-    [Fact]
-    public async Task A_division_sent_to_a_metric_that_does_not_honor_it_is_ignored_and_changes_nothing()
+    [Theory]
+    [InlineData("/projection?")]
+    [InlineData("/clean-claims?")]
+    public async Task A_division_sent_to_a_metric_that_does_not_honor_it_is_ignored_and_changes_nothing(string route)
     {
-        (HttpStatusCode status, JsonElement body) = await GetAsync($"{Series}?division=rotor-base&months=3&endPeriod=202610");
+        // The forecast and clean claim tables have no division column, so these two Metrics still ignore the parameter, even a hostile one.
+        (HttpStatusCode status, JsonElement body) = await GetAsync($"{Series}{route}division=rotor-base");
+        (HttpStatusCode hostile, _) = await GetAsync($"{Series}{route}division=x%27%3B%20DROP");
 
         Assert.Equal(HttpStatusCode.OK, status);
+        Assert.Equal(HttpStatusCode.OK, hostile);
         Assert.False(body.TryGetProperty("division", out _));
         Assert.Empty(divisions.Lookups);
+    }
+
+    [Fact]
+    public async Task The_net_cash_series_says_how_a_division_was_added_up_and_has_no_note_without_one()
+    {
+        (_, JsonElement all) = await GetAsync($"{Series}?endPeriod=202610&months=3");
+        (_, JsonElement rotor) = await GetAsync($"{Series}?endPeriod=202610&months=3&division=rotor-base");
+
+        Assert.Equal(JsonValueKind.Null, all.GetProperty("divisionNote").ValueKind);
+        Assert.Contains("no Reporting Division", rotor.GetProperty("divisionNote").GetString(), StringComparison.Ordinal);
+        Assert.Equal("rotor-base", rotor.GetProperty("division").GetString());
+    }
+
+    [Fact]
+    public async Task The_net_cash_series_with_a_division_with_no_periods_still_echoes_the_division()
+    {
+        metric.Periods.Clear();
+
+        (HttpStatusCode status, JsonElement body) = await GetAsync($"{Series}?division=rotor-base");
+
+        Assert.Equal(HttpStatusCode.OK, status);
+        Assert.Equal(("rotor-base", "Mercy Flights - Rotor"), (body.GetProperty("division").GetString(), body.GetProperty("divisionName").GetString()));
+        Assert.Empty(body.GetProperty("points").EnumerateArray());
+    }
+
+    [Fact]
+    public async Task A_division_changes_the_etag_of_the_net_cash_series_and_a_stale_etag_gets_the_full_body()
+    {
+        using HttpResponseMessage all = await SendAsync($"{Series}?endPeriod=202610&months=3");
+        using HttpResponseMessage rotor = await SendAsync($"{Series}?endPeriod=202610&months=3&division=rotor-base", all.Headers.ETag!.Tag);
+        using HttpResponseMessage rotorAgain = await SendAsync($"{Series}?endPeriod=202610&months=3&division=rotor-base", rotor.Headers.ETag!.Tag);
+
+        Assert.Equal(HttpStatusCode.OK, rotor.StatusCode);
+        Assert.NotEqual(all.Headers.ETag.Tag, rotor.Headers.ETag.Tag);
+        Assert.Equal(HttpStatusCode.NotModified, rotorAgain.StatusCode);
+    }
+
+    [Fact]
+    public async Task Data_through_for_a_division_is_the_trip_tables_and_without_one_the_kpi_tables()
+    {
+        await GetAsync($"{Series}?serviceLine=all");
+        await GetAsync($"{Series}?serviceLine=all&division=rotor-base");
+
+        Assert.Equal([(100, DataThroughSource.NetCollectionsKpi), (100, DataThroughSource.TripDetail)], dataThrough.Calls);
+    }
+
+    [Fact]
+    public async Task A_division_on_the_net_cash_series_is_checked_against_the_provider_for_a_facility_limited_user_and_a_sibling()
+    {
+        (HttpStatusCode limited, _) = await GetAsync("/api/v1/providers/200/metrics/net-collections?division=fixed-base");
+        (HttpStatusCode foreign, JsonElement problem) = await GetAsync($"{Series}?division=other-provider-base");
+
+        Assert.Equal(HttpStatusCode.NotFound, limited);
+        Assert.Equal(HttpStatusCode.BadRequest, foreign);
+        Assert.DoesNotContain("other-provider-base", problem.GetRawText(), StringComparison.Ordinal);
+        Assert.Equal(0, metric.SeriesCalls);
+        Assert.Equal([100], divisions.Lookups);
+    }
+
+    [Fact]
+    public async Task The_insight_passes_a_division_of_the_provider_to_the_service_and_echoes_it()
+    {
+        (HttpStatusCode status, JsonElement body) = await GetAsync($"{Insights}?division=rotor-base");
+
+        Assert.Equal(HttpStatusCode.OK, status);
+        Assert.Equal(("rotor-base", "Mercy Flights - Rotor"), (body.GetProperty("division").GetString(), body.GetProperty("divisionName").GetString()));
+        Assert.Equal(new ReportingDivision("rotor-base", "Mercy Flights - Rotor"), insights.LastDivision);
+        Assert.Equal([100], divisions.Lookups);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("?division=")]
+    public async Task The_insight_without_a_division_asks_for_every_division_and_looks_nothing_up(string query)
+    {
+        (_, JsonElement body) = await GetAsync($"{Insights}{query}");
+
+        Assert.Null(insights.LastDivision);
+        Assert.Equal(JsonValueKind.Null, body.GetProperty("division").ValueKind);
+        Assert.Empty(divisions.Lookups);
+    }
+
+    [Theory]
+    [InlineData("fixed-base-2")]
+    [InlineData("other-provider-base")]
+    [InlineData("ROTOR-BASE")]
+    [InlineData("Mercy%20Flights%20-%20Rotor")]
+    [InlineData("rotor-base%0A")]
+    [InlineData("%2e%2e%2fother")]
+    public async Task The_insight_refuses_a_foreign_or_hostile_division_with_a_400_that_does_not_echo_it_and_computes_nothing(string key)
+    {
+        (HttpStatusCode status, JsonElement body) = await GetAsync($"{Insights}?division={key}");
+
+        Assert.Equal(HttpStatusCode.BadRequest, status);
+        Assert.True(body.GetProperty("errors").TryGetProperty("division", out _));
+        Assert.DoesNotContain("other-provider-base", body.GetRawText(), StringComparison.Ordinal);
+        Assert.Equal(0, insights.Calls);
+    }
+
+    [Fact]
+    public async Task The_insight_refuses_an_oversize_division_before_the_directory_is_asked()
+    {
+        (HttpStatusCode status, JsonElement body) = await GetAsync($"{Insights}?division={new string('a', 5000)}");
+
+        Assert.Equal(HttpStatusCode.BadRequest, status);
+        Assert.DoesNotContain("aaaaaaaaaa", body.GetRawText(), StringComparison.Ordinal);
+        Assert.Empty(divisions.Lookups);
+        Assert.Equal(0, insights.Calls);
+    }
+
+    [Theory]
+    [InlineData("200")]
+    [InlineData("400")]
+    [InlineData("999")]
+    public async Task The_insight_is_a_404_for_a_facility_limited_user_or_an_unassigned_provider_whatever_the_division(string provider)
+    {
+        (HttpStatusCode own, _) = await GetAsync($"/api/v1/providers/{provider}/insights/what-changed?division=rotor-base");
+        (HttpStatusCode sibling, _) = await GetAsync($"/api/v1/providers/{provider}/insights/what-changed?division=fixed-base");
+
+        Assert.Equal(HttpStatusCode.NotFound, own);
+        Assert.Equal(HttpStatusCode.NotFound, sibling);
+        Assert.Empty(divisions.Lookups);
+        Assert.Equal(0, insights.Calls);
+    }
+
+    [Fact]
+    public async Task A_division_changes_the_etag_of_the_insight_and_the_same_division_revalidates()
+    {
+        using HttpResponseMessage all = await SendAsync(Insights);
+        using HttpResponseMessage rotor = await SendAsync($"{Insights}?division=rotor-base", all.Headers.ETag!.Tag);
+        using HttpResponseMessage rotorAgain = await SendAsync($"{Insights}?division=rotor-base", rotor.Headers.ETag!.Tag);
+
+        Assert.Equal(HttpStatusCode.OK, rotor.StatusCode);
+        Assert.NotEqual(all.Headers.ETag.Tag, rotor.Headers.ETag.Tag);
+        Assert.Equal(HttpStatusCode.NotModified, rotorAgain.StatusCode);
+    }
+
+    [Fact]
+    public async Task The_insight_data_through_with_a_division_still_reads_the_trip_table()
+    {
+        await GetAsync($"{Insights}?division=rotor-base");
+
+        Assert.Equal([(100, DataThroughSource.TripDetail)], dataThrough.Calls);
     }
 
     [Fact]
@@ -1426,6 +1579,56 @@ public sealed class NetCollectionsEndpointTests : IDisposable
         Assert.Equal(HttpStatusCode.NotFound, limited);
         Assert.Equal(HttpStatusCode.NotFound, unknown);
         Assert.Equal([100, 300], divisions.Lookups);
+    }
+
+    [Theory]
+    [InlineData("air", new[] { "fixed-base", "rotor-base" }, ServiceLineFilter.Air)]
+    [InlineData("ground", new[] { "rotor-base" }, ServiceLineFilter.Ground)]
+    [InlineData("all", new[] { "fixed-base", "rotor-base" }, ServiceLineFilter.Both)]
+    public async Task The_divisions_route_passes_the_service_line_to_the_directory_and_returns_what_it_gives(string line, string[] keys, ServiceLineFilter expected)
+    {
+        (HttpStatusCode status, JsonElement body) = await GetAsync($"{Series}/divisions?serviceLine={line}");
+
+        Assert.Equal(HttpStatusCode.OK, status);
+        Assert.Equal(keys, body.GetProperty("divisions").EnumerateArray().Select(d => d.GetProperty("key").GetString()));
+        Assert.Equal([expected], divisions.Lines);
+    }
+
+    [Fact]
+    public async Task The_divisions_route_without_a_service_line_lists_every_line()
+    {
+        await GetAsync($"{Series}/divisions");
+
+        Assert.Equal([ServiceLineFilter.Both], divisions.Lines);
+    }
+
+    [Theory]
+    [InlineData("both")]
+    [InlineData("AIR")]
+    [InlineData("1")]
+    [InlineData("air,ground")]
+    [InlineData("air'%20OR%201=1--")]
+    [InlineData("%3Cscript%3E")]
+    public async Task A_service_line_that_is_not_all_air_or_ground_is_a_400_that_echoes_nothing_and_reads_nothing(string line)
+    {
+        (HttpStatusCode status, JsonElement body) = await GetAsync($"{Series}/divisions?serviceLine={line}");
+
+        Assert.Equal(HttpStatusCode.BadRequest, status);
+        Assert.DoesNotContain("script", body.GetRawText(), StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("OR 1=1", body.GetRawText(), StringComparison.Ordinal);
+        Assert.Empty(divisions.Lines);
+        Assert.Empty(divisions.Lookups);
+    }
+
+    [Theory]
+    [InlineData("999")]
+    [InlineData("200")]
+    public async Task The_divisions_route_with_a_service_line_is_a_404_for_another_provider_and_a_facility_limited_user_and_reads_nothing(string provider)
+    {
+        (HttpStatusCode status, _) = await GetAsync($"/api/v1/providers/{provider}/metrics/net-collections/divisions?serviceLine=ground");
+
+        Assert.Equal(HttpStatusCode.NotFound, status);
+        Assert.Empty(divisions.Lines);
     }
 
     [Fact]
@@ -1466,16 +1669,19 @@ public sealed class NetCollectionsEndpointTests : IDisposable
 
         public (int ProviderId, ApPeriod End, int Months, ServiceLineFilter ServiceLine) LastSeriesCall { get; private set; }
 
+        public ReportingDivision? LastDivision { get; private set; }
+
         public Task<IReadOnlyList<ApPeriod>> GetPeriodsAsync(int providerId, CancellationToken cancellationToken)
         {
             Calls++;
             return Failure is null ? Task.FromResult<IReadOnlyList<ApPeriod>>([.. Periods]) : Task.FromException<IReadOnlyList<ApPeriod>>(Failure);
         }
 
-        public Task<NetCollectionsSeries> GetSeriesAsync(int providerId, ApPeriod endPeriod, int months, ServiceLineFilter serviceLine, CancellationToken cancellationToken)
+        public Task<NetCollectionsSeries> GetSeriesAsync(int providerId, ApPeriod endPeriod, int months, ServiceLineFilter serviceLine, ReportingDivision? division, CancellationToken cancellationToken)
         {
             Calls++;
             SeriesCalls++;
+            LastDivision = division;
             LastSeriesCall = (providerId, endPeriod, months, serviceLine);
             if (Failure is not null)
             {
@@ -1519,6 +1725,16 @@ public sealed class NetCollectionsEndpointTests : IDisposable
         public List<int> Lookups { get; } = [];
 
         public Exception? Failure { get; set; }
+
+        /// <summary>The Service Lines the divisions were asked for, in order. Ground has only the rotor base here, so a test can see the filter reach the directory.</summary>
+        public List<ServiceLineFilter> Lines { get; } = [];
+
+        public async Task<IReadOnlyList<ReportingDivision>> GetReportingDivisionsAsync(int portalCompanyId, ServiceLineFilter serviceLine, CancellationToken cancellationToken)
+        {
+            Lines.Add(serviceLine);
+            IReadOnlyList<ReportingDivision> all = await GetReportingDivisionsAsync(portalCompanyId, cancellationToken);
+            return serviceLine == ServiceLineFilter.Ground ? [.. all.Where(d => d.Key == "rotor-base")] : all;
+        }
 
         public Task<IReadOnlyList<ReportingDivision>> GetReportingDivisionsAsync(int portalCompanyId, CancellationToken cancellationToken)
         {
@@ -1575,9 +1791,12 @@ public sealed class NetCollectionsEndpointTests : IDisposable
 
         public (int ProviderId, ApPeriod Period, ServiceLineFilter ServiceLine, string? Group) LastCall { get; private set; }
 
-        public Task<InsightResult?> GetWhatChangedAsync(int providerId, ApPeriod period, ServiceLineFilter serviceLine, string? groupKey, CancellationToken cancellationToken)
+        public ReportingDivision? LastDivision { get; private set; }
+
+        public Task<InsightResult?> GetWhatChangedAsync(int providerId, ApPeriod period, ServiceLineFilter serviceLine, string? groupKey, ReportingDivision? division, CancellationToken cancellationToken)
         {
             Calls++;
+            LastDivision = division;
             LastCall = (providerId, period, serviceLine, groupKey);
             if (Failure is not null)
             {

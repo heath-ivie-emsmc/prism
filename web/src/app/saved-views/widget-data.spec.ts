@@ -31,6 +31,14 @@ describe('widget data', () => {
     expect(data.summary.length).toBeLessThanOrEqual(SUMMARY_MAX);
   });
 
+  it('carries the division note as visible caveat text only when a division is applied', () => {
+    const base = { metric: METRIC, providerId: '1', endPeriod: '202610', months: 1, snapshotDate: '2026-11-05', points: [{ period: '202610', label: 'Oct', year: 2026, value: 1100 }] };
+    const note = 'Cash with no division belongs to no division. <b>x</b>';
+    expect(fromNetCash({ ...base, division: 'summit', divisionName: 'Summit Base', divisionNote: note }).caveat).toBe(note);
+    expect(fromNetCash({ ...base, division: null, divisionNote: note }).caveat).toBe('');
+    expect(fromNetCash(base).caveat).toBe('');
+  });
+
   it('says there is nothing to show when a Metric has no data', () => {
     const empties = [
       fromNetCash({ metric: METRIC, providerId: '1', endPeriod: null, months: 6, snapshotDate: null, points: [] }),

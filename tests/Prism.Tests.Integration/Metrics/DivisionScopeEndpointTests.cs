@@ -38,6 +38,9 @@ public sealed class DivisionScopeEndpointTests : IDisposable
         ["cash_contribution_by_aircraft"] = "cash-contribution/aircraft",
         ["cash_contribution_by_division"] = "cash-contribution/division",
         ["cash_contribution_by_payer"] = "cash-contribution/payer",
+        // The net cash series is the route itself, and the Insight lives beside the Metrics, not under them ("~" is relative to the Provider).
+        ["net_collections"] = "",
+        ["what_changed"] = "~insights/what-changed",
     };
 
     private readonly CountingDirectory directory = new();
@@ -79,6 +82,13 @@ public sealed class DivisionScopeEndpointTests : IDisposable
         Assert.Equal([.. RouteByKey.Keys.Order(StringComparer.Ordinal)], withDivision);
     }
 
+    private static string UrlFor(string provider, string route) => route switch
+    {
+        "" => $"{Root}/{provider}/{Tail}",
+        _ when route.StartsWith('~') => $"{Root}/{provider}/{route[1..]}",
+        _ => $"{Root}/{provider}/{Tail}/{route}",
+    };
+
     private async Task<HttpStatusCode> StatusAsync(string url)
     {
         using CookieClient client = factory.NewSignedInClient();
@@ -92,8 +102,8 @@ public sealed class DivisionScopeEndpointTests : IDisposable
     {
         foreach (string provider in new[] { "101", "999" })
         {
-            Assert.Equal(HttpStatusCode.NotFound, await StatusAsync($"{Root}/{provider}/{Tail}/{route}?division=rotor-base"));
-            Assert.Equal(HttpStatusCode.NotFound, await StatusAsync($"{Root}/{provider}/{Tail}/{route}"));
+            Assert.Equal(HttpStatusCode.NotFound, await StatusAsync($"{UrlFor(provider, route)}?division=rotor-base"));
+            Assert.Equal(HttpStatusCode.NotFound, await StatusAsync(UrlFor(provider, route)));
         }
 
         Assert.Equal((0, 0), (directory.DivisionLookups, warehouse.Calls));
@@ -107,7 +117,7 @@ public sealed class DivisionScopeEndpointTests : IDisposable
         {
             foreach (string division in new[] { "fixed-base", "rotor-base" })
             {
-                Assert.Equal(HttpStatusCode.NotFound, await StatusAsync($"{Root}/{provider}/{Tail}/{route}?division={division}"));
+                Assert.Equal(HttpStatusCode.NotFound, await StatusAsync($"{UrlFor(provider, route)}?division={division}"));
             }
         }
 
@@ -118,7 +128,7 @@ public sealed class DivisionScopeEndpointTests : IDisposable
     [MemberData(nameof(DivisionRoutes))]
     public async Task The_same_request_for_the_providers_own_data_is_not_refused_by_scope_so_the_404s_above_are_the_scope_check(string route)
     {
-        HttpStatusCode status = await StatusAsync($"{Root}/100/{Tail}/{route}?division=rotor-base");
+        HttpStatusCode status = await StatusAsync($"{UrlFor("100", route)}?division=rotor-base");
 
         Assert.NotEqual(HttpStatusCode.NotFound, status);
         Assert.NotEqual(HttpStatusCode.Forbidden, status);

@@ -65,6 +65,14 @@ export async function openPayerDetail(page: Page, query = 'period=202610&line=ai
   await page.waitForTimeout(400);
 }
 
+/** The net cash breakdown page, waiting until its table is in. `query` carries the month, Service Line and optional `division` key. */
+export async function openBreakdownPage(page: Page, query = 'period=202610&line=air'): Promise<void> {
+  await page.goto(`/dashboard/net-cash?${query}`);
+  await page.locator('app-net-cash-breakdown table').waitFor();
+  await page.evaluate(() => document.fonts.ready);
+  await page.waitForTimeout(300);
+}
+
 /** The payer mix of one group, waiting until its chart has drawn. */
 export async function openPayerMixPage(page: Page, group = 'rotor-wing', query = 'period=202610&line=air'): Promise<void> {
   await page.goto(`/dashboard/net-cash/${group}?${query}`);
@@ -277,6 +285,30 @@ export async function openSixMetricView(page: Page, arrangement: keyof typeof SI
   await page.locator('app-grid-canvas app-skeleton').first().waitFor({ state: 'detached' }).catch(() => undefined);
   await page.waitForFunction(() => document.querySelectorAll('app-grid-canvas li.item').length > 0 && !document.querySelector('app-grid-canvas app-skeleton'));
   await page.waitForTimeout(500);
+}
+
+/**
+ * A saved view of net cash (column and table) and transports (tile) after a division chosen under Ground only is kept when the page goes back to Air only:
+ * the picker shows it as having no air transports, and every widget says so in its empty text, with the scope.
+ */
+export async function openEmptyDivisionView(page: Page): Promise<void> {
+  const widget = (id: string, metricKey: string, presentation: string, x: number, y: number, w = 6, h = 3) => ({ id, metricKey, presentation, x, y, w, h });
+  await page.route(/\/api\/v1\/providers\/[^/]+\/saved-views\/5$/, async (route) => {
+    if (route.request().method() !== 'GET') return route.fallback();
+    const widgets = [widget('e1', 'net_collections', 'column', 0, 0), widget('e2', 'net_collections', 'table', 6, 0), widget('e3', 'transport_volume', 'tile', 0, 3, 3, 2), widget('e4', 'transport_volume', 'column', 3, 3, 9, 3)];
+    return route.fulfill({
+      headers: { ETag: '"1"' },
+      json: { id: 5, name: 'Empty division', description: null, ownerName: 'jdoe', isOwner: true, version: '1', updatedAt: '2026-11-22T10:00:00Z', layout: { version: 1, density: 'comfortable', widgets } },
+    });
+  });
+  await openView(page, 5);
+  await page.getByRole('radio', { name: 'Ground only' }).click();
+  await page.getByRole('combobox', { name: 'Reporting division' }).click();
+  await page.getByRole('option', { name: 'Mercy Flights - Ground Critical Care' }).click();
+  await page.getByRole('radio', { name: 'Air only' }).click();
+  await page.locator('[data-testid="widget-empty"]').first().waitFor();
+  await page.evaluate(() => document.fonts.ready);
+  await page.waitForTimeout(400);
 }
 
 /** The edit page with Ground only chosen, so the palette lists the air-only Metrics with their reason. */

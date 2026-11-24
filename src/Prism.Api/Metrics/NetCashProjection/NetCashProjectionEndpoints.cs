@@ -122,7 +122,7 @@ internal static class NetCashProjectionEndpoints
     // The newest month that has posted net cash among the six ending at the chosen period. None when the Provider or Service Line has no actual cash in that window.
     private static async Task<NetCollectionsPoint?> LatestActualAsync(INetCollectionsMetric actuals, int id, ApPeriod end, ServiceLineFilter filter, CancellationToken cancellationToken)
     {
-        NetCollectionsSeries series = await actuals.GetSeriesAsync(id, end, ActualLookbackMonths, filter, cancellationToken);
+        NetCollectionsSeries series = await actuals.GetSeriesAsync(id, end, ActualLookbackMonths, filter, null, cancellationToken);
         return series.Points.OrderByDescending(p => p.Period, Comparer<ApPeriod>.Create(ComparePeriods)).FirstOrDefault();
     }
 

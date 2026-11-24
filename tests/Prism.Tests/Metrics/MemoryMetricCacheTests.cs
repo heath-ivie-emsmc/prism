@@ -348,6 +348,38 @@ public sealed class MemoryMetricCacheTests : IDisposable
         Assert.Equal([null, "rotor", "fixed"], new[] { all, rotorMix, fixedMix }.Select(m => m.GroupName));
     }
 
+    [Fact]
+    public async Task Net_cash_keys_the_division_too_so_a_division_never_gets_the_whole_providers_series()
+    {
+        var metric = new CachedNetCollectionsMetric(new DivisionSeries(() => Interlocked.Increment(ref computes)), cache);
+        var rotor = new ReportingDivision("rotor", "Rotor");
+        var ct = TestContext.Current.CancellationToken;
+        var period = new Prism.Application.Metrics.ApPeriod(2026, 10);
+        var line = Prism.Application.Metrics.ServiceLineFilter.Both;
+
+        NetCollectionsSeries all = await metric.GetSeriesAsync(100, period, 6, line, null, ct);
+        NetCollectionsSeries rotorSeries = await metric.GetSeriesAsync(100, period, 6, line, rotor, ct);
+        NetCollectionsSeries rotorAgain = await metric.GetSeriesAsync(100, period, 6, line, rotor, ct);
+        NetCollectionsSeries allAgain = await metric.GetSeriesAsync(100, period, 6, line, null, ct);
+
+        Assert.Equal(2, computes);
+        Assert.Same(rotorSeries, rotorAgain);
+        Assert.Same(all, allAgain);
+        Assert.NotSame(all, rotorSeries);
+    }
+
+    private sealed class DivisionSeries(Action onCall) : INetCollectionsMetric
+    {
+        public Task<IReadOnlyList<Prism.Application.Metrics.ApPeriod>> GetPeriodsAsync(int providerId, CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyList<Prism.Application.Metrics.ApPeriod>>([]);
+
+        public Task<NetCollectionsSeries> GetSeriesAsync(int providerId, Prism.Application.Metrics.ApPeriod endPeriod, int months, Prism.Application.Metrics.ServiceLineFilter serviceLine, ReportingDivision? division, CancellationToken cancellationToken)
+        {
+            onCall();
+            return Task.FromResult(new NetCollectionsSeries(INetCollectionsMetric.Definition, endPeriod, months, null, []));
+        }
+    }
+
     private sealed class DivisionPayerMix(Action onCall) : IPayerMixMetric
     {
         public Task<PayerMix> GetPayerMixAsync(int providerId, Prism.Application.Metrics.ApPeriod period, Prism.Application.Metrics.ServiceLineFilter serviceLine, string? groupKey, ReportingDivision? division, CancellationToken cancellationToken)

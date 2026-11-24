@@ -6,7 +6,7 @@ using Prism.Application.Warehouse;
 namespace Prism.Infrastructure.Insights;
 
 /// <summary>
-/// Computes the "what changed" Insight and keeps it for a short time. The cache key holds the Provider, the period, the Service Line, the group and the
+/// Computes the "what changed" Insight and keeps it for a short time. The cache key holds the Provider, the period, the Service Line, the group, the Reporting Division key and the
 /// Data Through date of the warehouse load, so a new load is never answered from the old figures. The cache has a size cap and a lifetime, and only a few
 /// Insights are computed at once, because each one reads the warehouse several times.
 /// </summary>
@@ -19,11 +19,11 @@ public sealed class CachedInsightService(InsightsEngine engine, IDataThroughRead
     private readonly MemoryCache cache = new(new MemoryCacheOptions { SizeLimit = CacheSize });
     private readonly SemaphoreSlim gate = new(MaxConcurrent, MaxConcurrent);
 
-    public async Task<InsightResult?> GetWhatChangedAsync(int providerId, ApPeriod period, ServiceLineFilter serviceLine, string? groupKey, CancellationToken cancellationToken)
+    public async Task<InsightResult?> GetWhatChangedAsync(int providerId, ApPeriod period, ServiceLineFilter serviceLine, string? groupKey, ReportingDivision? division, CancellationToken cancellationToken)
     {
         // Data Through is the shared reader's answer for the tables the Insight reads, the same one the Metric responses and caches use.
         DateOnly? loaded = await dataThrough.GetAsync(providerId, MetricDataThrough.SourcesFor(MetricDataThrough.WhatChanged, serviceLine), cancellationToken);
-        var key = (providerId, period, serviceLine, groupKey, loaded);
+        var key = (providerId, period, serviceLine, groupKey, division?.Key, loaded);
         if (cache.TryGetValue(key, out Cached? hit) && hit is not null)
         {
             return hit.Result;
@@ -32,7 +32,7 @@ public sealed class CachedInsightService(InsightsEngine engine, IDataThroughRead
         await gate.WaitAsync(cancellationToken);
         try
         {
-            Insight? insight = await engine.ExplainAsync(providerId, period, serviceLine, groupKey, cancellationToken);
+            Insight? insight = await engine.ExplainAsync(providerId, period, serviceLine, groupKey, division, cancellationToken);
             InsightResult? result = insight is null ? null : new InsightResult(insight, InsightText.Build(insight), loaded);
             cache.Set(key, new Cached(result), new MemoryCacheEntryOptions { Size = 1, AbsoluteExpirationRelativeToNow = Lifetime });
             return result;

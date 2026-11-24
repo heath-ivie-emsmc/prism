@@ -1,3 +1,4 @@
+import { DIVISIONS } from '../shared/division.testing';
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { EnvironmentProviders, Provider } from '@angular/core';
@@ -67,6 +68,7 @@ export const CATALOG: CatalogDto = {
   metrics: [NET_CASH, CLEAN_CLAIMS, AR_DAYS, INSIGHT],
 };
 
+export { DIVISIONS };
 export const PROVIDER = { id: '526', name: 'Seminole County Fire Department', facilityCount: 0 };
 export const PERIODS = { providerId: '526', periods: [{ period: '202610', label: 'Oct 2026' }, { period: '202609', label: 'Sep 2026' }] };
 export const MANAGE = 'prism.views.manage';
@@ -132,12 +134,13 @@ export function bootstrap(options: { me?: Partial<MeDto>; providers?: (Provider 
 export function answer(http: HttpTestingController, replies: Record<string, object | (() => object)> = {}): void {
   const all: Record<string, object | (() => object)> = {
     [`${BASE}/metrics/net-collections/periods`]: PERIODS,
+    [`${BASE}/metrics/net-collections/divisions`]: DIVISIONS,
     [`${BASE}/metrics/catalog`]: CATALOG,
     ...replies,
   };
   for (const [url, body] of Object.entries(all)) {
     for (const request of http.match((r) => r.url === url)) {
-      request.flush(typeof body === 'function' ? body() : body);
+      if (!request.cancelled) request.flush(typeof body === 'function' ? body() : body);
     }
   }
 }

@@ -16,7 +16,7 @@
         "both"
       ],
       "appliesTo": "both",
-      "divisionSupport": "none",
+      "divisionSupport": "supported",
       "freshness": "dailyLoad",
       "helpKey": "net_collections",
       "drills": []

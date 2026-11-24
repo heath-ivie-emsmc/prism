@@ -1,4 +1,5 @@
 using Prism.Application.Metrics;
+using Prism.Application.Warehouse;
 
 namespace Prism.Application.Insights;
 
@@ -9,9 +10,9 @@ namespace Prism.Application.Insights;
 /// </summary>
 public sealed class InsightsEngine(INetCashByGroupMetric netCash, IEnumerable<IInsightAnalysis> analyses)
 {
-    public async Task<Insight?> ExplainAsync(int providerId, ApPeriod period, ServiceLineFilter serviceLine, string? groupKey, CancellationToken cancellationToken)
+    public async Task<Insight?> ExplainAsync(int providerId, ApPeriod period, ServiceLineFilter serviceLine, string? groupKey, ReportingDivision? division, CancellationToken cancellationToken)
     {
-        NetCashByGroup cash = await netCash.GetNetCashByGroupAsync(providerId, period, serviceLine, null, cancellationToken);
+        NetCashByGroup cash = await netCash.GetNetCashByGroupAsync(providerId, period, serviceLine, division, cancellationToken);
         (string name, IReadOnlyList<MonthlyCash> history) = Shape(cash, serviceLine, groupKey);
         MonthlyCash? now = history.FirstOrDefault(m => m.Period == period);
         MonthlyCash? before = history.FirstOrDefault(m => m.Period == period.AddMonths(-1));
@@ -23,9 +24,9 @@ public sealed class InsightsEngine(INetCashByGroupMetric netCash, IEnumerable<II
         decimal cashNow = now?.Cash ?? 0m;
         decimal cashPrior = before?.Cash ?? 0m;
         decimal delta = cashNow - cashPrior;
-        var headline = new InsightHeadline(period, period.AddMonths(-1), groupKey, name, cashNow, cashPrior, delta, cashPrior == 0m ? null : delta / cashPrior);
+        var headline = new InsightHeadline(period, period.AddMonths(-1), groupKey, name, cashNow, cashPrior, delta, cashPrior == 0m ? null : delta / cashPrior, division?.Name);
 
-        List<Finding> all = await RunAnalysesAsync(new InsightInput(providerId, period, serviceLine, groupKey, history, []), cancellationToken);
+        List<Finding> all = await RunAnalysesAsync(new InsightInput(providerId, period, serviceLine, groupKey, history, [], division), cancellationToken);
         decimal bar = InsightThresholds.Materiality * Math.Abs(delta);
         List<Finding> shown = delta == 0m ? [] : [.. all.Where(f => Math.Abs(f.Impact) >= bar).OrderByDescending(f => Math.Abs(f.Impact)).Take(InsightThresholds.MaxFindings)];
         Finding[] drivers = [.. shown.Where(f => f.Basis == FindingBasis.PostedCash)];

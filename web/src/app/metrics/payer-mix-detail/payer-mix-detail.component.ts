@@ -1,3 +1,4 @@
+import { DivisionSelectComponent } from '../../shared/division-select.component';
 import { ChangeDetectionStrategy, Component, ElementRef, Injector, afterNextRender, computed, effect, inject, signal, untracked, viewChild } from '@angular/core';
 import { rxResource, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, ReactiveFormsModule } from '@angular/forms';
@@ -16,6 +17,9 @@ import { frameContext } from '../../shared/fullscreen';
 import { LoadProblemComponent } from '../../shared/load-problem.component';
 import { MetricHelpComponent } from '../../shared/metric-help.component';
 import { SkeletonComponent } from '../../shared/skeleton.component';
+import { defaultLabels } from '../../dashboard/service-line';
+import { DashboardFilterContext } from '../../dashboard/dashboard-filter-context';
+import { emptyMessage } from '../../shared/empty-scope';
 import { MetricCatalogService } from '../metric-catalog.service';
 import { NetCollectionsService } from '../net-collections.service';
 import { NetCollectionsPeriodsDto } from '../net-collections/net-collections.dto';
@@ -60,7 +64,7 @@ const words = (key: string): string => {
  */
 @Component({
   selector: 'app-payer-mix-detail',
-  imports: [RouterLink, ContextBadgeComponent, FreshnessStampComponent, MetricHelpComponent, DataFrameComponent, SkeletonComponent, LoadProblemComponent, PayerDonutsComponent, PayerLegendComponent, ChartComponent, EmsBreadcrumbsComponent, EmsMessageComponent, EmsSelectComponent, ReactiveFormsModule, SegmentedControlComponent],
+  imports: [DivisionSelectComponent, RouterLink, ContextBadgeComponent, FreshnessStampComponent, MetricHelpComponent, DataFrameComponent, SkeletonComponent, LoadProblemComponent, PayerDonutsComponent, PayerLegendComponent, ChartComponent, EmsBreadcrumbsComponent, EmsMessageComponent, EmsSelectComponent, ReactiveFormsModule, SegmentedControlComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <main class="page">
@@ -71,10 +75,11 @@ const words = (key: string): string => {
           <h1 #heading tabindex="-1">{{ pageHeading() }}</h1>
           <p class="page__subtitle">{{ providerName() }}</p>
           <app-freshness-stamp [dataThrough]="dataThroughIso()" />
-          <app-context-badge [serviceLine]="line()" [divisionApplied]="divisionApplied()" />
+          <app-context-badge [serviceLine]="line()" [divisionApplied]="divisionApplied()" [divisionKey]="division()" />
         </div>
         <form class="page__filters" aria-label="Payer breakdown filters" (submit)="$event.preventDefault()">
           <ems-select class="page__select" label="Period" [options]="periods()" [formControl]="period" [clearable]="false" />
+          <app-division-select class="page__select" mode="follow" [selectedKey]="division()" [line]="line()" />
         </form>
       </header>
 
@@ -95,7 +100,7 @@ const words = (key: string): string => {
               <app-skeleton height="16rem" />
             </div>
           } @else if (empty()) {
-            <ems-message state="neutral">There are no {{ payerGroupName().toLowerCase() }} {{ groupLower() }} transports for {{ periodLabel() }}.</ems-message>
+            <ems-message state="neutral">{{ emptyText() }}</ems-message>
           } @else if (loaded()) {
             <p class="mix__summary">{{ summary() }}</p>
             @if (view() === 'bar') {
@@ -294,6 +299,7 @@ export class PayerMixDetailComponent {
   private readonly router = inject(Router);
   private readonly freshness = inject(DataFreshnessService);
   private readonly catalog = inject(MetricCatalogService);
+  private readonly filters = inject(DashboardFilterContext);
   private readonly injector = inject(Injector);
   private readonly headingRef = viewChild.required<ElementRef<HTMLElement>>('heading');
 
@@ -365,6 +371,11 @@ export class PayerMixDetailComponent {
   /** Names as the warehouse gave them, else the keys written as words while the data loads. */
   protected readonly groupName = computed(() => this.detailValue()?.groupName?.trim() || words(this.group()));
   protected readonly payerGroupName = computed(() => this.detailValue()?.payerGroup.name?.trim() || words(this.payerKey()));
+  /** The empty-state sentence. This page is already on one Service Line, so only the Reporting Division is named when it narrowed the answer. */
+  protected readonly emptyText = computed(() => {
+    const key = this.division();
+    return emptyMessage(`${this.payerGroupName().toLowerCase()} ${this.groupLower()} transports`, this.periodLabel(), `There are no ${this.payerGroupName().toLowerCase()} ${this.groupLower()} transports for ${this.periodLabel()}.`, { line: null, divisionApplied: this.divisionApplied(), divisionName: key ? this.filters.divisionName(key) : undefined, labels: defaultLabels(this.line()) });
+  });
   protected readonly groupLower = computed(() => this.groupName().toLowerCase());
   protected readonly pageHeading = computed(() => `${this.payerGroupName()} payers, ${this.groupLower()}`);
   protected readonly context = computed(() => frameContext(this.periodLabel(), this.line() === 'air' ? 'Air' : 'Ground'));

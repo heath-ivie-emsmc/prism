@@ -17,8 +17,8 @@ public sealed class CachedInsightServiceTests : IDisposable
 
     public void Dispose() => service.Dispose();
 
-    private Task<InsightResult?> AskAsync(string? group = "fixed-wing", int provider = 1) =>
-        service.GetWhatChangedAsync(provider, Oct, ServiceLineFilter.Air, group, TestContext.Current.CancellationToken);
+    private Task<InsightResult?> AskAsync(string? group = "fixed-wing", int provider = 1, ReportingDivision? division = null) =>
+        service.GetWhatChangedAsync(provider, Oct, ServiceLineFilter.Air, group, division, TestContext.Current.CancellationToken);
 
     private sealed class CountingCash : INetCashByGroupMetric
     {
@@ -32,8 +32,15 @@ public sealed class CachedInsightServiceTests : IDisposable
 
         public bool Empty { get; set; }
 
+        public List<ReportingDivision?> Divisions { get; } = [];
+
         public async Task<NetCashByGroup> GetNetCashByGroupAsync(int providerId, ApPeriod period, ServiceLineFilter serviceLine, ReportingDivision? division, CancellationToken cancellationToken)
         {
+            lock (Divisions)
+            {
+                Divisions.Add(division);
+            }
+
             Interlocked.Increment(ref calls);
             int now = Interlocked.Increment(ref active);
             int seen;
@@ -90,6 +97,25 @@ public sealed class CachedInsightServiceTests : IDisposable
         await AskAsync(group: null);
 
         Assert.Equal(3, cash.Calls);
+    }
+
+    [Fact]
+    public async Task The_division_is_part_of_the_key_so_each_division_and_no_division_is_its_own_question_and_is_asked_of_the_metric()
+    {
+        var rotor = new ReportingDivision("rotor", "Mercy Flights - Rotor");
+        var fixedWing = new ReportingDivision("fixed", "Mercy Flights - Fixed");
+
+        InsightResult? all = await AskAsync();
+        InsightResult? rotorResult = await AskAsync(division: rotor);
+        await AskAsync(division: fixedWing);
+        InsightResult? rotorAgain = await AskAsync(division: rotor);
+
+        Assert.Equal(3, cash.Calls);
+        Assert.Same(rotorResult, rotorAgain);
+        Assert.NotSame(all, rotorResult);
+        Assert.Equal([null, rotor, fixedWing], cash.Divisions);
+        Assert.Null(all!.Insight.Headline.DivisionName);
+        Assert.Equal("Mercy Flights - Rotor", rotorResult!.Insight.Headline.DivisionName);
     }
 
     [Fact]

@@ -55,8 +55,15 @@ public sealed class CachedNetCollectionsMetric(INetCollectionsMetric inner, IMet
     public Task<IReadOnlyList<ApPeriod>> GetPeriodsAsync(int providerId, CancellationToken cancellationToken) =>
         cache.GetOrAddAsync(providerId, INetCollectionsMetric.Definition.Key + "#periods", "", MetricDataThrough.SourcesFor(INetCollectionsMetric.Definition.Key, ServiceLineFilter.Both), ct => inner.GetPeriodsAsync(providerId, ct), cancellationToken);
 
-    public Task<NetCollectionsSeries> GetSeriesAsync(int providerId, ApPeriod endPeriod, int months, ServiceLineFilter serviceLine, CancellationToken cancellationToken) =>
-        cache.Cached(INetCollectionsMetric.Definition, providerId, serviceLine, ct => inner.GetSeriesAsync(providerId, endPeriod, months, serviceLine, ct), cancellationToken, endPeriod, months, serviceLine);
+    // With a division the figures come from the ledger and the trip table, so the Data Through sources (and with them the key) follow the path used.
+    public Task<NetCollectionsSeries> GetSeriesAsync(int providerId, ApPeriod endPeriod, int months, ServiceLineFilter serviceLine, ReportingDivision? division, CancellationToken cancellationToken) =>
+        cache.GetOrAddAsync(
+            providerId,
+            INetCollectionsMetric.Definition.Key,
+            MetricCacheKeys.Of(endPeriod, months, serviceLine, division?.Key),
+            MetricDataThrough.SourcesFor(INetCollectionsMetric.Definition.Key, serviceLine, division is not null),
+            ct => inner.GetSeriesAsync(providerId, endPeriod, months, serviceLine, division, ct),
+            cancellationToken);
 }
 
 /// <summary>Caches <see cref="INetCashProjectionMetric"/> answers.</summary>

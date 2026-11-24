@@ -63,9 +63,9 @@ export function analyzeLayout(): LayoutIssue[] {
     if (!text || !el || ['SCRIPT', 'STYLE', 'NOSCRIPT'].includes(el.tagName)) continue;
     const style = getComputedStyle(el);
     if (style.display === 'none' || style.visibility === 'hidden' || Number(style.opacity) === 0) continue;
-    // Closed <details> content and anything collapsed to a clip rectangle is not on screen.
+    // Closed <details> content and anything collapsed to a clip rectangle is not on screen (.ems-select__live is the library's 1px clipped live region, whose single long line is not drawn).
     if (el.closest('details:not([open])') && !el.closest('summary')) continue;
-    if (el.closest('.cdk-visually-hidden, .ems-visually-hidden, .panel__sr')) continue;
+    if (el.closest('.cdk-visually-hidden, .ems-visually-hidden, .panel__sr, .ems-select__live')) continue;
     // Icon fonts: the text node is a ligature name ("light_mode") that draws as one glyph, so its text box is not what is on screen.
     if (el.closest('.material-symbols-rounded, [class*="material-symbols"], ems-icon')) continue;
     range.selectNodeContents(node);

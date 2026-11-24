@@ -28,6 +28,9 @@ export interface WhatChangedDto {
   readonly serviceLine: 'all' | 'air' | 'ground';
   readonly group: string | null;
   readonly groupName: string;
+  /** The Reporting Division key applied, else null, and its name. */
+  readonly division?: string | null;
+  readonly divisionName?: string | null;
   /** Date of the warehouse load the figures come from, yyyy-MM-dd. */
   readonly dataThrough: string | null;
   readonly headline: string;
@@ -46,8 +49,9 @@ export interface WhatChangedDto {
 export class InsightsService {
   private readonly http = inject(HttpClient);
 
-  whatChanged(providerId: string, period: string, serviceLine: 'air' | 'ground', group: string): Observable<WhatChangedDto | null> {
-    const params = new HttpParams().set('period', period).set('serviceLine', serviceLine).set('group', group);
+  whatChanged(providerId: string, period: string, serviceLine: 'air' | 'ground', group: string, division?: string): Observable<WhatChangedDto | null> {
+    let params = new HttpParams().set('period', period).set('serviceLine', serviceLine).set('group', group);
+    if (division) params = params.set('division', division);
     return this.http.get<WhatChangedDto | null>(`/api/v1/providers/${encodeURIComponent(providerId)}/insights/what-changed`, { params });
   }
 }

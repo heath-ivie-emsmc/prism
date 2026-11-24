@@ -15,7 +15,7 @@ public sealed class InsightsEngineTests
         new(new InsightFakes.NetCashByGroupFake([.. points]), analyses);
 
     private static Task<Insight?> ExplainAsync(InsightsEngine engine, string? group = "fixed-wing") =>
-        engine.ExplainAsync(1, Oct, ServiceLineFilter.Air, group, TestContext.Current.CancellationToken);
+        engine.ExplainAsync(1, Oct, ServiceLineFilter.Air, group, null, TestContext.Current.CancellationToken);
 
     private sealed class FixedAnalysis(int order, Finding? finding) : IInsightAnalysis
     {

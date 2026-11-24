@@ -1,4 +1,5 @@
 using Prism.Application.Metrics;
+using Prism.Application.Warehouse;
 
 namespace Prism.Application.Insights;
 
@@ -11,5 +12,5 @@ public sealed record InsightResult(Insight Insight, InsightNarrative Narrative, 
 /// </summary>
 public interface IInsightService
 {
-    Task<InsightResult?> GetWhatChangedAsync(int providerId, ApPeriod period, ServiceLineFilter serviceLine, string? groupKey, CancellationToken cancellationToken);
+    Task<InsightResult?> GetWhatChangedAsync(int providerId, ApPeriod period, ServiceLineFilter serviceLine, string? groupKey, ReportingDivision? division, CancellationToken cancellationToken);
 }

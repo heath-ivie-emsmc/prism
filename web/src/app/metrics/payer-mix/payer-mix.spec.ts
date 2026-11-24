@@ -71,7 +71,7 @@ describe('payer mix', () => {
     const wide = buildPayerMixOption(mix, 'Oct', 'Sep', colors) as { series: { name: string; data: unknown[] }[]; xAxis: { type: string } };
     const narrow = buildPayerMixOption(mix, 'Oct', 'Sep', { ...colors, narrow: true }) as { xAxis: { type: string } };
     expect(wide.series.map((s) => s.name)).toEqual(['Sep', 'Oct']);
-    expect(wide.series[1]!.data[2]).toMatchObject({ itemStyle: { color: '#a00' }, label: { formatter: '+5 pts' } });
+    expect(wide.series[1]!.data[2]).toMatchObject({ itemStyle: { color: '#a00' }, label: { formatter: '23% +5 pts' } });
     expect(wide.xAxis.type).toBe('category');
     expect(narrow.xAxis.type).toBe('value');
   });

@@ -122,6 +122,20 @@ describe('WhatChangedComponent', () => {
     expect(text(root)).toContain('What changed in fixed wing');
   });
 
+  it('sends the division key when one is chosen, and none otherwise', () => {
+    const { http } = create();
+    expect(http.expectOne((r) => r.url === URL).request.params.has('division')).toBe(false);
+
+    const chosen = TestBed.createComponent(WhatChangedComponent);
+    chosen.componentRef.setInput('providerId', '526');
+    chosen.componentRef.setInput('period', '202610');
+    chosen.componentRef.setInput('line', 'air');
+    chosen.componentRef.setInput('group', 'fixed-wing');
+    chosen.componentRef.setInput('division', 'summit');
+    chosen.detectChanges();
+    expect(http.expectOne((r) => r.url === URL).request.params.get('division')).toBe('summit');
+  });
+
   it('shows the headline, a card for each finding with its label in words, the remainder and what the figures are based on', async () => {
     const { fixture, root, http } = create();
     http.expectOne((r) => r.url === URL).flush(DTO);

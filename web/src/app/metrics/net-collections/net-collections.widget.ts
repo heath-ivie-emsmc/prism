@@ -19,7 +19,7 @@ export function fromNetCash(dto: NetCollectionsDto): WidgetData {
     series: [{ name: 'Net cash', values: dto.points.map((p) => p.value) }],
     headline: { value: money(last.value), note: prior ? `${change(last.value, prior.value)} on ${prior.label}` : monthLabel(last.label, last.year) },
     dataThrough: dto.dataThrough ?? dto.snapshotDate,
-    caveat: '',
+    caveat: dto.division ? (dto.divisionNote ?? '') : '',
     empty: false,
     unit: 'usd',
   };

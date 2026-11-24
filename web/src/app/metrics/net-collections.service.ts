@@ -11,8 +11,8 @@ import { loadNetCashByGroup } from './net-cash-by-group/net-cash-by-group.loader
 import { NetCashByGroupDto } from './net-cash-by-group/net-cash-by-group.dto';
 import { loadNetCashProjection } from './net-cash-projection/net-cash-projection.loader';
 import { NetCashProjectionDto } from './net-cash-projection/net-cash-projection.dto';
-import { loadNetCollections, loadPeriods } from './net-collections/net-collections.loader';
-import { NetCollectionsDto, NetCollectionsPeriodsDto } from './net-collections/net-collections.dto';
+import { loadDivisions, loadNetCollections, loadPeriods } from './net-collections/net-collections.loader';
+import { NetCollectionsDto, NetCollectionsPeriodsDto, ReportingDivisionsDto } from './net-collections/net-collections.dto';
 import { loadPayerMix } from './payer-mix/payer-mix.loader';
 import { PayerMixDto } from './payer-mix/payer-mix.dto';
 import { loadPayerMixDetail } from './payer-mix-detail/payer-mix-detail.loader';
@@ -36,8 +36,12 @@ export class NetCollectionsService {
     return loadPeriods(this.http, providerId);
   }
 
-  series(providerId: string, endPeriod: string, months: number, serviceLine: ServiceLine = 'all'): Observable<NetCollectionsDto> {
-    return loadNetCollections(this.http, { providerId, period: endPeriod, months, serviceLine });
+  divisions(providerId: string, serviceLine: ServiceLine = 'all'): Observable<ReportingDivisionsDto> {
+    return loadDivisions(this.http, providerId, serviceLine);
+  }
+
+  series(providerId: string, endPeriod: string, months: number, serviceLine: ServiceLine = 'all', division?: string): Observable<NetCollectionsDto> {
+    return loadNetCollections(this.http, { providerId, period: endPeriod, months, serviceLine, ...(division ? { division } : {}) });
   }
 
   /** The forecast for the months after `afterPeriod`. `horizon` is 1 to 3 months and defaults to 3. */

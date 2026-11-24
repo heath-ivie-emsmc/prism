@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Security.Claims;
 using Prism.Application.Auth;
 using Prism.Application.Metrics;
+using Prism.Application.Warehouse;
 using static Prism.Api.Metrics.MetricEndpointSupport;
 
 namespace Prism.Api.Metrics;
@@ -19,6 +20,8 @@ internal static class NetCollectionsEndpoints
                 + "`endPeriod` is `yyyyMM` and defaults to the newest period that has data. `months` defaults to 6 and is at most 24. "
                 + "`serviceLine` is `all` (default, the Provider's whole figure), `air` or `ground`: air or ground alone is added up from the payments ledger by the transport's level of service, "
                 + "because the warehouse's summary table has no such split. "
+                + "`division` limits the figures to one Reporting Division, using a `key` from the divisions route (an unknown key is a 400): the warehouse's summary table has no division either, so the months are added up from the payments ledger "
+                + "by the division on the transport's record, with the same rule as net cash by group. Cash for an encounter with no Transport record or no Reporting Division belongs to no division, so the divisions add up to the whole figure less that cash, and `divisionNote` says so. "
                 + "Months with no data are left out, not returned as zero. The figures are aggregates: no patient or claim detail. "
                 + "Returns 404 when the Provider is not one the caller may read in full (not assigned, or limited to some Facilities).")
             .Produces<NetCollectionsResponse>()
@@ -64,7 +67,7 @@ internal static class NetCollectionsEndpoints
         INetCollectionsMetric metric,
         CancellationToken cancellationToken)
     {
-        (string providerId, string? endPeriod, int? months, string? serviceLine) = (request.ProviderId, request.EndPeriod, request.Months, request.ServiceLine);
+        (string providerId, string? endPeriod, int? months, string? serviceLine, string? divisionKey) = (request.ProviderId, request.EndPeriod, request.Months, request.ServiceLine, request.Division);
         if (await access.ResolveAsync(user, providerId, cancellationToken) is not { } id)
         {
             return Results.NotFound();
@@ -81,14 +84,21 @@ internal static class NetCollectionsEndpoints
             return Invalid("serviceLine", "serviceLine must be all, air or ground.");
         }
 
-        string? through = await access.DataThroughAsync(id, INetCollectionsMetric.Definition.Key, filter, cancellationToken);
+        DivisionSelection selection = await access.ResolveDivisionAsync(id, divisionKey, cancellationToken);
+        if (selection.Error is { } divisionError)
+        {
+            return Invalid("division", divisionError);
+        }
+
+        ReportingDivision? division = selection.Division;
+        string? through = await access.DataThroughAsync(id, INetCollectionsMetric.Definition.Key, filter, cancellationToken, division is not null);
         ApPeriod end;
         if (endPeriod is null)
         {
             IReadOnlyList<ApPeriod> available = await metric.GetPeriodsAsync(id, cancellationToken);
             if (available.Count == 0)
             {
-                return Results.Ok(Empty(providerId, count) with { DataThrough = through });
+                return Results.Ok(Empty(providerId, count) with { DataThrough = through, Division = division?.Key, DivisionName = division?.Name, DivisionNote = DivisionNoteFor(division) });
             }
 
             end = available.OrderDescending(Comparer<ApPeriod>.Create(ComparePeriods)).First();
@@ -98,7 +108,7 @@ internal static class NetCollectionsEndpoints
             return Invalid("endPeriod", "endPeriod must be a month written yyyyMM, for example 202610.");
         }
 
-        NetCollectionsSeries series = await metric.GetSeriesAsync(id, end, count, filter, cancellationToken);
+        NetCollectionsSeries series = await metric.GetSeriesAsync(id, end, count, filter, division, cancellationToken);
         NetCollectionsResponse response = new(
             new MetricResponse(series.Metric.Key, series.Metric.Name, series.Metric.Description, series.Metric.Unit),
             providerId,
@@ -106,8 +116,14 @@ internal static class NetCollectionsEndpoints
             series.Months,
             series.SnapshotDate?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
             series.Points.Select(p => new NetCollectionsPointResponse(p.Period.ToString(), Months[p.Period.Month - 1], p.Period.Year, p.Value)).ToArray());
-        return Results.Ok(response with { DataThrough = through });
+        return Results.Ok(response with { DataThrough = through, Division = division?.Key, DivisionName = division?.Name, DivisionNote = DivisionNoteFor(division) });
     }
+
+    /// <summary>Said whenever a division is chosen: the figures come from the ledger and the trip table, so cash that has no division is not in them.</summary>
+    internal const string DivisionNoteText =
+        "Added up from the payments ledger by the division on each transport's record. Cash for transports with no record or no Reporting Division is in no division, so the divisions add up to the whole figure less that cash.";
+
+    private static string? DivisionNoteFor(ReportingDivision? division) => division is null ? null : DivisionNoteText;
 
     private static PeriodResponse Describe(ApPeriod period) =>
         new(period.ToString(), $"{Months[period.Month - 1]} {period.Year}");
@@ -133,6 +149,15 @@ public sealed record NetCollectionsResponse(
 {
     /// <summary>The date of the warehouse load the figures come from, <c>yyyy-MM-dd</c> (Data Through). Null when the Provider has no data in the table the Metric reads.</summary>
     public string? DataThrough { get; init; }
+
+    /// <summary>The <c>key</c> of the Reporting Division the figures are limited to, or null for every division.</summary>
+    public string? Division { get; init; }
+
+    /// <summary>The warehouse's name for that division, or null for every division.</summary>
+    public string? DivisionName { get; init; }
+
+    /// <summary>With a division: how the figures were added up and that cash with no division is in none of them. Null for every division.</summary>
+    public string? DivisionNote { get; init; }
 }
 
 
@@ -147,4 +172,5 @@ internal readonly record struct SeriesRequest(
     string ProviderId,
     string? EndPeriod,
     int? Months,
-    string? ServiceLine);
+    string? ServiceLine,
+    string? Division);

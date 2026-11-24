@@ -33,6 +33,7 @@ describe('the Reporting Division query parameter', () => {
     ['cash_per_transport_by_payer', loadCashPerTransport],
     ['net_cash_breakdown', loadNetCashBreakdown],
     ['net_cash_by_group', loadNetCashByGroup],
+    ['net_collections', loadNetCollections],
   ] as const)('is sent by %s when a Division is selected', (_key, load) => {
     expect(sent((http, q) => load(http, q))).toBe('north_base');
   });
@@ -46,7 +47,6 @@ describe('the Reporting Division query parameter', () => {
   });
 
   it.each([
-    ['net_collections', loadNetCollections],
     ['net_cash_projection', loadNetCashProjection],
     ['clean_claim_rate', loadCleanClaims],
   ] as const)('is never sent by %s, which ignores it', (_key, load) => {

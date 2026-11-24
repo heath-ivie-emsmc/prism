@@ -49,9 +49,9 @@ internal sealed class ProviderAccess(IUserScopeProvider scope, IProviderDivision
     /// The Data Through date of a Metric's figures as <c>yyyy-MM-dd</c>, or null when the Provider has no data in the table the Metric reads.
     /// Call it only after <see cref="ResolveAsync"/> returned the Provider id, so the lookup is already scoped to a Provider the caller may read.
     /// </summary>
-    public async Task<string?> DataThroughAsync(int providerId, string metricKey, ServiceLineFilter serviceLine, CancellationToken cancellationToken)
+    public async Task<string?> DataThroughAsync(int providerId, string metricKey, ServiceLineFilter serviceLine, CancellationToken cancellationToken, bool byDivision = false)
     {
-        DateOnly? date = await dataThrough.GetAsync(providerId, MetricDataThrough.SourcesFor(metricKey, serviceLine), cancellationToken);
+        DateOnly? date = await dataThrough.GetAsync(providerId, MetricDataThrough.SourcesFor(metricKey, serviceLine, byDivision), cancellationToken);
         return date?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
     }
 

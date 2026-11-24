@@ -2,6 +2,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { describe, expect, it } from 'vitest';
 import { axeViolations } from '../axe';
 import { NetCashProjectionDto } from '../metrics/net-cash-projection/net-cash-projection.dto';
+import { flushDivisions } from '../shared/division.testing';
 import { BASE, bootstrap } from '../saved-views/saved-views.testing';
 import { ProjectionPanelComponent } from './projection-panel.component';
 
@@ -36,6 +37,9 @@ async function create() {
       fixture.detectChanges();
       TestBed.tick();
       for (const request of http.match((r) => r.url === URL)) request.flush(projection(months));
+      // The Context Badge reads the shared filter context, which asks for the periods and divisions.
+      for (const request of http.match((r) => r.url.endsWith('/periods'))) request.flush({ providerId: '526', periods: [] });
+      flushDivisions(http);
     }
     await fixture.whenStable();
     fixture.detectChanges();

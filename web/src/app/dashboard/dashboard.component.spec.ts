@@ -5,6 +5,8 @@ import { provideRouter } from '@angular/router';
 import { provideEmsUi } from '@ems-management-consultants/ui';
 import { AuthService } from '../auth/auth.service';
 import { MeDto } from '../auth/me.dto';
+import { DIVISIONS, flushDivisions } from '../shared/division.testing';
+import { DashboardFilterContext } from './dashboard-filter-context';
 import { DashboardComponent } from './dashboard.component';
 
 describe('DashboardComponent header', () => {
@@ -126,6 +128,7 @@ describe('DashboardComponent header', () => {
     const result = await create(PROVIDER);
     const http = TestBed.inject(HttpTestingController);
     http.expectOne(`${BASE}/periods`).flush(PERIODS);
+    flushDivisions(http);
     await settle(result.fixture);
     http.expectOne((r) => r.url === BASE && r.params.get('endPeriod') === '202610').flush(series);
     await result.fixture.whenStable();
@@ -173,10 +176,45 @@ describe('DashboardComponent header', () => {
     request.flush(SERIES);
   });
 
+  it('asks for net cash for the chosen division and shows the note about cash that belongs to none, as text', async () => {
+    const { fixture, root, http } = await createWithData();
+    http.match(() => true);
+    TestBed.inject(DashboardFilterContext).division.setValue('summit');
+    await settle(fixture);
+
+    const request = http.expectOne((r) => r.url === BASE && r.params.get('division') === 'summit');
+    request.flush({ ...SERIES, division: 'summit', divisionName: 'Summit Base', divisionNote: 'Cash with no division belongs to no division. <b>x</b>' });
+    await settle(fixture);
+
+    const note = root.querySelector('#net-cash-division-note')!;
+    expect(note.textContent).toContain('belongs to no division. <b>x</b>');
+    expect(note.querySelector('b')).toBeNull();
+  });
+
+  it('does not ask again, and sends no division, for the cards whose Metric has no division (projection, clean claim rate), and says all bases', async () => {
+    const { fixture, root, http } = await createWithData();
+    http.match(() => true);
+    TestBed.inject(DashboardFilterContext).division.setValue('summit');
+    await settle(fixture);
+
+    const asked = http.match(() => true).filter((r) => !r.cancelled);
+    expect(asked.some((r) => r.request.url.endsWith('/projection') || r.request.url.endsWith('/clean-claims'))).toBe(false);
+    expect(asked.filter((r) => r.request.url.endsWith('/projection') || r.request.url.endsWith('/clean-claims')).map((r) => r.request.params.get('division'))).toEqual([]);
+    for (const r of asked) r.flush(r.request.url.endsWith('/divisions') ? DIVISIONS : { ...SERIES, division: 'summit' });
+    await settle(fixture);
+    expect(root.querySelector('app-projection-panel app-context-badge')?.textContent).toContain('All bases');
+  });
+
+  it('shows no division note when all divisions are chosen', async () => {
+    const { root } = await createWithData({ ...SERIES, divisionNote: 'should not show' });
+    expect(root.querySelector('#net-cash-division-note')).toBeNull();
+  });
+
   it('asks for net cash for the Service Line the page starts on', async () => {
     const result = await create(PROVIDER);
     const http = TestBed.inject(HttpTestingController);
     http.expectOne(`${BASE}/periods`).flush(PERIODS);
+    flushDivisions(http);
     await settle(result.fixture);
 
     http.expectOne((r) => r.url === BASE).flush(SERIES);
@@ -209,13 +247,27 @@ describe('DashboardComponent header', () => {
   it('says so when a Provider has no net cash data', async () => {
     const { root } = await createWithData({ ...SERIES, points: [] });
 
-    expect(root.querySelector('app-net-cash-panel')?.textContent).toContain('No net cash data for this period');
+    // On Air only for a Provider that also has ground, the line is named as what narrowed the answer.
+    expect(root.querySelector('app-net-cash-panel [data-testid="panel-empty"]')?.textContent).toBe('No net cash collected under Air only in October 2026. Try Air + ground.');
+  });
+
+  it('names the chosen division and the line when they are why net cash is empty, and the plain words when nothing narrows it', async () => {
+    const { root, fixture, http } = await createWithData({ ...SERIES, points: [] });
+    const filters = TestBed.inject(DashboardFilterContext);
+    filters.division.setValue('summit');
+    filters.serviceLine.set('both');
+    await settle(fixture);
+    http.match(() => true).forEach((r) => !r.cancelled && r.flush(r.request.url.endsWith('/divisions') ? DIVISIONS : { ...SERIES, points: [] }));
+    await settle(fixture);
+
+    expect(root.querySelector('app-net-cash-panel [data-testid="panel-empty"]')?.textContent).toBe('No net cash collected for Summit Base in October 2026. Try All reporting divisions.');
   });
 
   it('shows a calm error with a way to retry when net cash cannot be loaded', async () => {
     const result = await create(PROVIDER);
     const http = TestBed.inject(HttpTestingController);
     http.expectOne(`${BASE}/periods`).flush(PERIODS);
+    flushDivisions(http);
     await settle(result.fixture);
     http.expectOne((r) => r.url === BASE).flush({ title: 'The data warehouse is not available. Try again shortly.' }, { status: 503, statusText: 'Service Unavailable' });
     await result.fixture.whenStable();
@@ -236,6 +288,7 @@ describe('DashboardComponent header', () => {
       { title: 'The data warehouse is not available. Try again shortly.', traceId: '00-77114806214001843f6761e5254e96e3-cfc570a3d3f659d3-03' },
       { status: 503, statusText: 'Service Unavailable' },
     );
+    flushDivisions(http);
     answerVolume();
     await result.fixture.whenStable();
     result.fixture.detectChanges();
@@ -248,6 +301,7 @@ describe('DashboardComponent header', () => {
     [...result.root.querySelectorAll<HTMLButtonElement>('app-net-cash-panel button')].find((b) => b.textContent?.includes('Try again'))!.click();
     await settle(result.fixture);
     http.expectOne(`${BASE}/periods`).flush(PERIODS);
+    flushDivisions(http);
   });
 
   it('shows grey placeholders, not "no data" or blanks, while the months are still loading', async () => {
@@ -279,6 +333,7 @@ describe('DashboardComponent header', () => {
     const result = await create(PROVIDER);
     const http = TestBed.inject(HttpTestingController);
     http.expectOne(`${BASE}/periods`).flush(PERIODS);
+    flushDivisions(http);
     await settle(result.fixture);
 
     const request = http.expectOne((r) => r.url === `${BASE}/transports`);

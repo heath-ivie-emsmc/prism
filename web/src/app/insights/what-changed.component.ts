@@ -18,6 +18,7 @@ interface Query {
   readonly period: string;
   readonly line: 'air' | 'ground';
   readonly group: string;
+  readonly division?: string | undefined;
   readonly rev: number;
 }
 
@@ -272,6 +273,8 @@ export class WhatChangedComponent {
   readonly period = input.required<string>();
   readonly line = input.required<'air' | 'ground'>();
   readonly group = input.required<string>();
+  /** The Reporting Division key from the address, or undefined for all. */
+  readonly division = input<string | undefined>(undefined);
   /** The group's name for the heading while the insight loads, and when there is none. */
   readonly groupName = input<string>('');
 
@@ -280,9 +283,9 @@ export class WhatChangedComponent {
       const providerId = this.providerId();
       const period = this.period();
       const group = this.group();
-      return providerId && /^\d{6}$/.test(period) && group ? { providerId, period, line: this.line(), group, rev: this.freshness.revision() } : null;
+      return providerId && /^\d{6}$/.test(period) && group ? { providerId, period, line: this.line(), group, division: this.division(), rev: this.freshness.revision() } : null;
     },
-    stream: ({ params }) => (params ? this.insights.whatChanged(params.providerId, params.period, params.line, params.group) : of(null)),
+    stream: ({ params }) => (params ? this.insights.whatChanged(params.providerId, params.period, params.line, params.group, params.division) : of(null)),
   });
 
   /** The denied claims count, asked for only when the user may see claim data. A count is an aggregate, but it sits behind the same permission. */

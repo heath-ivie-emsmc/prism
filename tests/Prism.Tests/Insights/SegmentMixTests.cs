@@ -137,6 +137,45 @@ public sealed class SegmentMixTests
     }
 
     [Fact]
+    public async Task With_a_division_chosen_the_base_mix_is_left_out_and_the_aircraft_mix_is_worked_out_inside_that_division()
+    {
+        var breakdown = new InsightFakes.BreakdownFake(Rows);
+        var rotor = new ReportingDivision("rotor", "Mercy Flights - Rotor");
+        InsightInput input = Input() with { Division = rotor };
+        CancellationToken ct = TestContext.Current.CancellationToken;
+
+        Assert.Null(await new BaseMixAnalysis(breakdown).RunAsync(input, ct));
+        Assert.Empty(breakdown.Calls);
+        Assert.IsType<AircraftMixFinding>(await new AircraftMixAnalysis(breakdown).RunAsync(input, ct));
+        Assert.Equal([(7, Oct, ServiceLineFilter.Air, (ReportingDivision?)rotor)], breakdown.Calls);
+    }
+
+    [Fact]
+    public async Task In_the_engine_a_division_limits_the_headline_and_the_drivers_and_they_still_add_up_to_the_change_within_it()
+    {
+        var breakdown = new InsightFakes.BreakdownFake(Rows);
+        var cash = new InsightFakes.NetCashByGroupFake(
+        [
+            new NetCashByGroupPoint("rotor-wing", "Rotor wing", true, Oct.AddMonths(-1), 12_000m, 60),
+            new NetCashByGroupPoint("fixed-wing", "Fixed wing", true, Oct.AddMonths(-1), 20_000m, 40),
+            new NetCashByGroupPoint("rotor-wing", "Rotor wing", true, Oct, 9_000m, 50),
+            new NetCashByGroupPoint("fixed-wing", "Fixed wing", true, Oct, 25_000m, 50),
+        ]);
+        var engine = new InsightsEngine(cash, [new AircraftMixAnalysis(breakdown), new BaseMixAnalysis(breakdown)]);
+        var rotor = new ReportingDivision("rotor", "Mercy Flights - Rotor");
+
+        Insight? insight = await engine.ExplainAsync(7, Oct, ServiceLineFilter.Air, null, rotor, TestContext.Current.CancellationToken);
+
+        Assert.NotNull(insight);
+        Assert.Equal(rotor.Name, insight.Headline.DivisionName);
+        Assert.Equal([rotor], cash.Divisions.Distinct());
+        Assert.DoesNotContain(insight.Drivers.Concat(insight.Expected), f => f is BaseMixFinding);
+        Assert.Equal(insight.Headline.Delta, insight.Drivers.Sum(f => f.Impact) + insight.Remainder.Amount);
+        Assert.Equal([rotor], breakdown.Calls.Select(c => c.Division).Distinct());
+        Assert.StartsWith("Air cash in Mercy Flights - Rotor rose", InsightText.Build(insight).Headline, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task The_base_mix_with_one_group_chosen_looks_only_at_that_groups_divisions_and_a_missing_division_is_not_recorded()
     {
         var breakdown = new InsightFakes.BreakdownFake(
@@ -165,7 +204,7 @@ public sealed class SegmentMixTests
         ]);
         var engine = new InsightsEngine(cash, [new AircraftMixAnalysis(breakdown), new BaseMixAnalysis(breakdown)]);
 
-        Insight? insight = await engine.ExplainAsync(7, Oct, ServiceLineFilter.Air, null, TestContext.Current.CancellationToken);
+        Insight? insight = await engine.ExplainAsync(7, Oct, ServiceLineFilter.Air, null, null, TestContext.Current.CancellationToken);
 
         Assert.NotNull(insight);
         Assert.Equal(2_000m, insight.Headline.Delta);

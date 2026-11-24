@@ -1,6 +1,6 @@
 import { expect, test } from './fixtures';
 import type { Page } from '@playwright/test';
-import { axeViolations, chooseNetCashView, expandHelp, layoutErrors, openDashboard, openDashboardWithNotice, openDashboardHelp, openViewHelp, openMetricView, openMetricViewNotFound, openNeedsAttention, openPayerDetail, openPayerMixPage, openProjection, openSavedViews, openTransportsFullScreen, openView, SIX_METRICS, openMetricViewGroundOnly, openPaletteUnderGround, openSixMetricView, CONTRIBUTION_METRICS, openInsightNewKinds } from './support';
+import { axeViolations, chooseNetCashView, expandHelp, layoutErrors, openDashboard, openDashboardWithNotice, openDashboardHelp, openViewHelp, openMetricView, openMetricViewNotFound, openNeedsAttention, openBreakdownPage, openPayerDetail, openPayerMixPage, openProjection, openSavedViews, openTransportsFullScreen, openView, SIX_METRICS, openMetricViewGroundOnly, openPaletteUnderGround, openEmptyDivisionView, openSixMetricView, CONTRIBUTION_METRICS, openInsightNewKinds } from './support';
 
 /** WCAG 2.2 AA beyond the static page: other states, other pages, user settings. Every test also gates on axe. */
 test.describe('accessibility', () => {
@@ -413,6 +413,9 @@ test.describe('accessibility', () => {
  */
 const TRUST_STATES: { name: string; open: (p: Page) => Promise<void> }[] = [
   { name: 'payer breakdown, bar', open: (p) => openPayerDetail(p) },
+  { name: 'payer mix, division from the address', open: (p) => openPayerMixPage(p, 'rotor-wing', 'period=202610&line=air&division=x-img') },
+  { name: 'payer breakdown, division from the address', open: (p) => openPayerDetail(p, 'period=202610&line=air&division=x-img') },
+  { name: 'net cash breakdown, division from the address', open: (p) => openBreakdownPage(p, 'period=202610&line=air&division=x-img') },
   {
     name: 'payer breakdown, donuts',
     open: async (p) => {
@@ -456,6 +459,7 @@ const TRUST_STATES: { name: string; open: (p: Page) => Promise<void> }[] = [
   { name: 'metric view, air-only contribution under Ground only', open: (p: Page) => openMetricViewGroundOnly(p, 'cash_contribution_by_aircraft') },
   { name: 'saved view, the contribution Metrics', open: (p: Page) => openSixMetricView(p, 'c') },
   { name: 'payer mix, newer insight card kinds', open: (p: Page) => openInsightNewKinds(p) },
+  { name: 'saved view, chosen division with no transports under the line (empty widgets)', open: (p: Page) => openEmptyDivisionView(p) },
   { name: 'palette, air-only Metrics under Ground only', open: (p: Page) => openPaletteUnderGround(p) },
 ];
 

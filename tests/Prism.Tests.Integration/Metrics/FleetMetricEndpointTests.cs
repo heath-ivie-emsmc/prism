@@ -229,7 +229,7 @@ public sealed partial class FleetMetricEndpointTests : IDisposable
         public Task<IReadOnlyList<ApPeriod>> GetPeriodsAsync(int providerId, CancellationToken cancellationToken) =>
             Task.FromResult<IReadOnlyList<ApPeriod>>([new(2026, 11), new(2026, 10)]);
 
-        public Task<NetCollectionsSeries> GetSeriesAsync(int providerId, ApPeriod endPeriod, int months, ServiceLineFilter serviceLine, CancellationToken cancellationToken) =>
+        public Task<NetCollectionsSeries> GetSeriesAsync(int providerId, ApPeriod endPeriod, int months, ServiceLineFilter serviceLine, ReportingDivision? division, CancellationToken cancellationToken) =>
             throw new NotSupportedException();
     }
 }

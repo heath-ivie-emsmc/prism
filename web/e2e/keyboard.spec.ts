@@ -1,6 +1,6 @@
 import type { ElementHandle } from '@playwright/test';
 import { expect, test } from './fixtures';
-import { lastAnnouncement, openDashboard, expandHelp, openDashboardWithNotice, openDashboardHelp, openMetricView, openMetricViewNotFound, openNeedsAttention, openPayerDetail, openPayerMixPage, openProjection, openView, SIX_METRICS, openMetricViewGroundOnly, openSixMetricView, CONTRIBUTION_METRICS } from './support';
+import { lastAnnouncement, openDashboard, expandHelp, openDashboardWithNotice, openDashboardHelp, openMetricView, openMetricViewNotFound, openNeedsAttention, openPayerDetail, openPayerMixPage, openProjection, openView, SIX_METRICS, openMetricViewGroundOnly, openSixMetricView, openEmptyDivisionView, CONTRIBUTION_METRICS } from './support';
 
 /** Everything works without a mouse (WCAG 2.1.1, 2.1.2, 2.4.3, 2.4.7, 2.4.11). */
 /**
@@ -323,8 +323,21 @@ test.describe('keyboard', () => {
   });
 });
 
+test.describe('keyboard: division kept under a Service Line without it', () => {
+  test('the kept division is chosen and cleared with the keyboard alone', async ({ page }) => {
+    await openEmptyDivisionView(page);
+    const select = page.getByRole('combobox', { name: 'Base location' });
+    await select.focus();
+    await page.keyboard.press('Enter');
+    await expect(page.getByRole('option', { name: /no air transports/ })).toBeVisible();
+    await page.keyboard.press('ArrowUp');
+    await page.keyboard.press('Enter');
+    await expect(page.locator('app-division-select')).not.toContainText('has no air transports');
+  });
+});
+
 test.describe('keyboard: payer mix and its drill target', () => {
-  for (const [name, open, least = 3] of [['payer mix', openPayerMixPage], ['payer breakdown', openPayerDetail], ['metric view', openMetricView, 1], ['metric view, not found', openMetricViewNotFound, 1], ...SIX_METRICS.map((m) => [`metric view, ${m.name}`, (p: import('@playwright/test').Page) => openMetricView(p, m.key), 1] as const), ['metric view, air-only Metric under Ground only', openMetricViewGroundOnly, 1], ['saved view, the six new Metrics', openSixMetricView, 3], ...CONTRIBUTION_METRICS.map((m) => [`metric view, ${m.name}`, (p: import('@playwright/test').Page) => openMetricView(p, m.key), 1] as const), ['saved view, the contribution Metrics', (p: import('@playwright/test').Page) => openSixMetricView(p, 'c'), 3]] as const) {
+  for (const [name, open, least = 3] of [['payer mix', openPayerMixPage], ['payer breakdown', openPayerDetail], ['metric view', openMetricView, 1], ['metric view, not found', openMetricViewNotFound, 1], ...SIX_METRICS.map((m) => [`metric view, ${m.name}`, (p: import('@playwright/test').Page) => openMetricView(p, m.key), 1] as const), ['metric view, air-only Metric under Ground only', openMetricViewGroundOnly, 1], ['saved view, the six new Metrics', openSixMetricView, 3], ['saved view, a division with no transports under the line (empty widgets)', openEmptyDivisionView, 1], ...CONTRIBUTION_METRICS.map((m) => [`metric view, ${m.name}`, (p: import('@playwright/test').Page) => openMetricView(p, m.key), 1] as const), ['saved view, the contribution Metrics', (p: import('@playwright/test').Page) => openSixMetricView(p, 'c'), 3]] as const) {
     test(`${name}: Tab reaches every control with a visible focus indicator and nothing traps focus`, async ({ page }) => {
       await open(page);
 

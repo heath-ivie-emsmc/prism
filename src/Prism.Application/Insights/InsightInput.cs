@@ -1,4 +1,5 @@
 using Prism.Application.Metrics;
+using Prism.Application.Warehouse;
 
 namespace Prism.Application.Insights;
 
@@ -8,7 +9,7 @@ public sealed record MonthlyCash(ApPeriod Period, decimal Cash, int Transports);
 /// <summary>
 /// What one analysis needs to know about the change being explained. <paramref name="History"/> is the group's net cash by posting month for the
 /// twelve months before <paramref name="Period"/> and the month itself. <paramref name="Earlier"/> holds the analyses that come before this one, already
-/// started, so a later analysis can await what an earlier one left. Analyses all start at once, so the Metric reads of independent analyses overlap.
+/// started, so a later analysis can await what an earlier one left. <paramref name="Division"/> is the Reporting Division the whole explanation is limited to (null: every division). Analyses all start at once, so the Metric reads of independent analyses overlap.
 /// </summary>
 public sealed record InsightInput(
     int ProviderId,
@@ -16,7 +17,8 @@ public sealed record InsightInput(
     ServiceLineFilter ServiceLine,
     string? GroupKey,
     IReadOnlyList<MonthlyCash> History,
-    IReadOnlyList<Task<Finding?>> Earlier)
+    IReadOnlyList<Task<Finding?>> Earlier,
+    ReportingDivision? Division = null)
 {
     public ApPeriod PriorPeriod => Period.AddMonths(-1);
 

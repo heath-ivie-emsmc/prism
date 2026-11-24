@@ -29,18 +29,21 @@ public static class InsightText
 
     private static string Lower(string name) => name.ToLower(CultureInfo.InvariantCulture);
 
+    /// <summary>The division the headline is limited to, as it is named in the warehouse (its case is kept).</summary>
+    private static string InDivision(InsightHeadline h) => h.DivisionName is null ? string.Empty : $" in {h.DivisionName}";
+
     private static string HeadlineText(Insight insight)
     {
         InsightHeadline h = insight.Headline;
         string month = MonthName(h.PriorPeriod);
         if (h.Delta == 0m)
         {
-            return $"{h.GroupName} cash was unchanged from {month}.";
+            return $"{h.GroupName} cash{InDivision(h)} was unchanged from {month}.";
         }
 
         string verb = h.Delta < 0m ? "fell" : "rose";
         string size = h.DeltaRatio is { } ratio ? $"{Money(h.Delta)} ({Percent(ratio)})" : Money(h.Delta);
-        string text = $"{h.GroupName} cash {verb} {size} from {month}.";
+        string text = $"{h.GroupName} cash{InDivision(h)} {verb} {size} from {month}.";
         decimal temporary = insight.Drivers.Where(f => f.Label == FindingLabel.Temporary && Math.Sign(f.Impact) == Math.Sign(h.Delta)).Sum(f => f.Impact);
         return Math.Abs(temporary) * 2m > Math.Abs(h.Delta) ? text + " Most of it is timing, not a lasting change." : text;
     }

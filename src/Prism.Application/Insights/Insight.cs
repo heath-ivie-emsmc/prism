@@ -21,6 +21,7 @@ public sealed record Remainder(decimal Amount, RemainderJudgment Judgment);
 /// <summary>
 /// The change being explained: posted net cash for the group in <paramref name="Period"/> against <paramref name="PriorPeriod"/>.
 /// <paramref name="DeltaRatio"/> is the change as a share of last month's cash (0.22 is 22%), or null when last month had no cash.
+/// <paramref name="DivisionName"/> is the Reporting Division the figures are limited to, or null for every division.
 /// </summary>
 public sealed record InsightHeadline(
     ApPeriod Period,
@@ -30,7 +31,8 @@ public sealed record InsightHeadline(
     decimal CashNow,
     decimal CashPrior,
     decimal Delta,
-    decimal? DeltaRatio);
+    decimal? DeltaRatio,
+    string? DivisionName = null);
 
 /// <summary>
 /// The Findings for one group and period. <paramref name="Drivers"/> are posted-cash Findings, ranked by size, and with <paramref name="Remainder"/> they

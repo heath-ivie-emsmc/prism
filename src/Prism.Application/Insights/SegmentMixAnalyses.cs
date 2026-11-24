@@ -3,7 +3,7 @@ using Prism.Application.Metrics;
 namespace Prism.Application.Insights;
 
 /// <summary>
-/// Shared by the aircraft and base mix analyses: reads the net cash breakdown for the Service Line (the whole Provider, never one Reporting Division), builds the segments, works
+/// Shared by the aircraft and base mix analyses: reads the net cash breakdown for the Service Line (the whole Provider, or the one Reporting Division the Insight is limited to), builds the segments, works
 /// out the mix effect and applies the thresholds. It reads a Metric only, never the warehouse.
 /// </summary>
 internal static class SegmentMixReader
@@ -11,7 +11,7 @@ internal static class SegmentMixReader
     /// <summary>The segments the breakdown shows, for the group being explained when there is one.</summary>
     internal static async Task<IReadOnlyList<MixSegment>> ReadAsync(INetCashBreakdownMetric breakdown, InsightInput input, bool byBase, CancellationToken cancellationToken)
     {
-        NetCashBreakdown result = await breakdown.GetBreakdownAsync(input.ProviderId, input.Period, input.ServiceLine, null, cancellationToken);
+        NetCashBreakdown result = await breakdown.GetBreakdownAsync(input.ProviderId, input.Period, input.ServiceLine, input.Division, cancellationToken);
         IEnumerable<NetCashBreakdownRow> rows = input.GroupKey is null ? result.Rows : result.Rows.Where(r => r.GroupKey == input.GroupKey);
         return byBase
             ? [.. rows.GroupBy(r => r.Base ?? string.Empty).Select(g => Segment(g.Key.Length == 0 ? "not-recorded" : g.Key, g.Key.Length == 0 ? "Not recorded" : g.Key, g.Select(r => r.Current), g.Select(r => r.Prior)))]
@@ -61,6 +61,12 @@ public sealed class BaseMixAnalysis(INetCashBreakdownMetric breakdown) : IInsigh
 
     public async Task<Finding?> RunAsync(InsightInput input, CancellationToken cancellationToken)
     {
+        // Base mix is a cut across divisions: inside one division there is nothing to move between.
+        if (input.Division is not null)
+        {
+            return null;
+        }
+
         // The aircraft analysis is started before this one and normally runs on the same cached read, so waiting for it costs little.
         Task<IReadOnlyList<MixSegment>> read = SegmentMixReader.ReadAsync(breakdown, input, true, cancellationToken);
         bool aircraftExplains = (await input.FindingsBeforeAsync()).OfType<AircraftMixFinding>().Any();

@@ -62,7 +62,9 @@ describe('buildWidgetOption trend and tooltips', () => {
     const column = buildWidgetOption(withTrend, 'column', COLORS) as unknown as { xAxis: { data: string[] } };
 
     expect(stacked.xAxis.data).toEqual(trend.categories);
-    expect(stacked.series.map((s) => [s.name, s.stack, s.data])).toEqual([['Scene', 'total', [5, 10]], ['Interfacility', 'total', [5, 4]]]);
+    // The last series is the invisible one that writes each stack's total.
+    expect(stacked.series.slice(0, 2).map((s) => [s.name, s.stack, s.data])).toEqual([['Scene', 'total', [5, 10]], ['Interfacility', 'total', [5, 4]]]);
+    expect(stacked.series[2]!.data).toEqual([10, 14]);
     expect(line.series.map((s) => s.name)).toEqual(['Scene', 'Interfacility']);
     expect(column.xAxis.data).toEqual(['Commercial', 'Medicare', 'Mystery']);
   });
@@ -76,5 +78,50 @@ describe('buildWidgetOption trend and tooltips', () => {
       expect(html).not.toContain('<img');
       expect(html).toContain('&lt;img src=x onerror=alert(1)&gt;');
     }
+  });
+});
+
+describe('buildWidgetOption value labels', () => {
+  interface Labelled { grid: { top: number }; series: { type: string; name: string; label?: { show: boolean; formatter: (p: { value: unknown }) => string }; data: number[] }[]; tooltip: { formatter: (p: unknown) => string } }
+  const months = ['Jan', 'Feb', 'Mar'];
+  const two = { categories: months, series: [{ name: 'Cash', values: [2_100_000, 900, 5] }] };
+
+  it('writes each column\'s figure on the bar, abbreviated like the axis', () => {
+    const option = buildWidgetOption(data({ categories: months, series: two.series }), 'column', COLORS) as unknown as Labelled;
+    expect(option.series[0]!.label?.show).toBe(true);
+    expect(option.series[0]!.label?.formatter({ value: 2_100_000 })).toBe('$2.1M');
+    expect(option.grid.top).toBeGreaterThan(16);
+  });
+
+  it('formats counts and percents the way their unit is measured', () => {
+    const counts = buildWidgetOption(data({ unit: 'count', categories: months, series: two.series }), 'column', COLORS) as unknown as Labelled;
+    expect(counts.series[0]!.label?.formatter({ value: 1500 })).toBe('1.5K');
+    const percent = buildWidgetOption(data({ unit: 'percent', categories: months, series: two.series }), 'column', COLORS) as unknown as Labelled;
+    expect(percent.series[0]!.label?.formatter({ value: 12.34 })).toBe('12.3%');
+  });
+
+  it('draws no labels for 12 months on a narrow chart, and keeps the grid headroom small', () => {
+    const many = Array.from({ length: 12 }, (_, i) => `M${i}`);
+    const option = buildWidgetOption(data({ categories: many, series: [{ name: 'Cash', values: many.map(() => 1) }] }), 'column', { ...COLORS, narrow: true }) as unknown as Labelled;
+    expect(option.series[0]!.label).toBeUndefined();
+    expect(option.grid.top).toBe(16);
+  });
+
+  it('labels a single-series line but not a line with several series', () => {
+    const one = buildWidgetOption(data({ categories: months, series: two.series }), 'line', COLORS) as unknown as Labelled;
+    expect(one.series[0]!.label?.show).toBe(true);
+    const several = buildWidgetOption(data({ categories: months, series: [two.series[0]!, { name: 'Other', values: [1, 2, 3] }] }), 'line', COLORS) as unknown as Labelled;
+    expect(several.series.every((s) => s.label === undefined)).toBe(true);
+  });
+
+  it('shows the stack total above a stacked column through an invisible series that the tooltip skips', () => {
+    const stacked = buildWidgetOption(data({ unit: 'count', categories: months, series: [{ name: 'A', values: [1, 2, 3] }, { name: 'B', values: [4, 5, 6] }] }), 'stacked', COLORS) as unknown as Labelled;
+    const total = stacked.series.at(-1)!;
+    expect(total.type).toBe('line');
+    expect(total.data).toEqual([5, 7, 9]);
+    expect(stacked.series.slice(0, -1).every((s) => s.label === undefined)).toBe(true);
+    const tip = stacked.tooltip.formatter([{ seriesName: 'A', value: 1, axisValueLabel: 'Jan' }, { seriesName: total.name, value: 5, axisValueLabel: 'Jan' }]);
+    expect(tip).toContain('A: 1');
+    expect(tip).not.toContain('5');
   });
 });

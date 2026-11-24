@@ -1,14 +1,15 @@
 # Metrics
 
 The available Metrics in the Metric Catalog (`src/Prism.Application/Metrics/MetricCatalog.cs`). Every one is Provider scoped.
-The Division column says whether it honors the Reporting Division filter (`division` dimension, `DivisionSupport.Supported`): only Metrics that read `reporting.trip_detail_snapshot` do, and each needs an
+The Division column says whether it honors the Reporting Division filter (`division` dimension, `DivisionSupport.Supported`): Metrics that read `reporting.trip_detail_snapshot` do, and so do `net_collections` and `what_changed`, which
+add up from the ledger joined to it when a division is chosen. The forecast and clean claim tables have no division, so those two do not. Each needs an
 integration test (see `MetricCatalogTests`). The table below is generated from the catalog: do not edit it by hand.
 `payer_mix_detail` is a drill target: reached from the `drill` link on a `payer_mix` share, not placeable on a Saved View (no presentations). Source tables are described in `warehouse.md`. See `adr/0007-metric-catalog-v2.md`.
 
 <!-- generated:start -->
 | Key | Category | Unit | Applies to | Service lines | Freshness | Division | Drills | Placeable | Renderer folder (`web/src/app/metrics/`) | Backend folder (`Metrics/` in Application, Infrastructure, Api) |
 |---|---|---|---|---|---|---|---|---|---|---|
-| `net_collections` | Cash | USD | both | air, ground, both | DailyLoad | None | none | yes | `net-collections/` | `NetCollections` |
+| `net_collections` | Cash | USD | both | air, ground, both | DailyLoad | Supported | none | yes | `net-collections/` | `NetCollections` |
 | `net_cash_projection` | Cash | USD | both | air, ground, both | DailyLoad | None | none | yes | `net-cash-projection/` | `NetCashProjection` |
 | `net_cash_breakdown` | Cash | USD | both | air, ground, both | DailyLoad | Supported | drill to `payer_mix` (binds `group`) | yes | `net-cash-breakdown/` | `NetCashBreakdown` |
 | `net_cash_by_group` | Cash | USD | both | air, ground, both | DailyLoad | Supported | none | yes | `net-cash-by-group/` | `NetCashByGroup` |
@@ -27,7 +28,7 @@ integration test (see `MetricCatalogTests`). The table below is generated from t
 | `cash_contribution_by_payer` | Cash | USD | both | air, ground, both | DailyLoad | Supported | drill to `payer_mix_detail` (binds `payerGroup`) | yes | `cash-contribution-by-payer/` | `CashContributionByPayer` |
 | `transports_by_pickup_location` | Transports | transports | both | air, ground, both | DailyLoad | Supported | none | yes | `transports-by-pickup-location/` | `TransportsByPickupLocation` |
 | `payer_mix_detail` | Payers | transports | both | air, ground, both | DailyLoad | Supported | none | no | `payer-mix-detail/` | `PayerMixDetail` |
-| `what_changed` | Insights | text | both | air, ground, both | DailyLoad | None | none | no | none | `Insights` |
+| `what_changed` | Insights | text | both | air, ground, both | DailyLoad | Supported | none | no | none | `Insights` |
 <!-- generated:end -->
 
 The generated table and `web/src/app/metrics/catalog.fixture.json` come from the catalog. Regenerate both with `PRISM_UPDATE_SNAPSHOTS=1 dotnet test tests/Prism.Tests --filter MetricCatalogSnapshotTests`. The registry tests catch drift on the web side.

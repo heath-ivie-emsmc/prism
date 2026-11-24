@@ -1,4 +1,5 @@
 import type { EChartsCoreOption } from 'echarts/core';
+import { planValueLabels, valueLabelStyle } from '../../charts/value-labels';
 import type { ChartColors } from '../../charts/chart.component';
 import { escapeHtml } from '../../shared/escape-html';
 import { drillOf } from '../drill-link';
@@ -176,9 +177,12 @@ export function buildPayerMixOption(figures: PayerMixFigures, currentName: strin
     splitLine: { lineStyle: { color: colors.grid } },
   };
   const round = (n: number): number => Math.round(n * 10) / 10;
+  // Each bar carries its share when there is room (the shared plan), thinned if two would touch.
+  const labels = planValueLabels({ kind: 'column', categories: shares.length, series: 2, narrow: colors.narrow });
+  const barLabel = { ...valueLabelStyle(colors.text, (v) => `${Math.round(v)}%`, horizontal ? 'right' : 'top'), show: labels.values };
   return {
     animation: true,
-    grid: { left: 8, right: horizontal ? 40 : 16, top: 28, bottom: 8, containLabel: true },
+    grid: { left: 8, right: horizontal ? 56 : 16, top: 28, bottom: 8, containLabel: true },
     tooltip: {
       trigger: 'axis',
       // The highlight for the hovered payer sits behind the bars (z below a bar series' 2) and is faint, so a bar shows through it.
@@ -196,18 +200,20 @@ export function buildPayerMixOption(figures: PayerMixFigures, currentName: strin
     yAxis: horizontal ? category : value,
     series: [
       // The bars have no hover state of their own: ECharts would dim the one under the pointer, and they are already told apart by color.
-      { name: priorName, type: 'bar', barMaxWidth: 28, emphasis: { disabled: true }, itemStyle: { color: colors.actual, borderRadius: 3 }, data: shares.map((s) => (drillable.has(s.key) ? { value: round(s.priorPercent), cursor: 'pointer' } : round(s.priorPercent))) },
+      { name: priorName, type: 'bar', barMaxWidth: 28, emphasis: { disabled: true }, label: barLabel, labelLayout: { hideOverlap: true }, itemStyle: { color: colors.actual, borderRadius: 3 }, data: shares.map((s) => (drillable.has(s.key) ? { value: round(s.priorPercent), cursor: 'pointer' } : round(s.priorPercent))) },
       {
         name: currentName,
         type: 'bar',
         emphasis: { disabled: true },
+        label: barLabel,
+        labelLayout: { hideOverlap: true },
         barMaxWidth: 28,
         itemStyle: { color: colors.projected, borderRadius: 3 },
         data: shares.map((s) => ({
           value: round(s.percent),
           cursor: drillable.has(s.key) ? 'pointer' : undefined,
           itemStyle: rise?.key === s.key ? { color: colors.highlight, borderRadius: 3 } : undefined,
-          label: rise?.key === s.key ? { show: true, position: horizontal ? 'right' : 'top', color: colors.highlight, fontWeight: 'bold', formatter: formatPoints(s.points) } : undefined,
+          label: rise?.key === s.key ? { show: true, position: horizontal ? 'right' : 'top', color: colors.highlight, fontWeight: 'bold', formatter: `${formatShare(s.percent)} ${formatPoints(s.points)}` } : undefined,
         })),
       },
     ],

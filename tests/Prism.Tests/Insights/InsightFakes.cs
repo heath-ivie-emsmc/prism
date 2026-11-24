@@ -31,8 +31,13 @@ internal static class InsightFakes
 
     internal sealed class NetCashByGroupFake(IReadOnlyList<NetCashByGroupPoint> points) : INetCashByGroupMetric
     {
-        public Task<NetCashByGroup> GetNetCashByGroupAsync(int providerId, ApPeriod period, ServiceLineFilter serviceLine, ReportingDivision? division, CancellationToken cancellationToken) =>
-            Task.FromResult(new NetCashByGroup(INetCashByGroupMetric.Definition, period, INetCashByGroupMetric.MonthsBefore, serviceLine, points));
+        public List<ReportingDivision?> Divisions { get; } = [];
+
+        public Task<NetCashByGroup> GetNetCashByGroupAsync(int providerId, ApPeriod period, ServiceLineFilter serviceLine, ReportingDivision? division, CancellationToken cancellationToken)
+        {
+            Divisions.Add(division);
+            return Task.FromResult(new NetCashByGroup(INetCashByGroupMetric.Definition, period, INetCashByGroupMetric.MonthsBefore, serviceLine, points));
+        }
     }
 
     /// <summary>A net cash breakdown built from vehicle rows: the groups are those rows added up, as the real Metric does. Records what it was asked for.</summary>

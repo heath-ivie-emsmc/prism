@@ -1,10 +1,14 @@
 import type { EChartsCoreOption } from 'echarts/core';
 import type { ChartColors } from '../charts/chart.component';
 import { escapeHtml } from '../shared/escape-html';
+import { LABEL_HEADROOM_PX, planValueLabels, stackTotals, valueLabelStyle } from '../charts/value-labels';
 import { payerColor } from '../metrics/payer-mix/payer-mix';
 import { WidgetData, money, whole } from './widget-data';
 
 export type ChartKind = 'line' | 'column' | 'stacked' | 'donut';
+
+/** The invisible series that carries the total above a stacked column. */
+export const TOTAL_SERIES = '\u0000stack-total';
 
 const SYMBOLS = ['circle', 'rect', 'triangle', 'diamond', 'pin'] as const;
 const DASHES = ['solid', 'dashed', 'dotted', 'dashed', 'dotted'] as const;
@@ -47,7 +51,7 @@ function axisTooltip(unit: WidgetData['unit']): (params: TooltipParam | TooltipP
   return (params) => {
     const rows = Array.isArray(params) ? params : [params];
     const head = escapeHtml(String(rows[0]?.axisValueLabel ?? rows[0]?.name ?? ''));
-    const lines = rows.map((p) => `${p.marker ?? ''} ${escapeHtml(String(p.seriesName ?? ''))}: ${escapeHtml(formatValue(Number(Array.isArray(p.value) ? p.value[1] : p.value), unit, false))}`);
+    const lines = rows.filter((p) => p.seriesName !== TOTAL_SERIES).map((p) => `${p.marker ?? ''} ${escapeHtml(String(p.seriesName ?? ''))}: ${escapeHtml(formatValue(Number(Array.isArray(p.value) ? p.value[1] : p.value), unit, false))}`);
     return [head, ...lines].join('<br/>');
   };
 }
@@ -95,11 +99,17 @@ export function buildWidgetOption(data: WidgetData, kind: ChartKind, colors: Cha
   // The line and stacked presentations draw the Metric over time when it has a trend; the column and donut show the one period.
   const over = (kind === 'line' || kind === 'stacked') && data.trend ? data.trend : { categories: data.categories, series: data.series };
   const bar = kind === 'column' || kind === 'stacked';
+  // Value labels on bars and points, from the shared plan: formatted like the axis, thinned by width, and only the total on a stack.
+  const plan = planValueLabels({ kind, categories: over.categories.length, series: over.series.length, narrow: colors.narrow });
+  const label = valueLabelStyle(colors.text, (value) => formatValue(value, data.unit, true));
+  const totals = plan.totals && data.unit !== 'percent';
+  const labelled = plan.values || totals;
+  const legendRows = over.series.length > 1 ? 16 + 24 * Math.ceil(over.series.length / (colors.narrow ? 2 : 4)) : 16;
   return {
     ...base,
     // The legend wraps onto more rows with more series or less width, and the plot starts below the last one.
-    grid: { left: 8, right: 16, top: over.series.length > 1 ? 16 + 24 * Math.ceil(over.series.length / (colors.narrow ? 2 : 4)) : 16, bottom: 8, containLabel: true },
-    legend: over.series.length > 1 ? { top: 0, textStyle: { color: colors.text } } : undefined,
+    grid: { left: 8, right: 16, top: legendRows + (labelled ? LABEL_HEADROOM_PX : 0), bottom: 8, containLabel: true },
+    legend: over.series.length > 1 ? { top: 0, textStyle: { color: colors.text }, data: over.series.map((x) => x.name) } : undefined,
     tooltip: { trigger: 'axis', formatter: axisTooltip(data.unit) },
     xAxis: { type: 'category', data: [...over.categories], axisLabel: { color: colors.mutedText, interval: 'auto' }, axisLine: { lineStyle: { color: colors.grid } } },
     yAxis: {
@@ -113,7 +123,27 @@ export function buildWidgetOption(data: WidgetData, kind: ChartKind, colors: Cha
       emphasis: { disabled: true },
       data: bar && over === data.trend ? [...series.values] : bar && data.series.length === 1 && data.categoryKeys ? series.values.map((value, index) => ({ value, ...payerFill(data, index) })) : [...series.values],
       ...(kind === 'stacked' ? { stack: 'total' } : {}),
+      ...(plan.values ? { label, labelLayout: { hideOverlap: true } } : {}),
       ...(bar ? { itemStyle: { borderColor: colors.text, borderWidth: kind === 'stacked' || (data.series.length === 1 && data.categoryKeys) ? 1 : 0 } } : { symbol: SYMBOLS[i % SYMBOLS.length], symbolSize: 8, lineStyle: { type: DASHES[i % DASHES.length], width: 2 } }),
-    })),
+    })).concat(
+      totals
+        ? [
+            {
+              // The stack total, written above each column by an invisible line: no legend entry, no tooltip row, no symbol.
+              name: TOTAL_SERIES,
+              type: 'line',
+              data: stackTotals(over.series, over.categories.length),
+              silent: true,
+              emphasis: { disabled: true },
+              symbol: 'none',
+              lineStyle: { opacity: 0 },
+              tooltip: { show: false },
+              label: { ...label, position: 'top' },
+              labelLayout: { hideOverlap: true },
+              z: 5,
+            } as never,
+          ]
+        : [],
+    ),
   } as EChartsCoreOption;
 }

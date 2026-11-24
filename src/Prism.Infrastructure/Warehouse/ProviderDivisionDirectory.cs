@@ -1,5 +1,6 @@
 using System.Globalization;
 using Microsoft.Extensions.Caching.Memory;
+using Prism.Application.Metrics;
 using Prism.Application.Warehouse;
 using Prism.Infrastructure.Metrics;
 
@@ -36,9 +37,24 @@ public sealed class ProviderDivisionDirectory(IWarehouse warehouse, IWarehousePr
         LIMIT 500
         """;
 
+    // The names that have at least one Transport under the Service Line, in the same normalized form as above. Only used to pick from the full list, so keys never change.
+    internal const string ServiceLineDivisionsSql =
+        $$"""
+        SELECT name
+        FROM (
+            SELECT DISTINCT {{DivisionSql.NormalizedName}} AS name
+            FROM reporting.trip_detail_snapshot
+            WHERE {{TripSql.LatestLoad}}
+              AND {{TripSql.ServiceLine}}
+        ) d
+        WHERE name IS NOT NULL
+        LIMIT 500
+        """;
+
     private static readonly TimeSpan Lifetime = TimeSpan.FromMinutes(10);
     private readonly MemoryCache cache = new(new MemoryCacheOptions { SizeLimit = 2000 });
     private readonly MemoryCache divisionCache = new(new MemoryCacheOptions { SizeLimit = 2000 });
+    private readonly MemoryCache lineCache = new(new MemoryCacheOptions { SizeLimit = 2000 });
 
     public async Task<IReadOnlySet<string>> GetFacilityIdsAsync(int portalCompanyId, CancellationToken cancellationToken)
     {
@@ -84,8 +100,46 @@ public sealed class ProviderDivisionDirectory(IWarehouse warehouse, IWarehousePr
         return divisions;
     }
 
+    public async Task<IReadOnlyList<ReportingDivision>> GetReportingDivisionsAsync(int portalCompanyId, ServiceLineFilter serviceLine, CancellationToken cancellationToken)
+    {
+        IReadOnlyList<ReportingDivision> all = await GetReportingDivisionsAsync(portalCompanyId, cancellationToken);
+        if (serviceLine == ServiceLineFilter.Both || all.Count == 0)
+        {
+            return all;
+        }
+
+        (int, ServiceLineFilter) cacheKey = (portalCompanyId, serviceLine);
+        if (lineCache.TryGetValue(cacheKey, out IReadOnlyList<ReportingDivision>? cached) && cached is not null)
+        {
+            return cached;
+        }
+
+        int warehouseId = await providers.ResolveAsync(portalCompanyId, cancellationToken);
+        if (warehouseId == IWarehouseProviderResolver.Unmapped)
+        {
+            return [];
+        }
+
+        IReadOnlyList<string> names = await warehouse.QueryAsync(
+            new WarehouseQuery(
+                ServiceLineDivisionsSql,
+                new Dictionary<string, object?>
+                {
+                    [WarehouseQuery.ProviderParameter] = warehouseId,
+                    ["include_air"] = serviceLine == ServiceLineFilter.Air,
+                    ["include_ground"] = serviceLine == ServiceLineFilter.Ground,
+                }) { Name = "ProviderDivisionDirectory#3" },
+            reader => reader.GetString(0),
+            cancellationToken);
+        HashSet<string> present = names.ToHashSet(StringComparer.Ordinal);
+        IReadOnlyList<ReportingDivision> filtered = [.. all.Where(d => present.Contains(d.Name))];
+        lineCache.Set(cacheKey, filtered, new MemoryCacheEntryOptions { Size = 1, AbsoluteExpirationRelativeToNow = Lifetime });
+        return filtered;
+    }
+
     public void Dispose()
     {
+        lineCache.Dispose();
         cache.Dispose();
         divisionCache.Dispose();
     }

@@ -9,6 +9,8 @@ import { NetCollectionsService } from '../metrics/net-collections.service';
 import { NetCashProjectionDto } from '../metrics/net-cash-projection/net-cash-projection.dto';
 import { NetCollectionsDto } from '../metrics/net-collections/net-collections.dto';
 import { Labels } from './service-line';
+import { DashboardFilterContext } from './dashboard-filter-context';
+import { emptyMessage } from '../shared/empty-scope';
 import { DataFrameComponent } from '../shared/data-frame.component';
 import { DataFreshnessService } from '../shared/data-freshness.service';
 import { frameContext } from '../shared/fullscreen';
@@ -47,7 +49,7 @@ interface TableRow {
   imports: [DataFrameComponent, SkeletonComponent, ChartComponent, LoadProblemComponent, EmsChipComponent, EmsIconComponent, EmsMessageComponent, MetricHelpComponent, RouterLink, SegmentedControlComponent, SwitchComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    <app-data-frame heading="Net cash collected" [context]="context()" [dataThrough]="dataThrough()" [serviceLine]="frameLine()" [labels]="labels()">
+    <app-data-frame heading="Net cash collected" [context]="context()" [dataThrough]="dataThrough()" [serviceLine]="frameLine()" [divisionApplied]="!!division()" [labels]="labels()">
       <app-segmented-control frameActions label="Chart type" [options]="chartKinds" [(value)]="chartKind" [iconOnly]="true" />
       <div class="panel" [attr.aria-busy]="series.isLoading()">
       <div class="panel__filters">
@@ -72,7 +74,7 @@ interface TableRow {
           <app-skeleton class="panel__skeleton-chart" width="100%" height="100%" />
         </div>
       } @else if (months().length === 0) {
-        <p class="panel__state" role="status">No net cash data for this period.</p>
+        <p class="panel__state" role="status" data-testid="panel-empty">{{ emptyText() }}</p>
       } @else {
         @if (headline(); as headline) {
           <div class="panel__headline">
@@ -129,6 +131,9 @@ interface TableRow {
         }
       }
 
+      @if (divisionNote(); as note) {
+        <p class="panel__note panel__division-note" id="net-cash-division-note">{{ note }}</p>
+      }
       <p class="panel__note">Cash is by the accounting period the payment was posted in, from the latest data load.</p>
       <app-metric-help metric="net_collections" heading="Net cash collected" [compact]="true" [serviceLine]="frameLine()" [labels]="labels()" />
       </div>
@@ -300,6 +305,7 @@ interface TableRow {
 export class NetCashPanelComponent {
   private readonly netCollections = inject(NetCollectionsService);
   private readonly freshness = inject(DataFreshnessService);
+  private readonly filters = inject(DashboardFilterContext);
 
   /** The Provider whose figures to show, from the signed-in user's own Providers. The API checks it again. */
   readonly providerId = input.required<string | null>();
@@ -315,6 +321,15 @@ export class NetCashPanelComponent {
   /** The selected Reporting Division key, carried to the breakdown page so it shows the same scope. Null for all divisions. */
   readonly division = input<string | null>(null);
   readonly labels = input<Labels | null>(null);
+  /** Said when there are no months: names the Service Line and Reporting Division that narrowed the answer, so an empty panel is not mistaken for no data. */
+  protected readonly emptyText = computed(() =>
+    emptyMessage('net cash collected', apPeriodLabel(this.endPeriod()) || 'this period', 'No net cash data for this period.', {
+      line: this.filters.showServiceLineToggle() ? this.frameLine() : null,
+      divisionApplied: !!this.division(),
+      divisionName: this.division() ? this.filters.divisionName(this.division()!) : undefined,
+      labels: this.labels() ?? this.filters.labels(),
+    }),
+  );
   protected readonly frameLine = computed<'all' | 'air' | 'ground'>(() => (this.serviceLine() === 'both' ? 'all' : this.serviceLine() === 'air' ? 'air' : 'ground'));
 
   /** The error from loading the list of periods, when it failed: without it there is no month to ask for, so the panel has nothing to show. */
@@ -343,15 +358,17 @@ export class NetCashPanelComponent {
   });
 
   /** The figures follow the Service Line toggle: air or ground alone, or both added together. */
-  protected readonly series = rxResource<NetCollectionsDto | null, { providerId: string; endPeriod: string; months: number; serviceLine: 'all' | 'air' | 'ground'; rev: number } | null>({
+  protected readonly series = rxResource<NetCollectionsDto | null, { providerId: string; endPeriod: string; months: number; serviceLine: 'all' | 'air' | 'ground'; division: string | undefined; rev: number } | null>({
     params: () =>
       this.providerId() && this.endPeriod()
-        ? { providerId: this.providerId()!, endPeriod: this.endPeriod(), months: Number(this.range()), serviceLine: this.apiServiceLine(), rev: this.freshness.revision() }
+        ? { providerId: this.providerId()!, endPeriod: this.endPeriod(), months: Number(this.range()), serviceLine: this.apiServiceLine(), division: this.division() ?? undefined, rev: this.freshness.revision() }
         : null,
-    stream: ({ params }) => (params ? this.netCollections.series(params.providerId, params.endPeriod, params.months, params.serviceLine) : of(null)),
+    stream: ({ params }) => (params ? this.netCollections.series(params.providerId, params.endPeriod, params.months, params.serviceLine, params.division) : of(null)),
   });
 
   /** Why nothing can be shown, if something failed: the periods first, since the figures cannot be asked for without one. */
+  /** Said when a division is applied: cash with no trip row or no division belongs to no division, so the divisions add up to the headline less that cash. Text from the API, shown as text. */
+  protected readonly divisionNote = computed(() => (this.division() && this.series.hasValue() ? (this.series.value()?.divisionNote ?? '') : ''));
   protected readonly loadError = computed<unknown>(() => this.periodsError() ?? this.series.error());
 
   /** Waiting for figures: the months first, then the series. Without this the panel would say "no data" in the moment before it asks. */

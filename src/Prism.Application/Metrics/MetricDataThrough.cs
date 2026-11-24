@@ -24,11 +24,12 @@ public static class MetricDataThrough
 
     /// <summary>
     /// The sources for a Metric. Net cash is the one Metric that reads two tables, by Service Line: the KPI table for the Provider's whole figure, and the
-    /// ledger joined to the trip table when one Service Line is asked for. An unknown key reads the trip table, the commonest source.
+    /// ledger joined to the trip table when one Service Line or one Reporting Division (<paramref name="byDivision"/>) is asked for. An unknown key reads the trip
+    /// table, the commonest source.
     /// </summary>
-    public static IReadOnlyList<DataThroughSource> SourcesFor(string metricKey, ServiceLineFilter serviceLine) => metricKey switch
+    public static IReadOnlyList<DataThroughSource> SourcesFor(string metricKey, ServiceLineFilter serviceLine, bool byDivision = false) => metricKey switch
     {
-        "net_collections" => serviceLine is ServiceLineFilter.Both ? Kpi : Trips,
+        "net_collections" => serviceLine is ServiceLineFilter.Both && !byDivision ? Kpi : Trips,
         "net_cash_projection" => serviceLine is ServiceLineFilter.Both ? ForecastAndKpi : ForecastAndTrips,
         "clean_claim_rate" => Claims,
         WhatChanged => Trips,
