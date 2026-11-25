@@ -20,8 +20,10 @@ public static class PersistenceServiceCollectionExtensions
             .Configure(options => options.ConnectionString = configuration.GetConnectionString(PrismDatabaseOptions.ConnectionStringName) ?? "")
             .ValidateOnStart();
 
+        // The connection string is read each time a context is created, so a rotated secret reaches the next request.
+        // The startup validation above still guarantees one exists. Contexts already in use finish on their own connection.
         services.AddDbContext<PrismDbContext>((provider, options) =>
-            options.UsePrismNpgsql(provider.GetRequiredService<IOptions<PrismDatabaseOptions>>().Value.ConnectionString));
+            options.UsePrismNpgsql(provider.GetRequiredService<IConfiguration>().GetConnectionString(PrismDatabaseOptions.ConnectionStringName) ?? ""));
         services.AddScoped<ISessionRevocationStore, SessionRevocationStore>();
         services.AddScoped<Prism.Application.Audit.IAuditLog, AuditLog>();
         services.AddSingleton<IDatabaseProbe, PrismDatabaseProbe>();
@@ -61,10 +63,27 @@ public static class PersistenceServiceCollectionExtensions
                     provider.GetRequiredService<ILogger<WarehouseWriteProtectionCheck>>())
                 : new NotConfiguredWarehouseWriteProtectionCheck());
         services.AddHostedService<WarehouseWriteProtectionStartup>();
+        // Follows ConnectionStrings:Warehouse as a rotated secret changes it. A changed login is proven read-only before any query uses it.
+        services.AddSingleton<IWarehouseConnections>(provider =>
+        {
+            var warehouseOptions = provider.GetRequiredService<IOptions<PrismWarehouseOptions>>();
+            var configuration = provider.GetRequiredService<IConfiguration>();
+            var environment = provider.GetRequiredService<IHostEnvironment>();
+            var loggers = provider.GetRequiredService<ILoggerFactory>();
+            return new RotatingWarehouseConnections(
+                () => configuration.GetConnectionString(PrismWarehouseOptions.ConnectionStringName) ?? "",
+                warehouseOptions.Value,
+                provider.GetRequiredKeyedService<NpgsqlDataSource>(key),
+                environment.IsDeployedEnvironment(),
+                (dataSource, candidate, cancellationToken) =>
+                    new WarehouseWriteProtectionCheck(dataSource, Options.Create(candidate), loggers.CreateLogger<WarehouseWriteProtectionCheck>()).VerifyAsync(cancellationToken),
+                provider.GetRequiredService<TimeProvider>(),
+                loggers.CreateLogger<RotatingWarehouseConnections>());
+        });
         services.AddSingleton<IWarehouse>(provider =>
             provider.GetRequiredService<IOptions<PrismWarehouseOptions>>().Value.IsConfigured
                 ? new NpgsqlWarehouse(
-                    provider.GetRequiredKeyedService<NpgsqlDataSource>(key),
+                    provider.GetRequiredService<IWarehouseConnections>(),
                     provider.GetRequiredService<IOptions<PrismWarehouseOptions>>(),
                     provider.GetRequiredService<ILogger<NpgsqlWarehouse>>())
                 : new UnconfiguredWarehouse());
@@ -86,7 +105,7 @@ public static class PersistenceServiceCollectionExtensions
         {
             string connectionString = provider.GetRequiredService<IOptions<PrismRedisOptions>>().Value.ConnectionString;
             return connectionString.Length > 0
-                ? new RedisLoginTokenReplayStore(connectionString)
+                ? new RedisLoginTokenReplayStore(() => provider.GetRequiredService<IConfiguration>().GetConnectionString(PrismRedisOptions.ConnectionStringName) ?? "")
                 : new InMemoryLoginTokenReplayStore(provider.GetRequiredService<TimeProvider>());
         });
     }

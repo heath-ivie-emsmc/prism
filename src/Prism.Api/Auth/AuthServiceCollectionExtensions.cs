@@ -37,7 +37,7 @@ public static class AuthServiceCollectionExtensions
         services.AddHttpClient<IPortalDirectory, PortalDirectory>(ConfigurePortalClient);
 
         services.AddOptions<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme)
-            .Configure<IOptions<PrismAuthOptions>, AuthCookies>(ConfigureSessionScheme);
+            .Configure<IOptionsMonitor<PrismAuthOptions>, AuthCookies>(ConfigureSessionScheme);
         services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer();
         // The customer permission policies (dashboard, claims, saved views, users) are registered with Customer Roles: they are checked per Provider, not from the session.
         services.AddAuthorization();
@@ -101,8 +101,11 @@ public static class AuthServiceCollectionExtensions
         }
     }
 
-    private static void ConfigureSessionScheme(JwtBearerOptions options, IOptions<PrismAuthOptions> auth, AuthCookies cookies)
+    private static void ConfigureSessionScheme(JwtBearerOptions options, IOptionsMonitor<PrismAuthOptions> auth, AuthCookies cookies)
     {
+        // The key is resolved per token from the monitored options, so a rotated secret takes effect without a restart.
+        // A new key signs every existing session out, which is the intended effect of rotating it.
+        var keys = new CurrentSigningKey();
         options.MapInboundClaims = false;
         options.TokenValidationParameters = new TokenValidationParameters
         {
@@ -113,7 +116,7 @@ public static class AuthServiceCollectionExtensions
             ValidateLifetime = true,
             RequireExpirationTime = true,
             ValidateIssuerSigningKey = true,
-            IssuerSigningKey = SessionTokenIssuer.SigningKey(auth.Value.SessionSigningKeyBase64),
+            IssuerSigningKeyResolver = (_, _, _, _) => [keys.For(auth.CurrentValue.SessionSigningKeyBase64)],
             ValidAlgorithms = [SecurityAlgorithms.HmacSha256],
             ClockSkew = TimeSpan.FromMinutes(2),
             NameClaimType = SessionTokenIssuer.SubjectClaim,
@@ -139,5 +142,27 @@ public static class AuthServiceCollectionExtensions
             },
             OnTokenValidated = RejectRevokedSession,
         };
+    }
+}
+
+/// <summary>Remembers the last signing key built, so validating a token does not decode the base64 secret every time.</summary>
+internal sealed class CurrentSigningKey
+{
+    private readonly Lock gate = new();
+    private string? lastBase64;
+    private SecurityKey? lastKey;
+
+    public SecurityKey For(string base64)
+    {
+        lock (gate)
+        {
+            if (lastKey is null || !string.Equals(lastBase64, base64, StringComparison.Ordinal))
+            {
+                lastKey = SessionTokenIssuer.SigningKey(base64);
+                lastBase64 = base64;
+            }
+
+            return lastKey;
+        }
     }
 }

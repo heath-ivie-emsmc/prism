@@ -7,11 +7,11 @@ using Prism.Application.Auth;
 namespace Prism.Infrastructure.Auth;
 
 /// <summary>Builds the RS512 token this app presents to the Admin Portal API (issuer is the application id, five-minute life).</summary>
-public sealed class PortalAppJwtFactory(IOptions<PrismAuthOptions> options, TimeProvider timeProvider)
+public sealed class PortalAppJwtFactory(IOptionsMonitor<PrismAuthOptions> options, TimeProvider timeProvider)
 {
     public string Create()
     {
-        PrismAuthOptions settings = options.Value;
+        PrismAuthOptions settings = options.CurrentValue;
         DateTimeOffset now = timeProvider.GetUtcNow();
 
         using var rsa = RSA.Create();

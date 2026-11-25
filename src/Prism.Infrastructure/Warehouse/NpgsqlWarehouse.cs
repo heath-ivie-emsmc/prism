@@ -9,9 +9,15 @@ using Prism.Application.Warehouse;
 namespace Prism.Infrastructure.Warehouse;
 
 /// <summary>Reads the warehouse over a pooled, read-only, time-limited connection. See <see cref="IWarehouse"/> for the rules it enforces.</summary>
-public sealed partial class NpgsqlWarehouse(NpgsqlDataSource dataSource, IOptions<PrismWarehouseOptions> options, ILogger<NpgsqlWarehouse> logger) : IWarehouse
+public sealed partial class NpgsqlWarehouse(IWarehouseConnections connections, IOptions<PrismWarehouseOptions> options, ILogger<NpgsqlWarehouse> logger) : IWarehouse
 {
     private const int MaxSqlLength = 20_000;
+
+    /// <summary>One fixed pool: the connection string the host started with. Hosts that follow a rotated secret pass <see cref="RotatingWarehouseConnections"/>.</summary>
+    public NpgsqlWarehouse(NpgsqlDataSource dataSource, IOptions<PrismWarehouseOptions> options, ILogger<NpgsqlWarehouse> logger)
+        : this(new FixedWarehouseConnections(dataSource), options, logger)
+    {
+    }
 
     public Task<IReadOnlyList<T>> QueryAsync<T>(WarehouseQuery query, Func<DbDataReader, T> map, CancellationToken cancellationToken)
     {
@@ -36,7 +42,8 @@ public sealed partial class NpgsqlWarehouse(NpgsqlDataSource dataSource, IOption
         try
         {
             // Read-only transaction, always rolled back: see ReadOnlyWarehouseSession. The read-only setting is the first statement, before the query.
-            await using ReadOnlyWarehouseSession session = await ReadOnlyWarehouseSession.BeginAsync(dataSource, options.Value.CommandTimeoutSeconds, cancellationToken);
+            using WarehouseDataSourceLease lease = await connections.AcquireAsync(cancellationToken);
+            await using ReadOnlyWarehouseSession session = await ReadOnlyWarehouseSession.BeginAsync(lease.DataSource, options.Value.CommandTimeoutSeconds, cancellationToken);
             await using NpgsqlCommand command = session.CreateCommand(query.Sql, options.Value.CommandTimeoutSeconds);
             foreach ((string name, object? value) in query.Parameters)
             {

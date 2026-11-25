@@ -86,6 +86,36 @@ public sealed partial class GuardTests
     }
 
     [Fact]
+    public void Only_the_secrets_loader_talks_to_aws_secrets_manager()
+    {
+        // Every fetch goes through AwsSecretStringReader: retries, the overall budget and the failure messages that never carry a value live there.
+        var offenders = ProductionFolders
+            .SelectMany(folder => RepoFiles.Source(folder))
+            .Where(file => !file.EndsWith("AwsSecretStringReader.cs", StringComparison.Ordinal))
+            .Where(file => File.ReadAllText(file).Contains("AmazonSecretsManagerClient(", StringComparison.Ordinal))
+            .Select(RepoFiles.Relative)
+            .ToList();
+
+        Assert.Empty(offenders);
+    }
+
+    [Fact]
+    public void The_loader_and_feature_flags_are_not_registered_from_anywhere_but_the_host_composition()
+    {
+        // One composition per host, so DI can be tested as a whole: nothing else may start the sidecar or the hourly refresh.
+        string[] tokens = ["AddAppConfigSidecar(", "AddAwsSecretsLoaderReloading(", "AddAwsSecretsLoaderAsync("];
+        var offenders = ProductionFolders
+            .SelectMany(folder => RepoFiles.Source(folder))
+            .Where(file => !file.Contains($"{Path.DirectorySeparatorChar}Prism.Infrastructure{Path.DirectorySeparatorChar}", StringComparison.Ordinal)
+                        && !file.EndsWith("Program.cs", StringComparison.Ordinal)
+                        && !file.EndsWith("FeatureManagementServiceCollectionExtensions.cs", StringComparison.Ordinal))
+            .SelectMany(file => tokens.Where(token => File.ReadAllText(file).Contains(token, StringComparison.Ordinal)).Select(token => $"{RepoFiles.Relative(file)}: {token}"))
+            .ToList();
+
+        Assert.Empty(offenders);
+    }
+
+    [Fact]
     public void Application_and_infrastructure_code_does_not_read_the_system_clock_or_make_random_ids()
     {
         var offenders = ProductionFolders

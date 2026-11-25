@@ -9,13 +9,17 @@ using Prism.Api.Metrics;
 using Prism.Api.Observability;
 using Prism.Api.SavedViews;
 using Prism.Infrastructure.Configuration;
+using Prism.Infrastructure.FeatureManagement;
 using Scalar.AspNetCore;
 using Serilog;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Secrets come from AWS Secrets Manager when Aws:SecretsManager:SecretIds names any (deployed environments), and from user secrets locally.
-builder.Configuration.AddPrismSecretsManager();
+// Secrets come from AWS Secrets Manager when Aws:SecretsLoader is enabled (deployed environments), and from user secrets locally.
+// Order matters: the loader first, then (later) the App Config merge, then the break-glass overrides last so nothing outranks them.
+AwsSecretsLoaderResult secrets = await builder.Configuration.AddAwsSecretsLoaderAsync(builder.Environment);
+await builder.Configuration.MergeSidecarAppSettingsIfEnabledAsync();
+secrets = builder.Configuration.ApplySecretOverridesFromEnvironment(secrets);
 
 builder.AddPrismObservability();
 builder.Services.AddOpenApi("v1", options => options.AddDocumentTransformer((document, _, _) =>
@@ -26,6 +30,7 @@ builder.Services.AddOpenApi("v1", options => options.AddDocumentTransformer((doc
 }));
 builder.Services.AddProblemDetails();
 builder.Services.AddPrismForwardedHeaders();
+builder.Services.AddPrismFeatureManagement(builder.Configuration);
 builder.Services.AddPrismPersistence(builder.Configuration);
 builder.Services.AddPrismAuth(builder.Configuration);
 builder.Services.AddPrismMetrics();
@@ -33,6 +38,8 @@ builder.Services.AddPrismSavedViews();
 builder.Services.AddPrismAdmin();
 builder.Services.AddPrismPersonas();
 builder.Services.AddPrismCustomerAccess();
+// Hourly refresh of the loaded secrets. Does nothing when the loader is disabled.
+builder.Services.AddAwsSecretsLoaderReloading(builder.Configuration);
 
 var app = builder.Build();
 

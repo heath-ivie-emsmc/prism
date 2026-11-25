@@ -1,12 +1,13 @@
+using Prism.Infrastructure.FeatureManagement;
 using Prism.Infrastructure.Persistence;
 
 namespace Prism.Api.Health;
 
 /// <summary>
-/// Backs the anonymous <c>/ready</c> endpoint. Callers share one database check, and its result is reused for a short
-/// time, so a flood of anonymous requests costs the database at most one connection attempt per window.
+/// Backs the anonymous <c>/ready</c> endpoint. Callers share one check (the database, and feature management when the App Config sidecar is on),
+/// and its result is reused for a short time, so a flood of anonymous requests costs at most one attempt per window.
 /// </summary>
-public sealed class ReadinessCheck(IDatabaseProbe probe, TimeProvider timeProvider)
+public sealed class ReadinessCheck(IDatabaseProbe probe, TimeProvider timeProvider, IFeatureManagementReadiness? featureManagement = null)
 {
     public static readonly TimeSpan CacheFor = TimeSpan.FromSeconds(5);
 
@@ -38,7 +39,8 @@ public sealed class ReadinessCheck(IDatabaseProbe probe, TimeProvider timeProvid
         using var timeout = new CancellationTokenSource(Timeout, timeProvider);
         try
         {
-            return await probe.IsAvailableAsync(timeout.Token);
+            return await probe.IsAvailableAsync(timeout.Token)
+                && (featureManagement is null || await featureManagement.IsReadyAsync(timeout.Token));
         }
         catch (OperationCanceledException)
         {

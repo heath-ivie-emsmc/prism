@@ -6,8 +6,11 @@ using Prism.Application.Auth;
 
 namespace Prism.Infrastructure.Auth;
 
-/// <summary>Issues the HS256 session JWT that the API puts in an HttpOnly cookie.</summary>
-public sealed class SessionTokenIssuer(IOptions<PrismAuthOptions> options, IOptions<InternalAccessOptions> internalOptions, TimeProvider timeProvider) : ISessionTokenIssuer
+/// <summary>
+/// Issues the HS256 session JWT that the API puts in an HttpOnly cookie. The signing key is read per call from the monitored options,
+/// so a rotated secret applies to the next sign-in (and invalidates sessions signed with the old key).
+/// </summary>
+public sealed class SessionTokenIssuer(IOptionsMonitor<PrismAuthOptions> options, IOptions<InternalAccessOptions> internalOptions, TimeProvider timeProvider) : ISessionTokenIssuer
 {
     public const string Issuer = "prism-api";
     public const string Audience = "prism-web";
@@ -27,7 +30,7 @@ public sealed class SessionTokenIssuer(IOptions<PrismAuthOptions> options, IOpti
 
     public string Issue(PortalUser user, IReadOnlyList<string> permissions)
     {
-        PrismAuthOptions settings = options.Value;
+        PrismAuthOptions settings = options.CurrentValue;
         DateTimeOffset now = timeProvider.GetUtcNow();
 
         var claims = new Dictionary<string, object>

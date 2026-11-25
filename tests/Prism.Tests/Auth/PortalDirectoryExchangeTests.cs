@@ -40,7 +40,7 @@ public sealed class PortalDirectoryExchangeTests : IDisposable
         });
         return new PortalDirectory(
             new HttpClient(portal),
-            new PortalAppJwtFactory(options, clock),
+            new PortalAppJwtFactory(new TestOptionsMonitor<PrismAuthOptions>(options.Value), clock),
             options,
             names ?? new PortalCompanyNames(clock),
             NullLogger<PortalDirectory>.Instance);

@@ -42,10 +42,10 @@ Other settings and their defaults:
 
 Deployed environments (everything except Development and Testing) also require https URLs everywhere, secure cookies, and a `PublicBaseUrl`.
 
-Secrets, never in the repo (user secrets locally, AWS Secrets Manager when deployed):
+Secrets, never in the repo (user secrets locally, AWS Secrets Manager when deployed; see [secrets.md](secrets.md) for how the loader is configured and what rotation reaches without a restart):
 
 - `Auth:ApplicationPrivateKeyPem`: the PEM private key whose public half is registered with the portal for this application id.
-- `Auth:SessionSigningKeyBase64`: at least 32 random bytes, base64. Rotating it ends every session.
+- `Auth:SessionSigningKeyBase64`: at least 32 random bytes, base64. Rotating it ends every session, and with the loader enabled it takes effect without a restart.
 
 Local development:
 

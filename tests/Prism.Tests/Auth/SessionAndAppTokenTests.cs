@@ -19,9 +19,34 @@ public sealed class SessionAndAppTokenTests
     private readonly string sessionKey = PortalTestKeys.NewSessionKeyBase64();
 
     private SessionTokenIssuer Issuer(int lifetimeMinutes = 480, string internalGroup = "") => new(
-        Options.Create(new PrismAuthOptions { SessionSigningKeyBase64 = sessionKey, SessionLifetimeMinutes = lifetimeMinutes }),
+        new TestOptionsMonitor<PrismAuthOptions>(new PrismAuthOptions { SessionSigningKeyBase64 = sessionKey, SessionLifetimeMinutes = lifetimeMinutes }),
         Options.Create(new InternalAccessOptions { GroupName = internalGroup }),
         new TestTimeProvider(Now));
+
+    [Fact]
+    public async Task A_rotated_signing_key_is_used_for_the_next_session_token()
+    {
+        var monitor = new TestOptionsMonitor<PrismAuthOptions>(new PrismAuthOptions { SessionSigningKeyBase64 = sessionKey });
+        var issuer = new SessionTokenIssuer(monitor, Options.Create(new InternalAccessOptions()), new TestTimeProvider(Now));
+        string rotatedKey = PortalTestKeys.NewSessionKeyBase64();
+
+        string before = issuer.Issue(User, [Permissions.DashboardView]);
+        monitor.CurrentValue = new PrismAuthOptions { SessionSigningKeyBase64 = rotatedKey };
+        string after = issuer.Issue(User, [Permissions.DashboardView]);
+
+        static TokenValidationParameters ParametersFor(string key) => new()
+        {
+            ValidIssuer = SessionTokenIssuer.Issuer,
+            ValidAudience = SessionTokenIssuer.Audience,
+            IssuerSigningKey = SessionTokenIssuer.SigningKey(key),
+            ValidateLifetime = false,
+        };
+        var handler = new JsonWebTokenHandler();
+        Assert.True((await handler.ValidateTokenAsync(before, ParametersFor(sessionKey))).IsValid);
+        Assert.False((await handler.ValidateTokenAsync(before, ParametersFor(rotatedKey))).IsValid);
+        Assert.True((await handler.ValidateTokenAsync(after, ParametersFor(rotatedKey))).IsValid);
+        Assert.False((await handler.ValidateTokenAsync(after, ParametersFor(sessionKey))).IsValid);
+    }
 
     private static bool HasInternalClaim(string token) =>
         new JsonWebTokenHandler().ReadJsonWebToken(token).TryGetClaim(SessionTokenIssuer.InternalClaim, out _);
@@ -129,7 +154,7 @@ public sealed class SessionAndAppTokenTests
             ApplicationPrivateKeyPem = rsa.ExportPkcs8PrivateKeyPem(),
         });
 
-        string token = new PortalAppJwtFactory(options, new TestTimeProvider(Now)).Create();
+        string token = new PortalAppJwtFactory(new TestOptionsMonitor<PrismAuthOptions>(options.Value), new TestTimeProvider(Now)).Create();
 
         TokenValidationResult result = await new JsonWebTokenHandler().ValidateTokenAsync(token, new TokenValidationParameters
         {

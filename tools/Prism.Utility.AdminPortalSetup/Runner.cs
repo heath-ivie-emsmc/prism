@@ -105,7 +105,7 @@ internal static class Runner
 
     private static HttpClient CreateClient(PortalEnvironment environment, string applicationId, string privateKeyPem, TimeProvider clock)
     {
-        IOptions<PrismAuthOptions> authOptions = Microsoft.Extensions.Options.Options.Create(new PrismAuthOptions
+        var authOptions = new FixedOptionsMonitor<PrismAuthOptions>(new PrismAuthOptions
         {
             ApplicationId = applicationId,
             AdminPortalAudience = environment.Audience,

@@ -23,6 +23,39 @@ public sealed class RedisReplayStoreTests(RedisFixture redis) : IClassFixture<Re
     }
 
     [Fact]
+    public async Task A_rotated_connection_string_is_used_by_the_next_call()
+    {
+        // The same container, but a different Redis database, stands in for rotated credentials pointing at the same store.
+        string current = redis.ConnectionString + ",defaultDatabase=0";
+        using var store = new RedisLoginTokenReplayStore(() => current);
+        CancellationToken ct = TestContext.Current.CancellationToken;
+        string tokenId = "token-rotated-" + Guid.NewGuid().ToString("N");
+
+        Assert.True(await store.TryRememberAsync(tokenId, Window, ct));
+        Assert.False(await store.TryRememberAsync(tokenId, Window, ct));
+
+        current = redis.ConnectionString + ",defaultDatabase=1";
+        Assert.True(await store.TryRememberAsync(tokenId, Window, ct));
+        Assert.False(await store.TryRememberAsync(tokenId, Window, ct));
+
+        current = redis.ConnectionString + ",defaultDatabase=0";
+        Assert.False(await store.TryRememberAsync(tokenId, Window, ct));
+    }
+
+    [Fact]
+    public async Task A_rotated_connection_string_that_goes_missing_fails_the_call_instead_of_skipping_the_check()
+    {
+        string current = redis.ConnectionString;
+        using var store = new RedisLoginTokenReplayStore(() => current);
+        CancellationToken ct = TestContext.Current.CancellationToken;
+        Assert.True(await store.TryRememberAsync("token-missing-" + Guid.NewGuid().ToString("N"), Window, ct));
+
+        current = "";
+
+        await Assert.ThrowsAsync<InvalidOperationException>(async () => await store.TryRememberAsync("token-after-" + Guid.NewGuid().ToString("N"), Window, ct));
+    }
+
+    [Fact]
     public async Task Two_instances_of_the_app_share_the_memory()
     {
         using var first = new RedisLoginTokenReplayStore(redis.ConnectionString);
