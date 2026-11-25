@@ -92,6 +92,7 @@ PRISM_UPDATE_SNAPSHOTS=1 dotnet test tests/Prism.Tests --filter MetricCatalogSna
 | [`docs/metrics.md`](docs/metrics.md) | Generated table of every Metric, plus the add-a-Metric steps |
 | [`docs/warehouse.md`](docs/warehouse.md) | Warehouse connection, source tables and the counting rules for each Metric |
 | [`docs/auth-setup.md`](docs/auth-setup.md) | Sign-in, the Account Portal, local setup |
+| [`docs/deploy.md`](docs/deploy.md) | The Staging deploy workflow and what DevOps still sets up |
 | [`docs/e2e-layout.md`](docs/e2e-layout.md) | The Playwright layout, accessibility and keyboard suites |
 | [`docs/saved-views.md`](docs/saved-views.md), [`docs/saved-views-ui-spec.md`](docs/saved-views-ui-spec.md) | Saved Views |
 | [`docs/personas.md`](docs/personas.md) | Personas, the first-login questions and the home page |

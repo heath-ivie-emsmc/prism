@@ -1,0 +1,202 @@
+name: Deploy to Staging
+
+# Runs after CI succeeds on a push to main, and by hand for a redeploy of main. See docs/deploy.md for the
+# one-time setup and the parts DevOps fills in (look for TODO(devops)).
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+# One deploy at a time, and never cancel one in flight: a cancelled run can leave the database migrated while the
+# previous image is still running. A newer run waits its turn.
+concurrency:
+  group: deploy-staging
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  preflight:
+    name: Preflight
+    # workflow_run holds secrets, so it only continues for a push to main that passed CI. A pull request never gets here.
+    # A manual run must be started on main.
+    if: >-
+      (github.event_name == 'workflow_run'
+        && github.event.workflow_run.conclusion == 'success'
+        && github.event.workflow_run.event == 'push'
+        && github.event.workflow_run.head_branch == 'main')
+      || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
+    runs-on: ubuntu-latest
+    environment: Staging
+    outputs:
+      sha: ${{ steps.target.outputs.sha }}
+      tag: ${{ steps.target.outputs.tag }}
+    steps:
+      - name: Pick the commit and tag
+        id: target
+        env:
+          RUN_SHA: ${{ github.event.workflow_run.head_sha }}
+          DISPATCH_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          sha="${RUN_SHA:-$DISPATCH_SHA}"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "tag=sha-$sha" >> "$GITHUB_OUTPUT"
+
+      # Everything that can be checked without side effects is checked here, before an image is built or a database touched.
+      - name: Check the Staging configuration is present
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
+          MIGRATIONS_ENABLED: ${{ vars.STAGE_MIGRATIONS_ENABLED }}
+          DB_SECRET_ID: ${{ vars.DB_SECRET_ID }}
+        run: |
+          set -euo pipefail
+          missing=()
+          [ -n "$AWS_ACCESS_KEY_ID" ] || missing+=("secret AWS_ACCESS_KEY_ID")
+          [ -n "$AWS_SECRET_ACCESS_KEY" ] || missing+=("secret AWS_SECRET_ACCESS_KEY")
+          [ -n "$ECR_REPOSITORY" ] || missing+=("variable ECR_REPOSITORY")
+          if [ "$MIGRATIONS_ENABLED" = "true" ] && [ -z "$DB_SECRET_ID" ]; then
+            missing+=("variable DB_SECRET_ID (needed because STAGE_MIGRATIONS_ENABLED is true)")
+          fi
+          if [ "${#missing[@]}" -gt 0 ]; then
+            for m in "${missing[@]}"; do echo "::error::Missing on the Staging environment: $m"; done
+            echo "::error::See docs/deploy.md for the setup list."
+            exit 1
+          fi
+
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
+
+      - name: Check the credentials and the image repository
+        env:
+          ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
+        run: |
+          set -euo pipefail
+          aws sts get-caller-identity --query Account --output text >/dev/null
+          aws ecr describe-repositories --repository-names "$ECR_REPOSITORY" >/dev/null
+
+  build-push:
+    name: Build and push the image
+    needs: [preflight]
+    runs-on: ubuntu-latest
+    environment: Staging
+    permissions:
+      contents: read
+      packages: read   # the SPA install reads the @ems-management-consultants packages
+    outputs:
+      image: ${{ steps.image.outputs.image }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.preflight.outputs.sha }}
+
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
+
+      - id: login-ecr
+        uses: aws-actions/amazon-ecr-login@03f1aad4c6c7ffd436567f42f9384779290529bd # v2.1.7
+
+      # One build per commit. A tag is the commit and is never overwritten, so a redeploy of the same commit reuses the image.
+      - name: Build and push (skipped when the tag already exists)
+        id: image
+        env:
+          REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          REPOSITORY: ${{ vars.ECR_REPOSITORY }}
+          TAG: ${{ needs.preflight.outputs.tag }}
+          NPM_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          image="$REGISTRY/$REPOSITORY:$TAG"
+          echo "image=$image" >> "$GITHUB_OUTPUT"
+          if aws ecr describe-images --repository-name "$REPOSITORY" --image-ids "imageTag=$TAG" >/dev/null 2>&1; then
+            echo "$image already exists, not rebuilding."
+            echo "Image \`$image\` already existed, reused." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          docker build -f docker/Dockerfile --secret id=npm_token,env=NPM_TOKEN -t "$image" .
+          docker push "$image"
+          digest="$(aws ecr describe-images --repository-name "$REPOSITORY" --image-ids "imageTag=$TAG" \
+            --query 'imageDetails[0].imageDigest' --output text)"
+          echo "Pushed \`$image\` (\`$digest\`)." >> "$GITHUB_STEP_SUMMARY"
+
+  # Off until DevOps sets STAGE_MIGRATIONS_ENABLED=true. The Staging database is private, so set STAGE_MIGRATION_RUNNER to a
+  # runner that can reach it. Migrations run before the image moves, so every migration must still work with the previous
+  # version of the app (additive, forward-only). The runner label defaults to a GitHub-hosted one.
+  migrate:
+    name: Migrate the database
+    needs: [preflight, build-push]
+    if: vars.STAGE_MIGRATIONS_ENABLED == 'true'
+    runs-on: ${{ vars.STAGE_MIGRATION_RUNNER || 'ubuntu-latest' }}
+    environment: Staging
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.preflight.outputs.sha }}
+
+      - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
+        with:
+          global-json-file: global.json
+
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
+
+      - name: Build the migrations bundle
+        run: |
+          set -euo pipefail
+          dotnet restore --locked-mode
+          dotnet tool restore
+          dotnet tool run dotnet-ef migrations bundle \
+            --project src/Prism.Infrastructure --startup-project src/Prism.Api \
+            --configuration Release --self-contained -r linux-x64 \
+            --output "$RUNNER_TEMP/efbundle" --force
+
+      # The secret holds the plain Prism connection string. The value is masked and never printed.
+      - name: Apply the migrations
+        env:
+          DB_SECRET_ID: ${{ vars.DB_SECRET_ID }}
+        run: |
+          set -euo pipefail
+          connection="$(aws secretsmanager get-secret-value --secret-id "$DB_SECRET_ID" --query SecretString --output text)"
+          echo "::add-mask::$connection"
+          "$RUNNER_TEMP/efbundle" --connection "$connection"
+
+  deploy:
+    name: Deploy
+    needs: [preflight, build-push, migrate]
+    # migrate is skipped until DevOps turns it on; a failure still stops the deploy.
+    if: ${{ !cancelled() && needs.build-push.result == 'success' && (needs.migrate.result == 'success' || needs.migrate.result == 'skipped') }}
+    runs-on: ubuntu-latest
+    environment: Staging
+    steps:
+      # TODO(devops): replace this step with whatever rolls Staging onto the new image (a chart or manifest update, kubectl,
+      # ECS, and so on). It receives the image reference and the commit below. Prism runs as one container that serves the
+      # SPA and the API on port 8080, and ships with the secrets loader and feature flags switched off
+      # (see docs/secrets.md and docs/feature-flags.md).
+      - name: Deploy (placeholder, deploys nothing yet)
+        env:
+          IMAGE: ${{ needs.build-push.outputs.image }}
+          SHA: ${{ needs.preflight.outputs.sha }}
+        run: |
+          {
+            echo "### Staging deploy is not wired yet"
+            echo
+            echo "Image ready: \`$IMAGE\`"
+            echo
+            echo "Commit: \`$SHA\`"
+            echo
+            echo "DevOps: replace the placeholder step in \`.github/workflows/deploy.yml\` (see docs/deploy.md)."
+          } >> "$GITHUB_STEP_SUMMARY"
