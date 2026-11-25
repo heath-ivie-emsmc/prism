@@ -1,6 +1,6 @@
-import type { Page } from '@playwright/test';
+import type { Locator, Page } from '@playwright/test';
 import { LayoutIssue, analyzeLayout } from './layout-analysis';
-import { whatChangedFor } from './fixtures';
+import { MOCK_ME, PERSONA_LAYOUT, whatChangedFor } from './fixtures';
 
 /** The window sizes every page is checked at: small phone to wide desktop, plus a phone turned sideways. */
 export const SIZES = [
@@ -79,6 +79,92 @@ export async function openPayerMixPage(page: Page, group = 'rotor-wing', query =
   await page.locator('app-payer-mix app-chart canvas').waitFor();
   await page.evaluate(() => document.fonts.ready);
   await page.waitForTimeout(400);
+}
+
+/** What `GET /api/v1/me` returns for an Internal User holding the given admin tiers. */
+export const INTERNAL_ME = {
+  userName: 'jdoe',
+  displayName: 'Jane Doe',
+  // An Internal User has no customer Providers of their own.
+  providers: [],
+  permissions: ['prism.app'],
+  isInternal: true,
+};
+
+/** The admin home, signed in as an Internal User with the given tiers. The page is open and drawn when this returns. */
+export async function openAdmin(page: Page, adminPermissions: string[] = ['prism.admin.templates.author', 'prism.admin.templates.publish', 'prism.admin.customers.view', 'prism.admin.manage']): Promise<void> {
+  await page.route('**/api/v1/me', (route) => route.fulfill({ json: { ...INTERNAL_ME, adminPermissions } }));
+  await page.goto('/admin');
+  await page.locator('app-admin-home h1').waitFor();
+  await page.evaluate(() => document.fonts.ready);
+  await page.waitForTimeout(200);
+}
+
+const ALL_TIERS = ['prism.admin.templates.author', 'prism.admin.templates.publish', 'prism.admin.customers.view', 'prism.admin.manage'];
+
+/** Signs in as an Internal User with the given tiers. Call before the first navigation. */
+export async function signInAsInternal(page: Page, adminPermissions: string[] = ALL_TIERS): Promise<void> {
+  await page.route('**/api/v1/me', (route) => route.fulfill({ json: { ...INTERNAL_ME, adminPermissions } }));
+  await mockProviderSearch(page);
+}
+
+const DIRECTORY = [
+  { id: '526', name: 'Seminole County Fire Department' },
+  { id: '527', name: 'Mercy Air' },
+  { id: '9001', name: 'Abbeville County Emergency Services' },
+];
+
+/** The staff Provider search, answering from a short fixed directory the way the API does: name contains the text, or the number starts with it. */
+export async function mockProviderSearch(page: Page): Promise<void> {
+  await page.route('**/api/v1/admin/providers*', (route) => {
+    const q = (new URL(route.request().url()).searchParams.get('q') ?? '').trim().toLowerCase();
+    const providers = q === '' ? [] : DIRECTORY.filter((p) => p.name.toLowerCase().includes(q) || p.id.startsWith(q));
+    return route.fulfill({ json: { providers } });
+  });
+}
+
+/** Finds a Provider in the picker by typing part of its name or number and choosing the result. */
+export async function pickProvider(scope: Page | Locator, search: string, shown: string): Promise<void> {
+  const box = scope.getByRole('combobox', { name: /Provider/ }).first();
+  await box.fill(search);
+  await box.page().getByRole('option', { name: new RegExp(shown) }).first().click();
+}
+
+/** The View Templates list, waiting until its rows are in. */
+export async function openTemplates(page: Page, adminPermissions: string[] = ALL_TIERS): Promise<void> {
+  await signInAsInternal(page, adminPermissions);
+  await page.goto('/admin/templates');
+  await page.locator('app-admin-templates h1').waitFor();
+  await page.locator('app-admin-templates .templates__list li').first().waitFor();
+  await page.evaluate(() => document.fonts.ready);
+  await page.waitForTimeout(200);
+}
+
+/** The push dialog for a template, open on the first row that can be pushed. */
+export async function openPushDialog(page: Page): Promise<void> {
+  await openTemplates(page);
+  await page.getByRole('button', { name: 'Push Finance start' }).click();
+  await page.getByRole('dialog').waitFor();
+  await page.getByRole('dialog').getByText('Earlier pushes').waitFor();
+  await page.waitForTimeout(200);
+}
+
+/** The template editor: the Provider chooser, or (with a Provider number) the builder with figures, once its widgets have drawn. */
+export async function openTemplateEditor(page: Page, id: number | 'new', provider?: string, adminPermissions: string[] = ALL_TIERS): Promise<void> {
+  await signInAsInternal(page, adminPermissions);
+  await page.goto(`/admin/templates/${id}`);
+  if (provider === undefined) {
+    await page.locator('app-template-editor h1').waitFor();
+  } else {
+    await pickProvider(page, provider, `Provider ${provider}`);
+    await page.locator('app-view-builder h1').waitFor();
+    if (id !== 'new') {
+      await page.locator('app-grid-canvas li.item').first().waitFor();
+      await page.locator('app-grid-canvas app-chart canvas, app-grid-canvas .widget__value, app-grid-canvas table').first().waitFor();
+    }
+  }
+  await page.evaluate(() => document.fonts.ready);
+  await page.waitForTimeout(300);
 }
 
 /** The saved views list, waiting until its rows are in. */
@@ -341,5 +427,67 @@ export async function openInsightNewKinds(page: Page): Promise<void> {
   });
   await openPayerMixPage(page, 'fixed-wing');
   await page.locator('app-what-changed .card:not(.card--attention)').nth(5).waitFor();
+  await page.waitForTimeout(200);
+}
+
+/** The home page as a user whose Persona points at a template (`persona`) or who made their own copy (`custom`), drawn when this returns. */
+export async function openHome(page: Page, source: 'persona' | 'custom' = 'persona'): Promise<void> {
+  const home = source === 'persona' ? { source, layout: PERSONA_LAYOUT, savedViewId: null } : { source, layout: null, savedViewId: 5 };
+  await page.route(/\/api\/v1\/providers\/[^/]+\/home(\?.*)?$/, (route) => route.fulfill({ json: home }));
+  await page.goto('/dashboard');
+  await page.locator('app-home h1').waitFor();
+  await page.locator('app-grid-canvas li.item').first().waitFor();
+  await page.evaluate(() => document.fonts.ready);
+  await page.waitForTimeout(300);
+}
+
+/** The first-login questions, reached the way a new user reaches them: by asking for the dashboard. */
+export async function openWelcome(page: Page): Promise<void> {
+  await page.route('**/api/v1/me', (route) => route.fulfill({ json: { ...MOCK_ME, onboardingRequired: true } }));
+  await page.goto('/dashboard');
+  await page.locator('app-onboarding h1').waitFor();
+  await page.locator('app-onboarding input[type="radio"]').first().waitFor();
+  await page.evaluate(() => document.fonts.ready);
+  await page.waitForTimeout(200);
+}
+
+/** Personas and the first-login questions, as an Internal User with the given tiers. */
+export async function openAdminPersonas(page: Page, adminPermissions: string[] = ALL_TIERS): Promise<void> {
+  await signInAsInternal(page, adminPermissions);
+  await page.goto('/admin/personas');
+  await page.locator('app-admin-personas h1').waitFor();
+  await page.locator('app-admin-personas .personas__list li').first().waitFor();
+  await page.evaluate(() => document.fonts.ready);
+  await page.waitForTimeout(200);
+}
+
+/** The settings page, with a customized home page (so Reset shows) and two pushed views, one of them hidden. */
+export async function openSettings(page: Page): Promise<void> {
+  await page.route(/\/api\/v1\/providers\/[^/]+\/home(\?.*)?$/, (route) => route.fulfill({ json: { source: 'custom', layout: null, savedViewId: 5 } }));
+  await page.goto('/settings');
+  await page.locator('app-settings h1').waitFor();
+  await page.locator('app-settings .settings__list li').first().waitFor();
+  await page.evaluate(() => document.fonts.ready);
+  await page.waitForTimeout(200);
+}
+
+/** The Provider admin's user list, drawn when this returns. The mocked user is a Provider admin. */
+export async function openProviderUsers(page: Page): Promise<void> {
+  await page.goto('/settings/users');
+  await page.locator('app-provider-users h1').waitFor();
+  await page.locator('app-user-roles-table .roles__list li').first().waitFor();
+  await page.evaluate(() => document.fonts.ready);
+  await page.waitForTimeout(200);
+}
+
+/** The staff customer page with a Provider open. */
+export async function openAdminCustomers(page: Page, adminPermissions: string[] = ALL_TIERS): Promise<void> {
+  await signInAsInternal(page, adminPermissions);
+  await page.goto('/admin/customers');
+  await page.locator('app-admin-customers h1').waitFor();
+  await page.locator('#customer-provider').fill('526');
+  await page.getByRole('button', { name: 'Open Provider' }).click();
+  await page.locator('app-admin-customers .roles__list li').first().waitFor();
+  await page.evaluate(() => document.fonts.ready);
   await page.waitForTimeout(200);
 }

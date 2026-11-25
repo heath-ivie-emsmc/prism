@@ -80,11 +80,11 @@ describe('DivisionSelectComponent', () => {
     expect(note(root)).toContain('No Base location values were found');
   });
 
-  it('names the metrics that ignore the choice, with the Provider term', async () => {
+  it('says nothing about metrics that ignore the choice', async () => {
     const { fixture, root } = create();
     fixture.componentInstance.ignored.set(['Net cash collected', 'Clean claim rate']);
     await show(fixture);
-    expect(note(root)).toContain('Base location does not change Net cash collected, Clean claim rate. They show all bases.');
+    expect(note(root)).toBe('');
   });
 
   it('turns off with the reason when nothing on the page can use it', async () => {

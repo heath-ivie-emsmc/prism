@@ -5,63 +5,83 @@ namespace Prism.Tests.Auth;
 public sealed class PermissionCatalogTests
 {
     [Fact]
-    public void An_analyst_can_sign_in_view_the_dashboard_review_claims_and_manage_saved_views()
+    public void The_login_only_role_grants_sign_in_and_nothing_else()
     {
-        Assert.Equal([Permissions.App, Permissions.DashboardView, Permissions.ClaimsView, Permissions.ViewsManage], Permissions.ForRoles(["ProviderAnalyst"]));
+        Assert.Equal([Permissions.App], Permissions.ForRoles(["PrismUser"]));
+    }
+
+    [Theory]
+    [InlineData("InternalTemplateAuthor", Permissions.AdminTemplatesAuthor)]
+    [InlineData("InternalTemplatePublisher", Permissions.AdminTemplatesPublish)]
+    [InlineData("InternalAdminManager", Permissions.AdminManage)]
+    public void Each_admin_tier_role_carries_only_its_own_tier_and_sign_in(string role, string tier)
+    {
+        Assert.Equal([Permissions.App, tier], Permissions.ForRoles([role]));
     }
 
     [Fact]
-    public void A_provider_admin_can_also_manage_settings()
+    public void The_customer_data_viewer_role_also_carries_the_dashboard_permission_but_never_claim_level_data()
     {
-        Assert.Equal(
-            [Permissions.App, Permissions.DashboardView, Permissions.ClaimsView, Permissions.SettingsManage, Permissions.ViewsManage],
-            Permissions.ForRoles(["ProviderAdmin"]));
+        IReadOnlyList<string> granted = Permissions.ForRoles(["InternalCustomerDataViewer"]);
+
+        Assert.Equal([Permissions.App, Permissions.DashboardView, Permissions.AdminCustomersView], granted);
+        Assert.DoesNotContain(Permissions.ClaimsView, granted);
+        Assert.DoesNotContain(Permissions.PhiView, granted);
     }
 
     [Fact]
-    public void Platform_support_cannot_see_claim_level_data()
+    public void The_login_only_role_carries_no_admin_tier_and_no_internal_marker()
     {
-        Assert.DoesNotContain(Permissions.ClaimsView, Permissions.ForRoles(["PlatformSupport"]));
+        IReadOnlyList<string> granted = Permissions.ForRoles(["PrismUser"]);
+
+        Assert.Empty(granted.Intersect(Permissions.AdminTiers));
+        Assert.DoesNotContain(Permissions.InternalUser, granted);
     }
 
     [Fact]
-    public void A_super_user_gets_every_permission_in_catalog_order()
+    public void The_internal_marker_role_carries_the_marker_and_no_tier()
     {
-        Assert.Equal(Permissions.All.Select(p => p.Id), Permissions.ForRoles(["SuperUser"]));
+        Assert.Equal([Permissions.App, Permissions.InternalUser], Permissions.ForRoles(["InternalUser"]));
+    }
+
+    [Fact]
+    public void The_roles_the_portal_used_to_hold_for_customers_no_longer_exist()
+    {
+        Assert.Empty(Permissions.ForRoles(["ProviderAnalyst", "ProviderAdmin", "PlatformSupport", "SuperUser"]));
     }
 
     [Fact]
     public void Several_roles_give_the_union_without_duplicates()
     {
-        IReadOnlyList<string> granted = Permissions.ForRoles(["ProviderAnalyst", "PlatformSupport", "ProviderAdmin"]);
+        IReadOnlyList<string> granted = Permissions.ForRoles(["PrismUser", "InternalCustomerDataViewer", "InternalAdminManager"]);
 
-        Assert.Equal([Permissions.App, Permissions.DashboardView, Permissions.ClaimsView, Permissions.SettingsManage, Permissions.ViewsManage], granted);
+        Assert.Equal([Permissions.App, Permissions.DashboardView, Permissions.AdminCustomersView, Permissions.AdminManage], granted);
     }
 
     [Theory]
-    [InlineData("provideranalyst")]
-    [InlineData("PROVIDERANALYST")]
-    [InlineData("  ProviderAnalyst  ")]
+    [InlineData("prismuser")]
+    [InlineData("PRISMUSER")]
+    [InlineData("  PrismUser  ")]
     public void Role_names_match_ignoring_case_and_surrounding_spaces(string reported)
     {
         Assert.Contains(Permissions.App, Permissions.ForRoles([reported]));
     }
 
     [Theory]
-    [InlineData("prism-localhost__ProviderAnalyst")]
-    [InlineData("PRISM-LOCALHOST__provideranalyst")]
-    [InlineData("shared__ProviderAnalyst")]
+    [InlineData("prism-localhost__PrismUser")]
+    [InlineData("PRISM-LOCALHOST__prismuser")]
+    [InlineData("shared__PrismUser")]
     public void A_role_with_an_accepted_prefix_matches(string reported)
     {
         Assert.Contains(Permissions.App, Permissions.ForRoles([reported], ["prism-localhost", "shared"]));
     }
 
     [Theory]
-    [InlineData("m6__SuperUser")]
-    [InlineData("client__ProviderAdmin")]
-    [InlineData("Prism__ProviderAnalyst")]
-    [InlineData("a__prism-localhost__ProviderAnalyst")]
-    [InlineData("__ProviderAnalyst")]
+    [InlineData("m6__PrismUser")]
+    [InlineData("client__PrismUser")]
+    [InlineData("Prism__PrismUser")]
+    [InlineData("a__prism-localhost__PrismUser")]
+    [InlineData("__PrismUser")]
     public void A_role_under_another_applications_prefix_never_matches(string reported)
     {
         Assert.Empty(Permissions.ForRoles([reported], ["prism-localhost"]));
@@ -71,15 +91,15 @@ public sealed class PermissionCatalogTests
     [Fact]
     public void A_blank_accepted_prefix_does_not_turn_into_a_wildcard()
     {
-        Assert.Empty(Permissions.ForRoles(["__SuperUser", "x__SuperUser"], ["", "  "]));
+        Assert.Empty(Permissions.ForRoles(["__PrismUser", "x__PrismUser"], ["", "  "]));
     }
 
     [Theory]
     [InlineData("")]
-    [InlineData("Analyst")]
-    [InlineData("xProviderAnalyst")]
-    [InlineData("ProviderAnalystx")]
-    [InlineData("ProviderAnalyst__")]
+    [InlineData("User")]
+    [InlineData("xPrismUser")]
+    [InlineData("PrismUserx")]
+    [InlineData("PrismUser__")]
     [InlineData("SomeOtherAppRole")]
     public void Unknown_roles_grant_nothing(string reported)
     {
@@ -113,10 +133,10 @@ public sealed class PermissionCatalogTests
     }
 
     [Fact]
-    public void Every_defined_permission_is_held_by_at_least_one_role()
+    public void Every_published_permission_is_held_by_at_least_one_role()
     {
         HashSet<string> held = Permissions.Roles.SelectMany(r => r.Permissions).ToHashSet();
 
-        Assert.All(Permissions.All, p => Assert.Contains(p.Id, held));
+        Assert.All(Permissions.Published, p => Assert.Contains(p.Id, held));
     }
 }

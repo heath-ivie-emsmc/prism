@@ -12,6 +12,16 @@ public static class Permissions
     public const string PhiView = "prism.phi.view";
     public const string SettingsManage = "prism.settings.manage";
     public const string ViewsManage = "prism.views.manage";
+    public const string UsersManage = "prism.users.manage";
+
+    /// <summary>Marks an employee. The portal reports no group names, so a portal role carries this and a portal admin attaches the role to the internal group. It grants nothing by itself.</summary>
+    public const string InternalUser = "prism.internal";
+
+    // Internal admin tiers. They only count for a user who is also in the internal portal group (see InternalAccess).
+    public const string AdminTemplatesAuthor = "prism.admin.templates.author";
+    public const string AdminTemplatesPublish = "prism.admin.templates.publish";
+    public const string AdminCustomersView = "prism.admin.customers.view";
+    public const string AdminManage = "prism.admin.manage";
 
     private const string Group = "Prism";
 
@@ -23,15 +33,30 @@ public static class Permissions
         new(PhiView, "Patient-level data: view (reserved, not used yet)", Group),
         new(SettingsManage, "Provider settings: manage", Group),
         new(ViewsManage, "Saved views: create, edit, delete and share", Group),
+        new(UsersManage, "Users: manage the roles of a Provider's users", Group),
+        new(InternalUser, "Internal: marks an employee (no customer Providers, may enter the admin area with a tier)", Group),
+        new(AdminTemplatesAuthor, "Admin: create and edit View Templates, Personas and the questionnaire", Group),
+        new(AdminTemplatesPublish, "Admin: push View Templates to Providers, Personas or everyone", Group),
+        new(AdminCustomersView, "Admin: view a customer's dashboards as one of their users (read-only)", Group),
+        new(AdminManage, "Admin: manage admin settings and read the admin audit log", Group),
     ];
+
+    /// <summary>The permissions that mark an admin tier. A customer role never carries one.</summary>
+    public static IReadOnlyList<string> AdminTiers { get; } = [AdminTemplatesAuthor, AdminTemplatesPublish, AdminCustomersView, AdminManage];
 
     public static IReadOnlyList<RoleDefinition> Roles { get; } =
     [
-        new("ProviderAnalyst", [App, DashboardView, ClaimsView, ViewsManage]),
-        new("ProviderAdmin", [App, DashboardView, ClaimsView, SettingsManage, ViewsManage]),
-        new("PlatformSupport", [App, DashboardView]),
-        new("SuperUser", [App, DashboardView, ClaimsView, PhiView, SettingsManage, ViewsManage]),
+        // Login only: the portal decides who may sign in, and what the user may do in each Provider is a Customer Role kept in Prism (ADR 0010).
+        new("PrismUser", [App]),
+        new("InternalUser", [App, InternalUser]),
+        new("InternalTemplateAuthor", [App, AdminTemplatesAuthor]),
+        new("InternalTemplatePublisher", [App, AdminTemplatesPublish]),
+        new("InternalCustomerDataViewer", [App, DashboardView, AdminCustomersView]),
+        new("InternalAdminManager", [App, AdminManage]),
     ];
+
+    /// <summary>The permissions published to the portal: those a portal role carries. Customer permissions live in Prism (Customer Roles) and are not published.</summary>
+    public static IReadOnlyList<PermissionDefinition> Published { get; } = [.. All.Where(p => Roles.SelectMany(r => r.Permissions).Contains(p.Id))];
 
     /// <summary>
     /// Permissions for the roles the portal reports. A reported role matches a Prism role only by its exact name, or as

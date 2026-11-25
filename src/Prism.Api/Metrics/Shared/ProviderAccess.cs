@@ -1,5 +1,7 @@
 using System.Security.Claims;
 using System.Globalization;
+using Microsoft.IdentityModel.JsonWebTokens;
+using Prism.Application.Admin;
 using Prism.Application.Auth;
 using Prism.Application.Metrics;
 using Prism.Application.Warehouse;
@@ -11,7 +13,7 @@ namespace Prism.Api.Metrics;
 /// Decides whether the signed-in user may read a Provider's data. The Provider comes from the route and is checked against the user's
 /// assignments, read from the portal, on every request. A Provider the user is not assigned to and one that does not exist look the same: not found.
 /// </summary>
-internal sealed class ProviderAccess(IUserScopeProvider scope, IProviderDivisionDirectory divisions, IDataThroughReader dataThrough)
+internal sealed class ProviderAccess(IUserScopeProvider scope, IProviderDivisionDirectory divisions, IDataThroughReader dataThrough, IPreviewAudit previewAudit)
 {
     /// <summary>
     /// The portal id of the Provider (as a number) if the user may read its aggregate figures, otherwise null.
@@ -20,6 +22,12 @@ internal sealed class ProviderAccess(IUserScopeProvider scope, IProviderDivision
     /// </summary>
     public async Task<int?> ResolveAsync(ClaimsPrincipal user, string providerId, CancellationToken cancellationToken)
     {
+        // An Internal User has no customer Providers of their own: the portal's company list for the internal group is every company, and is not read for them.
+        if (user.HasClaim(SessionTokenIssuer.InternalClaim, "true"))
+        {
+            return null;
+        }
+
         if (!long.TryParse(user.FindFirstValue(SessionTokenIssuer.PortalUserIdClaim), out long portalUserId))
         {
             return null;
@@ -43,6 +51,34 @@ internal sealed class ProviderAccess(IUserScopeProvider scope, IProviderDivision
         }
 
         return match.FacilityIds.Count == 0 || await CoversEveryDivisionAsync(id, match.FacilityIds, cancellationToken) ? id : null;
+    }
+
+    /// <summary>
+    /// For the aggregate Metric routes only: the Provider the user may read by their own assignment (see <see cref="ResolveAsync"/>), or, for an Internal User who
+    /// holds the customer data viewer tier, any Provider by its number, to lay out a View Template. The preview path is whole-Provider, is audited once per session
+    /// and Provider before any figure is read, and is refused if that audit cannot be written. Claim-level and Saved View routes never call this: they use
+    /// <see cref="ResolveAsync"/>, so a person who is both a customer user and an Internal User still cannot read another Provider's claims.
+    /// </summary>
+    public async Task<int?> ResolveAggregateAsync(ClaimsPrincipal user, string providerId, CancellationToken cancellationToken)
+    {
+        if (await ResolveAsync(user, providerId, cancellationToken) is { } assigned)
+        {
+            return assigned;
+        }
+
+        // Digits only, so a sign, a space or a name never reaches the audit row or a query.
+        bool mayPreview = user.HasClaim(SessionTokenIssuer.InternalClaim, "true") && user.HasClaim(SessionTokenIssuer.PermissionsClaim, Permissions.AdminCustomersView);
+        if (!mayPreview
+            || !int.TryParse(providerId, System.Globalization.NumberStyles.None, CultureInfo.InvariantCulture, out int id) || id < 1
+            || !long.TryParse(user.FindFirstValue(SessionTokenIssuer.PortalUserIdClaim), CultureInfo.InvariantCulture, out long portalUserId)
+            || user.FindFirstValue(JwtRegisteredClaimNames.Jti) is not { Length: > 0 } sessionId)
+        {
+            return null;
+        }
+
+        string name = user.FindFirstValue(SessionTokenIssuer.SubjectClaim) ?? "";
+        var actor = new AdminActor(portalUserId, name.Length > 200 ? name[..200] : name);
+        return await previewAudit.RecordAsync(actor, id, sessionId, cancellationToken) ? id : null;
     }
 
     /// <summary>

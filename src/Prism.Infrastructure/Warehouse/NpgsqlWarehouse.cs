@@ -91,6 +91,12 @@ public sealed partial class NpgsqlWarehouse(NpgsqlDataSource dataSource, IOption
             throw new WarehouseQueryRejectedException("A query must start with SELECT or WITH.");
         }
 
+        if (query.AcrossProviders)
+        {
+            ValidateAcrossProviders(query);
+            return;
+        }
+
         if (!ProviderParameterUse().IsMatch(query.Sql))
         {
             throw new WarehouseQueryRejectedException("A query must filter on @provider_id.");
@@ -116,6 +122,21 @@ public sealed partial class NpgsqlWarehouse(NpgsqlDataSource dataSource, IOption
         if (query.Parameters.Keys.Any(name => !query.Sql.Contains('@' + name, StringComparison.Ordinal)))
         {
             throw new WarehouseQueryRejectedException("A parameter is passed that the query does not use.");
+        }
+    }
+
+    /// <summary>The staff Provider directory has no Provider filter. It must still be a plain read, take no parameters, and not pretend to filter on a Provider.</summary>
+    private static void ValidateAcrossProviders(WarehouseQuery query)
+    {
+        string? violation = WarehouseSqlPolicy.FindViolation(query.Sql);
+        if (violation is not null)
+        {
+            throw new WarehouseQueryRejectedException(violation);
+        }
+
+        if (query.Parameters.Count > 0 || ProviderParameterUse().IsMatch(query.Sql))
+        {
+            throw new WarehouseQueryRejectedException("A query across Providers takes no parameters and does not use @provider_id.");
         }
     }
 

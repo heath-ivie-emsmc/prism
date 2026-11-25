@@ -9,6 +9,7 @@ public interface IPortalDirectory
     Task<IReadOnlyList<ProviderScope>> ResolveProvidersAsync(long portalUserId, CancellationToken cancellationToken);
 }
 
+
 /// <summary>
 /// The Providers a signed-in user may see. Read from the portal and remembered for a few minutes, never kept in the session cookie:
 /// a user can have thousands of Facilities, and a revoked assignment should stop working within minutes, not hours.

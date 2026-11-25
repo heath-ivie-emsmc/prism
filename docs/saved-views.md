@@ -59,6 +59,10 @@ the token from the address bar, and calls the redeem route. A token works once, 
 the view's Provider. Every failure is the same answer, so nothing reveals whether a token, view or address exists. The portal session carries no email claim, so
 the invited address is not matched to the person who opens the link: the link is the credential. The owner's share list shows who redeemed it and can remove them.
 
+## Pushed View Templates
+
+Internal Users can push a View Template to Providers (ADR 0009, `openspec/changes/view-templates`). A push keeps a snapshot of the template. Each user receives their own copy, owned by them and marked as created by "Prism team", the first time they open their Saved Views in an audience Provider after the push. That happens in `GET /api/v1/providers/{providerId}/saved-views`, before the list is built. The delivery is once per push, user and Provider, bounded to 10 copies per request, and a copy the user deletes is not delivered again. The copy's Provider and owner come from the route and the session, never from the push. Stopping a push stops future deliveries and never removes a copy. A name the user already has gets a number added, and their own view is not touched. Admin routes are under `/api/v1/admin/view-templates` and `/api/v1/admin/template-assignments`.
+
 ## Not built yet
 
 - Per-viewer Label overrides (the Reporting Division wording still comes from the Service Line defaults).

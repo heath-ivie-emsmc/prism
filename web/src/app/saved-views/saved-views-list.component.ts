@@ -16,6 +16,7 @@ interface Row {
   readonly name: string;
   readonly description: string | null;
   readonly owner: string | null;
+  readonly fromEms: boolean;
   readonly widgets: string;
   readonly updated: string;
 }
@@ -28,6 +29,7 @@ function toRow(view: SavedViewSummaryDto): Row {
     name: view.name,
     description: view.description,
     owner: view.ownerName,
+    fromEms: view.fromTemplate === true,
     widgets: `${view.widgetCount} ${view.widgetCount === 1 ? 'metric' : 'metrics'}`,
     updated: `Updated ${formatDate(view.updatedAt.slice(0, 10))}`,
   };
@@ -74,6 +76,7 @@ function toRow(view: SavedViewSummaryDto): Row {
                 @for (row of mine(); track row.id) {
                   <li>
                     <a [routerLink]="['/saved-views', row.id]">{{ row.name }}</a>
+                    @if (row.fromEms) { <ems-chip state="neutral" size="sm" icon="star">From EMS</ems-chip> }
                     <span class="views__meta">{{ row.widgets }} · {{ row.updated }}</span>
                     @if (row.description) { <span class="views__desc">{{ row.description }}</span> }
                   </li>
@@ -177,7 +180,7 @@ export class SavedViewsListComponent {
   private readonly api = inject(SavedViewsService);
 
   protected readonly crumbs = CRUMBS;
-  protected readonly canManage = computed(() => this.auth.me()?.permissions.includes('prism.views.manage') ?? false);
+  protected readonly canManage = computed(() => this.auth.can('prism.views.manage'));
 
   protected readonly resource = rxResource<SavedViewListDto | null, string | null>({
     params: () => this.filters.providerId(),

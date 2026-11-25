@@ -21,4 +21,11 @@ internal static partial class AuthLog
 
     [LoggerMessage(EventId = 1005, Level = LogLevel.Error, Message = "Sign-in failed unexpectedly ({ExceptionType}).")]
     public static partial void SignInFailed(ILogger logger, Exception exception, string exceptionType);
+
+    /// <summary>Counts and flags only. This is how a missing marker role is told apart from a portal that did not report it.</summary>
+    [LoggerMessage(EventId = 1007, Level = LogLevel.Information, Message = "Signed in: {RoleCount} portal roles, {KnownPermissionCount} Prism permissions from them, internal: {IsInternal}.")]
+    public static partial void SignedIn(ILogger logger, int roleCount, int knownPermissionCount, bool isInternal);
+
+    [LoggerMessage(EventId = 1008, Level = LogLevel.Debug, Message = "Roles the portal reported for the signed-in user: {Roles}.")]
+    public static partial void SignedInRoleNames(ILogger logger, string roles);
 }

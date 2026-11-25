@@ -21,7 +21,11 @@ public static class SavedViewsServiceCollectionExtensions
         return services;
     }
 
-    public static void MapSavedViewEndpoints(this RouteGroupBuilder v1) => SavedViewEndpoints.Map(v1);
+    public static void MapSavedViewEndpoints(this RouteGroupBuilder v1)
+    {
+        SavedViewEndpoints.Map(v1);
+        PushedViewEndpoints.Map(v1);
+    }
 }
 
 /// <summary>Refuses to start an enabled invitation setup that is missing what it needs.</summary>

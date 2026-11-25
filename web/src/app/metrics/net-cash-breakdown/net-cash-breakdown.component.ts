@@ -253,6 +253,8 @@ const percent = (value: number | null): string => (value === null ? '' : `${Math
       line-height: var(--ems-line-height-body);
     }
     .page__filters {
+      min-inline-size: 0;
+      max-inline-size: 100%;
       display: flex;
       flex-wrap: wrap;
       gap: 1rem;

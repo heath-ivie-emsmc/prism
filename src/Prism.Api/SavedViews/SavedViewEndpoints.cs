@@ -165,7 +165,7 @@ internal static class SavedViewEndpoints
     }
 
     /// <summary>The caller as the stores want them, or null when the Provider is not one they may read in full or the session has no portal user id.</summary>
-    private static async Task<SavedViewActor?> ActorAsync(HttpContext http, string providerId, ProviderAccess access, CancellationToken cancellationToken)
+    internal static async Task<SavedViewActor?> ActorAsync(HttpContext http, string providerId, ProviderAccess access, CancellationToken cancellationToken)
     {
         if (await access.ResolveAsync(http.User, providerId, cancellationToken) is not { } id
             || !long.TryParse(http.User.FindFirstValue(SessionTokenIssuer.PortalUserIdClaim), CultureInfo.InvariantCulture, out long portalUserId))
@@ -177,13 +177,15 @@ internal static class SavedViewEndpoints
         return new SavedViewActor(id, portalUserId, name.Length > 200 ? name[..200] : name);
     }
 
-    public static async Task<IResult> List(string providerId, HttpContext http, ProviderAccess access, ISavedViewStore store, CancellationToken cancellationToken)
+    public static async Task<IResult> List(string providerId, HttpContext http, ProviderAccess access, ISavedViewStore store, Prism.Application.Admin.ITemplateDelivery delivery, CancellationToken cancellationToken)
     {
         if (await ActorAsync(http, providerId, access, cancellationToken) is not { } actor)
         {
             return Results.NotFound();
         }
 
+        // Pushed View Templates arrive here, the first time the user opens their views after a push.
+        await delivery.DeliverPendingAsync(actor, cancellationToken);
         SavedViewLists lists = await store.ListAsync(actor, cancellationToken);
         return Results.Ok(new SavedViewListResponse([.. lists.Mine.Select(Summary)], [.. lists.Shared.Select(Summary)]));
     }
@@ -326,22 +328,25 @@ internal static class SavedViewEndpoints
         new(body.Name!.Trim(), string.IsNullOrWhiteSpace(body.Description) ? null : body.Description.Trim(), body.Layout!);
 
     /// <summary>A 400 naming the fields and codes at fault, never the values sent. Null when the body is acceptable.</summary>
-    private static IResult? Validate(SavedViewRequest? body)
+    private static IResult? Validate(SavedViewRequest? body) => ValidateContent(body?.Name, body?.Description, body?.Layout);
+
+    /// <summary>The same name, description and layout rules for a Saved View and a View Template. Codes only, never the values sent.</summary>
+    internal static IResult? ValidateContent(string? rawName, string? rawDescription, SavedViewLayout? layout)
     {
         Dictionary<string, string[]> errors = [];
-        string name = body?.Name?.Trim() ?? "";
+        string name = rawName?.Trim() ?? "";
         if (name.Length is 0 or > SavedViewLimits.MaxNameLength || name.Any(char.IsControl))
         {
             errors["name"] = ["invalid_name"];
         }
 
-        if (body?.Description is { } description && (description.Length > SavedViewLimits.MaxDescriptionLength || description.Any(c => char.IsControl(c) && c is not '\n' and not '\r')))
+        if (rawDescription is { } description && (description.Length > SavedViewLimits.MaxDescriptionLength || description.Any(c => char.IsControl(c) && c is not '\n' and not '\r')))
         {
             errors["description"] = ["invalid_description"];
         }
 
-        IReadOnlyList<string> layoutProblems = LayoutValidator.Validate(body?.Layout);
-        if (layoutProblems.Count == 0 && JsonSerializer.SerializeToUtf8Bytes(body!.Layout, LayoutJson).Length > SavedViewLimits.MaxLayoutBytes)
+        IReadOnlyList<string> layoutProblems = LayoutValidator.Validate(layout);
+        if (layoutProblems.Count == 0 && JsonSerializer.SerializeToUtf8Bytes(layout, LayoutJson).Length > SavedViewLimits.MaxLayoutBytes)
         {
             layoutProblems = ["layout_too_large"];
         }
@@ -383,7 +388,7 @@ internal static class SavedViewEndpoints
         return emails;
     }
 
-    private static SummaryResponse Summary(SavedViewSummary s) => new(s.Id, s.Name, s.Description, s.OwnerName, s.IsOwner, s.WidgetCount, s.UpdatedAt);
+    private static SummaryResponse Summary(SavedViewSummary s) => new(s.Id, s.Name, s.Description, s.OwnerName, s.IsOwner, s.WidgetCount, s.UpdatedAt) { FromTemplate = s.FromTemplate, IsHidden = s.IsHidden };
 
     private static SavedViewResponse Detail(SavedViewDetail v) => new(v.Id, v.Name, v.Description, v.OwnerName, v.IsOwner, v.Layout, v.Version.ToString(CultureInfo.InvariantCulture), v.UpdatedAt);
 }
@@ -405,7 +410,14 @@ public sealed record RedeemRequest(string? Token);
 
 public sealed record RedeemResponse(string ProviderId, int ViewId);
 
-public sealed record SummaryResponse(int Id, string Name, string? Description, string? OwnerName, bool IsOwner, int WidgetCount, DateTimeOffset UpdatedAt);
+public sealed record SummaryResponse(int Id, string Name, string? Description, string? OwnerName, bool IsOwner, int WidgetCount, DateTimeOffset UpdatedAt)
+{
+    /// <summary>True when the view arrived by a push from the Prism team, so the SPA can mark it.</summary>
+    public bool FromTemplate { get; init; }
+
+    /// <summary>True when the owner hid it. Only the settings list shows hidden views.</summary>
+    public bool IsHidden { get; init; }
+}
 
 public sealed record SavedViewListResponse(IReadOnlyList<SummaryResponse> Mine, IReadOnlyList<SummaryResponse> Shared);
 

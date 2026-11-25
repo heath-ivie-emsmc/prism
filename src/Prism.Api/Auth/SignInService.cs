@@ -10,6 +10,7 @@ public sealed class SignInService(
     IPortalDirectory directory,
     ISessionTokenIssuer issuer,
     IOptions<PrismAuthOptions> options,
+    IOptions<InternalAccessOptions> internalOptions,
     TimeProvider timeProvider)
 {
     private static readonly TimeSpan MinReplayWindow = TimeSpan.FromMinutes(3);
@@ -20,7 +21,7 @@ public sealed class SignInService(
     /// <exception cref="LoginTokenReplayedException">The token was already used.</exception>
     /// <exception cref="MissingRolesException">The user has no identity or no role for this application.</exception>
     /// <exception cref="SessionTooLargeException">The user's assignments do not fit in a session cookie.</exception>
-    public async Task<string> SignInAsync(string loginToken, CancellationToken cancellationToken)
+    public async Task<SignInResult> SignInAsync(string loginToken, CancellationToken cancellationToken)
     {
         ValidatedLoginToken token = await validator.ValidateAsync(loginToken, cancellationToken);
 
@@ -38,6 +39,13 @@ public sealed class SignInService(
             throw new MissingRolesException(!string.IsNullOrWhiteSpace(user.UserName), user.Roles);
         }
 
-        return issuer.Issue(user, permissions);
+        bool isInternal = InternalAccess.IsInternal(user.Groups, internalOptions.Value.GroupName, permissions);
+        // Customer permissions are not in the session: they come from the user's Customer Role in each Provider. The session keeps sign-in and the admin tiers.
+        IReadOnlyList<string> sessionPermissions = [.. permissions.Where(p => p == Permissions.App || p == Permissions.InternalUser || Permissions.AdminTiers.Contains(p))];
+        string session = issuer.Issue(user, InternalAccess.Filter(sessionPermissions, isInternal));
+        return new SignInResult(session, user.Roles, permissions.Count, isInternal);
     }
 }
+
+/// <summary>The session token, plus what the sign-in decided, for a log line of counts and flags.</summary>
+public sealed record SignInResult(string Session, IReadOnlyList<string> PortalRoles, int KnownPermissionCount, bool IsInternal);

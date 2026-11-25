@@ -1,7 +1,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, mockNoDeniedClaims, test } from './fixtures';
-import { REPORT_DIR, SCHEMES, SIZES, axeViolations, chooseNetCashView, layoutErrors, expandHelp, openDashboard, openDashboardWithNotice, openDashboardHelp, openViewHelp, openMetricView, openMetricViewNotFound, openNeedsAttention, openPayerDetail, openBreakdownPage, openProjection, openTransportsFullScreen, openPayerMixPage, openSavedViews, openView, SIX_METRICS, openMetricViewGroundOnly, openPaletteUnderGround, openEmptyDivisionView, openSixMetricView, CONTRIBUTION_METRICS, openInsightNewKinds } from './support';
+import { REPORT_DIR, SCHEMES, SIZES, axeViolations, chooseNetCashView, layoutErrors, expandHelp, openDashboard, openDashboardWithNotice, openDashboardHelp, openViewHelp, openMetricView, openMetricViewNotFound, openNeedsAttention, openPayerDetail, openBreakdownPage, openProjection, openTransportsFullScreen, openPayerMixPage, openSavedViews, openView, openAdmin, openAdminPersonas, openProviderUsers, openAdminCustomers, openSettings, openHome, openWelcome, openTemplates, openPushDialog, openTemplateEditor, SIX_METRICS, openMetricViewGroundOnly, openPaletteUnderGround, openEmptyDivisionView, openSixMetricView, CONTRIBUTION_METRICS, openInsightNewKinds } from './support';
 
 /**
  * Responsive layout and accessibility of the dashboard at every window size, light and dark. In a real browser it checks that:
@@ -49,6 +49,107 @@ for (const view of ['bar', 'table'] as const) {
       expect(errors, `layout errors at ${label} (screenshot: ${REPORT_DIR}/${label}.png)`).toEqual([]);
       expect(axe, `axe violations at ${label}`).toEqual([]);
     });
+  }
+}
+
+// The admin home, as an Internal User with every tier and with none. Every size, light and dark.
+const ADMIN_STATES = [
+  { name: 'all-tiers', open: (p: import('@playwright/test').Page) => openAdmin(p) },
+  { name: 'no-tier', open: (p: import('@playwright/test').Page) => openAdmin(p, []) },
+] as const;
+for (const state of ADMIN_STATES) {
+  for (const scheme of SCHEMES) {
+    for (const size of SIZES) {
+      test(`admin ${state.name}: ${size.name} ${size.width}px, ${scheme}`, async ({ page }) => {
+        await page.setViewportSize({ width: size.width, height: size.height });
+        await page.emulateMedia({ colorScheme: scheme });
+        await state.open(page);
+
+        mkdirSync(REPORT_DIR, { recursive: true });
+        const label = `admin-${state.name}-${size.name}-${size.width}-${scheme}`;
+        await page.screenshot({ path: join(REPORT_DIR, `${label}.png`), fullPage: true });
+
+        const { errors, issues } = await layoutErrors(page);
+        const axe = await axeViolations(page);
+        writeFileSync(join(REPORT_DIR, `${label}.json`), JSON.stringify({ size, scheme, issues, axe }, null, 2));
+
+        expect(errors, `layout errors at ${label} (screenshot: ${REPORT_DIR}/${label}.png)`).toEqual([]);
+        expect(axe, `axe violations at ${label}`).toEqual([]);
+      });
+    }
+  }
+}
+
+// The View Template pages: the list, the push dialog, the Provider chooser and the editor with figures. Every size, light and dark.
+const TEMPLATE_STATES = [
+  { name: 'list', open: (p: import('@playwright/test').Page) => openTemplates(p) },
+  { name: 'push', open: (p: import('@playwright/test').Page) => openPushDialog(p) },
+  { name: 'chooser', open: (p: import('@playwright/test').Page) => openTemplateEditor(p, 'new') },
+  { name: 'editor', open: (p: import('@playwright/test').Page) => openTemplateEditor(p, 1, '526') },
+] as const;
+for (const state of TEMPLATE_STATES) {
+  for (const scheme of SCHEMES) {
+    for (const size of SIZES) {
+      test(`templates ${state.name}: ${size.name} ${size.width}px, ${scheme}`, async ({ page }) => {
+        await page.setViewportSize({ width: size.width, height: size.height });
+        await page.emulateMedia({ colorScheme: scheme });
+        await state.open(page);
+
+        mkdirSync(REPORT_DIR, { recursive: true });
+        const label = `templates-${state.name}-${size.name}-${size.width}-${scheme}`;
+        await page.screenshot({ path: join(REPORT_DIR, `${label}.png`), fullPage: true });
+
+        const { errors, issues } = await layoutErrors(page);
+        const axe = await axeViolations(page);
+        writeFileSync(join(REPORT_DIR, `${label}.json`), JSON.stringify({ size, scheme, issues, axe }, null, 2));
+
+        expect(errors, `layout errors at ${label} (screenshot: ${REPORT_DIR}/${label}.png)`).toEqual([]);
+        expect(axe, `axe violations at ${label}`).toEqual([]);
+      });
+    }
+  }
+}
+
+// The home page as a Persona page and as the user's own copy, the first-login questions, and the Persona admin page. Every size, light and dark.
+const PERSONA_PAGE_STATES = [
+  { name: 'home-persona', open: (p: import('@playwright/test').Page) => openHome(p, 'persona') },
+  { name: 'home-custom', open: (p: import('@playwright/test').Page) => openHome(p, 'custom') },
+  { name: 'provider-users', open: (p: import('@playwright/test').Page) => openProviderUsers(p) },
+  { name: 'admin-customers', open: (p: import('@playwright/test').Page) => openAdminCustomers(p) },
+  { name: 'settings', open: (p: import('@playwright/test').Page) => openSettings(p) },
+  { name: 'welcome', open: (p: import('@playwright/test').Page) => openWelcome(p) },
+  { name: 'admin-personas', open: (p: import('@playwright/test').Page) => openAdminPersonas(p) },
+  {
+    name: 'admin-personas-forms',
+    open: async (p: import('@playwright/test').Page) => {
+      await openAdminPersonas(p);
+      await p.getByRole('button', { name: 'Add a Persona' }).click();
+      await p.getByRole('button', { name: 'Add a question' }).click();
+      await p.locator('#question-prompt').waitFor();
+      await p.waitForTimeout(200);
+    },
+  },
+] as const;
+for (const state of PERSONA_PAGE_STATES) {
+  for (const scheme of SCHEMES) {
+    for (const size of SIZES) {
+      test(`personas ${state.name}: ${size.name} ${size.width}px, ${scheme}`, async ({ page }) => {
+        await page.setViewportSize({ width: size.width, height: size.height });
+        await page.emulateMedia({ colorScheme: scheme });
+        await state.open(page);
+
+        mkdirSync(REPORT_DIR, { recursive: true });
+        const label = `personas-${state.name}-${size.name}-${size.width}-${scheme}`;
+        await page.screenshot({ path: join(REPORT_DIR, `${label}.png`), fullPage: true });
+
+        const { errors, issues } = await layoutErrors(page);
+        const axe = await axeViolations(page);
+        writeFileSync(join(REPORT_DIR, `${label}.json`), JSON.stringify({ size, scheme, issues, axe }, null, 2));
+
+        expect(errors, `layout errors at ${label} (screenshot: ${REPORT_DIR}/${label}.png)`).toEqual([]);
+        expect(axe, `axe violations at ${label}`).toEqual([]);
+      });
+    }
   }
 }
 

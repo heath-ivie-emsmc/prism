@@ -29,12 +29,24 @@ test.describe('payer mix drill-down', () => {
   test('clicking the bar for a payer group opens its breakdown too', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
     await openPayerMixPage(page);
-    const box = (await page.locator('app-payer-mix app-chart canvas').boundingBox())!;
+    const canvas = page.locator('app-payer-mix app-chart canvas');
+    await canvas.scrollIntoViewIfNeeded();
+    // The Division list loads after the chart and can move the page, so measure the bar again on every try.
+    const overBar = async (): Promise<{ x: number; y: number }> => {
+      const box = (await canvas.boundingBox())!;
+      return { x: box.x + box.width * 0.111, y: box.y + box.height - 60 };
+    };
 
     // Commercial is the first payer group. The pointer shows it is a link, and the click follows it.
-    await page.mouse.move(box.x + box.width * 0.111, box.y + box.height - 60);
-    await expect.poll(() => page.locator('app-payer-mix app-chart .chart').evaluate((el) => [...el.querySelectorAll<HTMLElement>('*')].some((n) => n.style.cursor === 'pointer'))).toBe(true);
-    await page.mouse.click(box.x + box.width * 0.111, box.y + box.height - 60);
+    await expect
+      .poll(async () => {
+        const at = await overBar();
+        await page.mouse.move(at.x, at.y);
+        return page.locator('app-payer-mix app-chart .chart').evaluate((el) => [...el.querySelectorAll<HTMLElement>('*')].some((n) => n.style.cursor === 'pointer'));
+      })
+      .toBe(true);
+    const at = await overBar();
+    await page.mouse.click(at.x, at.y);
 
     await expect(page).toHaveURL(DETAIL_URL);
   });

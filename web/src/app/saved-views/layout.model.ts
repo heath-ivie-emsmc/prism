@@ -93,6 +93,10 @@ export interface SavedViewSummaryDto {
   readonly isOwner: boolean;
   readonly widgetCount: number;
   readonly updatedAt: string;
+  /** True when the Prism team pushed this view. */
+  readonly fromTemplate?: boolean;
+  /** True when the owner hid it. Only the settings list includes hidden views. */
+  readonly isHidden?: boolean;
 }
 
 export interface SavedViewListDto {

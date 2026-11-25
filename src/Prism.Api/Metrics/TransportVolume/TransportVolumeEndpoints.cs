@@ -38,7 +38,7 @@ internal static class TransportVolumeEndpoints
         CancellationToken cancellationToken)
     {
         (string providerId, string? endPeriod, int? months, string? serviceLine, string? divisionKey) = (request.ProviderId, request.EndPeriod, request.Months, request.ServiceLine, request.Division);
-        if (await access.ResolveAsync(user, providerId, cancellationToken) is not { } id)
+        if (await access.ResolveAggregateAsync(user, providerId, cancellationToken) is not { } id)
         {
             return Results.NotFound();
         }

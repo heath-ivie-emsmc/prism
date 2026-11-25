@@ -7,7 +7,7 @@ public sealed record SavedViewActor(int ProviderId, long PortalUserId, string Us
 public sealed record SavedViewContent(string Name, string? Description, SavedViewLayout Layout);
 
 /// <summary>What the lists show about a view. No layout, so a list stays small.</summary>
-public sealed record SavedViewSummary(int Id, string Name, string? Description, string? OwnerName, bool IsOwner, int WidgetCount, DateTimeOffset UpdatedAt);
+public sealed record SavedViewSummary(int Id, string Name, string? Description, string? OwnerName, bool IsOwner, int WidgetCount, DateTimeOffset UpdatedAt, bool FromTemplate = false, bool IsHidden = false);
 
 /// <summary>A view to open. <paramref name="Version"/> is the concurrency token to send back as <c>If-Match</c>. <paramref name="IsOwner"/> is false for a recipient, who may not change it.</summary>
 public sealed record SavedViewDetail(int Id, string Name, string? Description, string? OwnerName, bool IsOwner, SavedViewLayout Layout, uint Version, DateTimeOffset UpdatedAt);
@@ -46,4 +46,10 @@ public interface ISavedViewStore
 
     /// <summary>Owner only. Removes the view with its shares and invitations. Returns false when there was no such view for this owner.</summary>
     Task<bool> DeleteAsync(SavedViewActor actor, int viewId, CancellationToken cancellationToken);
+
+    /// <summary>The caller's own views that arrived by a push, hidden ones included, so they can be restored. Bounded.</summary>
+    Task<IReadOnlyList<SavedViewSummary>> ListPushedAsync(SavedViewActor actor, CancellationToken cancellationToken);
+
+    /// <summary>Hides a pushed view from the caller's list, or brings it back. Only the owner's pushed views qualify: false for any other view.</summary>
+    Task<bool> SetHiddenAsync(SavedViewActor actor, int viewId, bool hidden, CancellationToken cancellationToken);
 }

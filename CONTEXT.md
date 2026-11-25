@@ -57,12 +57,12 @@ The scope a Metric actually applied, shown beside its figure: the Service Line a
 _Avoid_: Filter chip, scope label, tag
 
 **Label**:
-The display name a Provider sees for a renamable term, such as Reporting Division. It is set per Provider, with defaults by Service Line, and never changes the term's API key.
+The display name a user sees for a renamable term, such as Reporting Division. A Provider sets it for everyone, a user can override it for themselves, and the defaults come from Service Line. A user's own Label wins over the Provider's, which wins over the Service Line default. Exports use the Provider's name. A Label never changes the term's API key.
 _Avoid_: Alias, custom field name, translation
 
 **Saved View**:
 A dashboard layout a user arranged and saved: which Metrics, drawn which way, and where on a 12-column grid. It belongs to one user in one Provider and can be shared by emailed invitation with other users who have access to that Provider. It stores Metric keys and positions only, never figures, Labels or filter values, so it always shows the data its viewer is allowed to see.
-_Avoid_: Dashboard, report, template, layout (as a name for the thing a user keeps)
+_Avoid_: Dashboard, report, layout (as a name for the thing a user keeps). A layout that internal staff author is a View Template, not a Saved View.
 
 **Widget**:
 One Metric placed on a Saved View, with its presentation (line, column, table, tile and so on), its options and its place on the grid. The same Metric can appear twice.
@@ -72,3 +72,22 @@ _Avoid_: Card, tile (a tile is one presentation of a Widget), panel
 An emailed, time-limited, single-use link that gives one signed-in user read access to a Saved View. Only a hash of its token is stored.
 _Avoid_: Share link, invite code
 
+**Internal User**:
+A person marked internal by the `InternalUser` portal role (attached to the portal's internal group) who may enter the admin area. What they can do there depends on a separate tier permission (template author, template publisher, customer data viewer, admin manager). The group alone grants nothing, and a tier without the group grants nothing.
+_Avoid_: Admin, staff, employee, super user
+
+**View Template**:
+A layout of Widgets authored by Internal Users: Metric keys, presentations and grid positions, with no owner, no Provider and no figures. It reaches customers by an Assignment, either as a clone in a user's Saved Views or as a Persona's home page.
+_Avoid_: Saved View (that is a user's own), starter view, default dashboard
+
+**Assignment**:
+A decision to push a View Template to all Providers, to specific Providers, or to a Persona. It delivers a clone to each matching user the next time they sign in. Revoking it stops future deliveries and never changes copies already delivered.
+_Avoid_: Push, publication, rollout
+
+**Persona**:
+The kind of user someone is, such as air chief or finance, worked out from a short first-login questionnaire and stored once per user. It selects a home page by pointing to a View Template. Users are not shown their Persona on pages.
+_Avoid_: Role (that is a portal term), segment, user type
+
+**Customer Role**:
+A named set of permissions a customer user holds in one Provider, kept in Prism. The portal only decides who may sign in and which Providers a user belongs to. Roles that carry claim or PHI access are restricted: staff grant them, or a Provider admin may once staff allow it.
+_Avoid_: Portal role (that is a portal term), group, access level

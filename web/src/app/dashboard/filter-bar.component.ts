@@ -20,15 +20,20 @@ import { ServiceLineToggleComponent } from './service-line-toggle.component';
     </form>
   `,
   styles: `
+    :host {
+      display: block;
+      max-inline-size: 100%;
+    }
     .filters {
       display: flex;
       flex-wrap: wrap;
-      /* Top-aligned: the note under the division select makes its column taller, and must not move the controls beside it. */
-      align-items: flex-start;
+      /* Centered: the Service Line toggle is shorter than the selects, and a centered row keeps all three on one line. */
+      align-items: center;
       gap: 1rem;
     }
     .filters__select {
       min-width: 12rem;
+      max-inline-size: 100%;
     }
   `,
 })

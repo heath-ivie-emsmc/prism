@@ -2,7 +2,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { MatDialog } from '@angular/material/dialog';
 import { describe, expect, it } from 'vitest';
 import { axeViolations } from '../axe';
-import { BASE, bootstrap, settle } from '../saved-views/saved-views.testing';
+import { BASE, PROVIDER, bootstrap, settle } from '../saved-views/saved-views.testing';
 import { AttentionClaimDto, CLAIMS_PERMISSION } from './attention.service';
 import { NeedsAttentionComponent } from './needs-attention.component';
 
@@ -121,7 +121,7 @@ describe('NeedsAttentionComponent', () => {
   });
 
   it('explains, and asks for nothing, when the user lacks the claims permission', async () => {
-    const http = bootstrap({ me: { permissions: ['prism.app', 'prism.dashboard.view'] } });
+    const http = bootstrap({ me: { providers: [{ ...PROVIDER, permissions: ['prism.dashboard.view'] }] } });
     const fixture = TestBed.createComponent(NeedsAttentionComponent);
     await settle(fixture, http, {}, false);
 

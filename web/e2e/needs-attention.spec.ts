@@ -109,7 +109,7 @@ test.describe('needs attention', () => {
 
   test('a user without the claims permission is told so and no claim is requested', async ({ page }) => {
     await page.route('**/api/v1/me', (route) =>
-      route.fulfill({ json: { userName: 'jdoe', displayName: 'Jane Doe', providers: [{ id: '526', name: 'Seminole County Fire Department', facilityCount: 0 }], permissions: ['prism.app', 'prism.dashboard.view'] } }),
+      route.fulfill({ json: { userName: 'jdoe', displayName: 'Jane Doe', providers: [{ id: '526', name: 'Seminole County Fire Department', facilityCount: 0, permissions: ['prism.dashboard.view'] }], permissions: ['prism.app'] } }),
     );
     let asked = false;
     await page.route(/claims\/attention/, (route) => {
@@ -137,7 +137,7 @@ test.describe('needs attention', () => {
 
   test('the Insights card is absent without the permission', async ({ page }) => {
     await page.route('**/api/v1/me', (route) =>
-      route.fulfill({ json: { userName: 'jdoe', displayName: 'Jane Doe', providers: [{ id: '526', name: 'Seminole County Fire Department', facilityCount: 0 }], permissions: ['prism.app', 'prism.dashboard.view'] } }),
+      route.fulfill({ json: { userName: 'jdoe', displayName: 'Jane Doe', providers: [{ id: '526', name: 'Seminole County Fire Department', facilityCount: 0, permissions: ['prism.dashboard.view'] }], permissions: ['prism.app'] } }),
     );
     await page.goto('/dashboard/net-cash/fixed-wing?period=202610&line=air');
     await page.locator('app-what-changed .insight__headline').waitFor();

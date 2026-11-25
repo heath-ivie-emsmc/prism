@@ -7,7 +7,7 @@ using Prism.Application.Auth;
 namespace Prism.Infrastructure.Auth;
 
 /// <summary>Issues the HS256 session JWT that the API puts in an HttpOnly cookie.</summary>
-public sealed class SessionTokenIssuer(IOptions<PrismAuthOptions> options, TimeProvider timeProvider) : ISessionTokenIssuer
+public sealed class SessionTokenIssuer(IOptions<PrismAuthOptions> options, IOptions<InternalAccessOptions> internalOptions, TimeProvider timeProvider) : ISessionTokenIssuer
 {
     public const string Issuer = "prism-api";
     public const string Audience = "prism-web";
@@ -16,6 +16,9 @@ public sealed class SessionTokenIssuer(IOptions<PrismAuthOptions> options, TimeP
     public const string PortalUserIdClaim = "portal_user_id";
     public const string RolesClaim = "roles";
     public const string PermissionsClaim = "permissions";
+
+    /// <summary>"true" only for a user in the internal portal group. Set by the server at sign-in and never read from a request.</summary>
+    public const string InternalClaim = "internal";
 
     /// <summary>Browsers cap a cookie near 4096 bytes including its name and attributes.</summary>
     public const int MaxTokenLength = 3500;
@@ -35,6 +38,11 @@ public sealed class SessionTokenIssuer(IOptions<PrismAuthOptions> options, TimeP
             [RolesClaim] = user.Roles.ToArray(),
             [PermissionsClaim] = permissions.ToArray(),
         };
+        if (InternalAccess.IsInternal(user.Groups, internalOptions.Value.GroupName, permissions))
+        {
+            claims[InternalClaim] = "true";
+        }
+
         if (user.PortalUserId is { } portalId)
         {
             claims[PortalUserIdClaim] = portalId;

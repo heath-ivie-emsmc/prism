@@ -77,6 +77,10 @@ REVOKE CREATE ON SCHEMA public FROM PUBLIC;
 
 The login must not own any object (a table, view, sequence or schema it owns could be changed by it), and must not be a member of a role that can write. If a read replica or a read-only endpoint exists, point `ConnectionStrings:Warehouse` at it: the server then refuses writes no matter what the login can do.
 
+## The staff Provider list
+
+Internal Users find a Provider by name instead of by number. `WarehouseProviderList` reads `ods.provider.display_name` and the portal number (`ods.company.integration_id`) in one query, for `GET /api/v1/admin/providers`. It is the single exception to "every query filters on `@provider_id`": the query sets `AcrossProviders`, takes no parameters, still passes `WarehouseSqlPolicy`, and runs in the read-only transaction with the row cap. A guard test fails if any other file sets the flag. Portal numbers that more than one warehouse Provider claim are left out (the resolver treats them as unmapped), names starting with `zzz` (test accounts) are never offered, and the list is read in the background when the host starts and again about every 45 minutes, so a search never waits for it.
+
 ## Provider ids: portal and warehouse differ
 
 The Account Portal's company id and the warehouse's Provider id are different numberings, and they overlap: Mercy Flights is portal company 2193 and warehouse Provider 2274, while warehouse Provider 2193 is Providence Transportation.

@@ -78,6 +78,8 @@ export function analyzeLayout(): LayoutIssue[] {
       const top = raw.top + (raw.height - height) / 2;
       // Wholly off screen to the top or left: a skip link waiting for focus, not content.
       if (raw.bottom <= 0 || raw.right <= 0) continue;
+      // Material's outline draws a second copy of the label inside the notch only to measure the gap it cuts in the border: the one that is read is drawn elsewhere in the field.
+      if (el.closest('.mdc-notched-outline__notch')) continue;
       // A floated select label sits on the field border by design.
       if (el.closest('.ems-select__anchor--floated') && el.matches('label')) continue;
       boxes.push({ el, text, rect: new DOMRect(raw.left, top, raw.width, height) });

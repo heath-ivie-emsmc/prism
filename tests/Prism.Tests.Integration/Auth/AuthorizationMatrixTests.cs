@@ -86,7 +86,7 @@ public sealed class AuthorizationMatrixTests : IDisposable
     [Fact]
     public async Task A_signed_in_user_without_the_permission_is_refused_on_every_route_that_names_a_policy()
     {
-        // Today no route names a policy, so this loop is empty. It starts to bite the day a permission-gated route is added.
+        // Every route that names a policy (the claims routes, the Saved View write routes and the admin routes) is found at runtime and must refuse a user with only the sign-in permission.
         using CookieClient limited = ClientWithPermissions(Prism.Application.Auth.Permissions.App);
         List<(string Route, string[] Methods, string Policy)> gated = factory.Services.GetServices<EndpointDataSource>()
             .SelectMany(source => source.Endpoints)
@@ -118,65 +118,5 @@ public sealed class AuthorizationMatrixTests : IDisposable
         using HttpResponseMessage me = await limited.GetAsync("/api/v1/me");
 
         Assert.Equal(HttpStatusCode.OK, me.StatusCode);
-    }
-
-    [Theory]
-    [InlineData(true)]
-    [InlineData(false)]
-    public async Task The_dashboard_view_policy_needs_that_permission_in_the_session(bool granted)
-    {
-        var authorization = factory.Services.GetRequiredService<IAuthorizationService>();
-        var identity = new System.Security.Claims.ClaimsIdentity(
-            granted ? [new System.Security.Claims.Claim(Prism.Infrastructure.Auth.SessionTokenIssuer.PermissionsClaim, Prism.Application.Auth.Permissions.DashboardView)] : [],
-            "test");
-
-        AuthorizationResult result = await authorization.AuthorizeAsync(
-            new System.Security.Claims.ClaimsPrincipal(identity), Prism.Application.Auth.Permissions.DashboardView);
-
-        Assert.Equal(granted, result.Succeeded);
-    }
-
-    [Fact]
-    public async Task A_permission_claim_for_a_different_permission_does_not_satisfy_the_dashboard_view_policy()
-    {
-        var authorization = factory.Services.GetRequiredService<IAuthorizationService>();
-        var identity = new System.Security.Claims.ClaimsIdentity(
-            [new System.Security.Claims.Claim(Prism.Infrastructure.Auth.SessionTokenIssuer.PermissionsClaim, Prism.Application.Auth.Permissions.PhiView)],
-            "test");
-
-        AuthorizationResult result = await authorization.AuthorizeAsync(
-            new System.Security.Claims.ClaimsPrincipal(identity), Prism.Application.Auth.Permissions.DashboardView);
-
-        Assert.False(result.Succeeded);
-    }
-
-    [Theory]
-    [InlineData(true)]
-    [InlineData(false)]
-    public async Task The_claims_view_policy_needs_that_permission_in_the_session(bool granted)
-    {
-        var authorization = factory.Services.GetRequiredService<IAuthorizationService>();
-        var identity = new System.Security.Claims.ClaimsIdentity(
-            granted ? [new System.Security.Claims.Claim(Prism.Infrastructure.Auth.SessionTokenIssuer.PermissionsClaim, Prism.Application.Auth.Permissions.ClaimsView)] : [],
-            "test");
-
-        AuthorizationResult result = await authorization.AuthorizeAsync(
-            new System.Security.Claims.ClaimsPrincipal(identity), Prism.Application.Auth.Permissions.ClaimsView);
-
-        Assert.Equal(granted, result.Succeeded);
-    }
-
-    [Fact]
-    public async Task The_dashboard_view_permission_does_not_satisfy_the_claims_view_policy()
-    {
-        var authorization = factory.Services.GetRequiredService<IAuthorizationService>();
-        var identity = new System.Security.Claims.ClaimsIdentity(
-            [new System.Security.Claims.Claim(Prism.Infrastructure.Auth.SessionTokenIssuer.PermissionsClaim, Prism.Application.Auth.Permissions.DashboardView)],
-            "test");
-
-        AuthorizationResult result = await authorization.AuthorizeAsync(
-            new System.Security.Claims.ClaimsPrincipal(identity), Prism.Application.Auth.Permissions.ClaimsView);
-
-        Assert.False(result.Succeeded);
     }
 }

@@ -55,6 +55,18 @@ public sealed partial class WarehouseProtectionGuardTests
     // ---- Layer 4(a), test side: TestDatabaseGuard itself.
 
     [Fact]
+    public void Only_the_staff_provider_list_may_run_a_warehouse_query_that_names_no_provider()
+    {
+        // A query across Providers is the one exception to "every query filters on @provider_id". It must stay a single named place.
+        List<string> users = [.. AllFiles("src")
+            .Where(file => File.ReadAllText(file).Contains("AcrossProviders = true", StringComparison.Ordinal))
+            .Select(RepoFiles.Relative)
+            .Select(path => path.Replace('\\', '/'))];
+
+        Assert.Equal(["src/Prism.Infrastructure/Warehouse/WarehouseProviderList.cs"], users);
+    }
+
+    [Fact]
     public void The_test_database_guard_accepts_only_a_registered_local_container_database()
     {
         const string container = "Host=localhost;Port=55432;Database=guard_unit;Username=u;Password=p";

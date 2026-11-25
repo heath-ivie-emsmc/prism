@@ -1,0 +1,20 @@
+schema: spec-driven
+
+context: |
+  Prism is the RCM BI dashboard for ambulance and fire personnel: a .NET 11 API plus an Angular SPA over a
+  read-only Postgres data warehouse. Use the terms in CONTEXT.md exactly (Provider, Reporting Division, Service
+  Line, Transport, Metric, Metric Catalog, Data Through, Label, Saved View, Widget, Invitation, View Template,
+  Persona, Assignment, Internal User). The binding engineering rules are in AGENTS.md; architecture decisions are
+  in docs/adr/. Specs describe behavior, not implementation: no class names, no SQL, no file paths in
+  requirements. Baseline specs characterize what is implemented today; proposed behavior goes in
+  openspec/changes/ as deltas.
+
+rules:
+  specs:
+    - Every requirement uses SHALL or MUST and has at least one scenario in GIVEN/WHEN/THEN form.
+    - Requirement headers are identity keys; keep them stable.
+    - State denied and cross-Provider cases as scenarios, not only the success path.
+    - Where code and docs disagree, record an Open question in the spec's last section instead of a requirement.
+  proposal:
+    - List portal dependencies and open questions explicitly.
+    - Name which of AGENTS.md security sections 1 to 9 the change touches.

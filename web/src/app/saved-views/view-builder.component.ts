@@ -37,13 +37,13 @@ import {
 import { WidgetStatus } from './metric-widget.component';
 import { MetricPaletteComponent } from './metric-palette.component';
 import { PaletteDialogComponent } from './palette-dialog.component';
-import { LoadedView, SavedViewsService } from './saved-views.service';
+import { LoadedView } from './saved-views.service';
+import { VIEW_STORE } from './view-store';
 import { ConflictChoice, ConflictDialogComponent, NameDialogComponent } from './view-dialogs.component';
 import { ShareDialogComponent } from './share-dialog.component';
 import { SettingsChange, WidgetSettingsComponent } from './widget-settings.component';
 import { WidgetAction } from './widget-host.component';
 
-const MANAGE = 'prism.views.manage';
 const HISTORY_LIMIT = 50;
 
 type Mode = 'view' | 'edit';
@@ -88,9 +88,9 @@ interface Step {
 
       @if (notFound()) {
         <section class="builder__problem">
-          <h1 #pageHeading tabindex="-1">We couldn't find this view for your account</h1>
-          <p>It may have been deleted, or it's no longer shared with you.</p>
-          <button emsButton="filled" type="button" (click)="back()">Back to saved views</button>
+          <h1 #pageHeading tabindex="-1">We couldn't find this {{ api.noun }} for your account</h1>
+          <p>It may have been deleted{{ api.canShare ? ", or it's no longer shared with you" : '' }}.</p>
+          <button emsButton="filled" type="button" (click)="back()">Back to {{ api.sectionLabel.toLowerCase() }}</button>
         </section>
       } @else if (loadError() !== undefined) {
         <section class="builder__problem">
@@ -119,11 +119,11 @@ interface Step {
               <button emsButton="flat" type="button" (click)="discard()">Discard</button>
             } @else if (isOwner() && canManage()) {
               <button emsButton="filled" type="button" (click)="edit()">Edit</button>
-              <button emsButton="raised" type="button" (click)="share()">Share</button>
+              @if (api.canShare) { <button emsButton="raised" type="button" (click)="share()">Share</button> }
               <button emsButton="flat" fab color="neutral" type="button" aria-label="More actions" [matMenuTriggerFor]="more"><ems-icon name="more_vert" /></button>
               <mat-menu #more="matMenu">
                 <button mat-menu-item type="button" (click)="saveCopy()">Save a copy</button>
-                <button mat-menu-item type="button" (click)="remove()">Delete view</button>
+                <button mat-menu-item type="button" (click)="remove()">Delete {{ api.noun }}</button>
               </mat-menu>
             } @else if (canManage()) {
               <button emsButton="raised" type="button" (click)="saveCopy()">Save a copy</button>
@@ -357,7 +357,7 @@ interface Step {
 export class ViewBuilderComponent {
   private readonly auth = inject(AuthService);
   protected readonly filters = inject(DashboardFilterContext);
-  private readonly api = inject(SavedViewsService);
+  private readonly api = inject(VIEW_STORE);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly dialogs = inject(EmsDialog);
@@ -377,7 +377,7 @@ export class ViewBuilderComponent {
   private readonly routeId = toSignal(this.route.paramMap.pipe(map((p) => p.get('id'))), { initialValue: this.route.snapshot.paramMap.get('id') });
   protected readonly isNew = computed(() => this.routeId() === null);
   private readonly viewId = computed(() => (this.routeId() !== null && /^\d{1,9}$/u.test(this.routeId()!) ? Number(this.routeId()) : null));
-  protected readonly canManage = computed(() => this.auth.me()?.permissions.includes(MANAGE) ?? false);
+  protected readonly canManage = computed(() => this.auth.can(this.api.managePermission) || this.auth.adminPermissions().includes(this.api.managePermission));
   protected readonly docked = toSignal(inject(BreakpointObserver).observe('(min-width: 75rem)').pipe(map((s) => s.matches)), { initialValue: false });
   protected readonly gridMode = signal(true);
 
@@ -445,9 +445,9 @@ export class ViewBuilderComponent {
     return counts;
   });
   protected readonly canAddMore = computed(() => this.widgets().length < MAX_WIDGETS);
-  protected readonly heading = computed(() => (this.editing() ? this.name().trim() || 'New view' : this.name() || 'Saved view'));
+  protected readonly heading = computed(() => (this.editing() ? this.name().trim() || `New ${this.api.noun}` : this.name() || (this.api.noun === 'view' ? 'Saved view' : 'Template')));
   protected readonly settingsWidget = computed(() => this.widgets().find((w) => w.id === this.selectedId() && this.editing()) ?? null);
-  protected readonly crumbs = computed<EmsBreadcrumb[]>(() => [{ label: 'Saved views', route: '/saved-views' }, { label: this.heading() }]);
+  protected readonly crumbs = computed<EmsBreadcrumb[]>(() => [{ label: this.api.sectionLabel, link: this.api.basePath }, { label: this.heading() }]);
 
   // One announcement for a filter change, not one per widget.
   private readonly statuses = signal<ReadonlyMap<string, WidgetStatus>>(new Map());
@@ -467,7 +467,7 @@ export class ViewBuilderComponent {
       }
     });
     effect(() => {
-      this.titleService.setTitle(`${this.dirty() ? '• ' : ''}${this.heading()} · Saved views · Prism`);
+      this.titleService.setTitle(`${this.dirty() ? '• ' : ''}${this.heading()} · ${this.api.sectionLabel} · Prism`);
     });
     effect(() => {
       const key = `${this.filters.endPeriod()}|${this.filters.serviceLine()}`;
@@ -568,7 +568,7 @@ export class ViewBuilderComponent {
   private discardNow(): void {
     this.announcer.announce(announce.discarded(), 'polite');
     if (this.savedId() === null) {
-      void this.router.navigateByUrl('/saved-views');
+      void this.router.navigateByUrl(this.api.basePath);
       return;
     }
     const loaded = this.viewResource.hasValue() ? this.viewResource.value() : null;
@@ -588,7 +588,7 @@ export class ViewBuilderComponent {
   }
 
   protected back(): void {
-    void this.router.navigateByUrl('/saved-views');
+    void this.router.navigateByUrl(this.api.basePath);
   }
 
   protected reloadAll(): void {
@@ -1048,7 +1048,7 @@ export class ViewBuilderComponent {
     this.dirtyAnnounced = false;
     this.announcer.announce(announce.saved(loaded.view.name), 'polite');
     if (wasNew) {
-      void this.router.navigate(['/saved-views', loaded.view.id], { replaceUrl: true });
+      void this.router.navigate([this.api.basePath, loaded.view.id], { replaceUrl: true });
     }
   }
 
@@ -1104,7 +1104,7 @@ export class ViewBuilderComponent {
         this.baseline.set(this.snapshot());
         this.mode.set('view');
         this.announcer.announce(announce.saved(loaded.view.name), 'polite');
-        void this.router.navigate(['/saved-views', loaded.view.id]);
+        void this.router.navigate([this.api.basePath, loaded.view.id]);
       },
       error: (error: unknown) => this.saveFailed(error),
     });
@@ -1130,7 +1130,7 @@ export class ViewBuilderComponent {
         this.api.delete(providerId, id).subscribe(() => {
           this.announcer.announce(announce.deleted(this.name()), 'polite');
           this.baseline.set(this.snapshot());
-          void this.router.navigateByUrl('/saved-views');
+          void this.router.navigateByUrl(this.api.basePath);
         });
       }
     });

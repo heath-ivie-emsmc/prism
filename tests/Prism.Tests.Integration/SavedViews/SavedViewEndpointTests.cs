@@ -156,8 +156,8 @@ public sealed class SavedViewEndpointTests : IClassFixture<PostgresFixture>, IDi
     public async Task Anonymous_and_unpermitted_callers_are_refused()
     {
         using CookieClient anonymous = WithXsrf(factory.NewClient());
-        using CookieClient noDashboard = Client(31, Permissions.App);
-        using CookieClient reader = Client(31, ReadOnlyPermissions);
+        using CookieClient noDashboard = Client(35, Permissions.App);
+        using CookieClient reader = Client(36, ReadOnlyPermissions);
         using CookieClient owner = Client(31);
         (int id, _) = await CreateAsync(owner);
 

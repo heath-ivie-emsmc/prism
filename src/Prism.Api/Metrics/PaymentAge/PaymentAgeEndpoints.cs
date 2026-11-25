@@ -41,7 +41,7 @@ internal static class PaymentAgeEndpoints
         CancellationToken cancellationToken)
     {
         (string providerId, string? period, string? serviceLine, string? groupKey, string? divisionKey) = (request.ProviderId, request.Period, request.ServiceLine, request.Group, request.Division);
-        if (await access.ResolveAsync(user, providerId, cancellationToken) is not { } id)
+        if (await access.ResolveAggregateAsync(user, providerId, cancellationToken) is not { } id)
         {
             return Results.NotFound();
         }

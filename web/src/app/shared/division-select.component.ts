@@ -11,7 +11,7 @@ export const FOLLOWS_DASHBOARD = 'Set on the dashboard. This page follows that c
 /**
  * The one Reporting Division control, fed by the shared DashboardFilterContext (the Provider's real divisions from the warehouse).
  * `edit` (dashboard, saved views) lets the user choose; `follow` (pages that take the division from the address, `division`) shows the
- * chosen one off, with the reason. Both say plainly when the list is loading, failed or empty, and which Metrics ignore the choice.
+ * chosen one off, with the reason. Both say plainly when the list is loading, failed or empty.
  * Division names are warehouse text: they are bound as text only, never as HTML.
  */
 @Component({
@@ -23,6 +23,7 @@ export const FOLLOWS_DASHBOARD = 'Set on the dashboard. This page follows that c
       @if (mode() === 'edit' && !blocked()) {
         <ems-select
           class="division__select"
+          [style.inline-size]="width()"
           [label]="labels().reportingDivision"
           [options]="filters.divisionOptions()"
           [formControl]="filters.division"
@@ -30,7 +31,7 @@ export const FOLLOWS_DASHBOARD = 'Set on the dashboard. This page follows that c
           [attr.aria-describedby]="note() ? 'division-reason' : null"
         />
       } @else {
-        <ems-select class="division__select" [label]="labels().reportingDivision" [options]="shownOptions()" [formControl]="idle" [clearable]="false" aria-describedby="division-reason" />
+        <ems-select class="division__select" [style.inline-size]="width()" [label]="labels().reportingDivision" [options]="shownOptions()" [formControl]="idle" [clearable]="false" aria-describedby="division-reason" />
       }
       <!-- A persistent live region: a Service Line change that leaves the chosen division with no Transport is announced, not just drawn. -->
       <span class="cdk-visually-hidden" role="status">{{ outsideNote() }}</span>
@@ -47,13 +48,17 @@ export const FOLLOWS_DASHBOARD = 'Set on the dashboard. This page follows that c
   styles: `
     :host {
       display: block;
+      max-inline-size: min(100%, 28rem, calc(100vw - 3rem));
     }
     .division {
       display: grid;
       gap: 0.25rem;
     }
     .division__select {
-      min-width: 12rem;
+      /* Grows to its longest option (set inline from the option labels), and shrinks on a narrow screen instead of overflowing. */
+      display: block;
+      /* The container's width depends on this control, so a percentage alone would not cap it: also cap by the window, less the page padding. */
+      max-inline-size: min(100%, 28rem, calc(100vw - 3rem));
     }
     .division__reason {
       margin: 0;
@@ -93,19 +98,23 @@ export class DivisionSelectComponent {
     if (this.mode() === 'follow') return [this.followedOption()];
     return [{ value: ALL_DIVISIONS, label: this.labels().allReportingDivisions }];
   });
+  /**
+   * The width of the longest label the control can show (the options, the label and "all"), plus room for the chevron and padding, so nothing is cut off.
+   * `ch` is the width of a zero, so it slightly over-allows for narrow letters, which is the safe side.
+   */
+  protected readonly width = computed(() => {
+    const labels = [this.labels().reportingDivision, ...this.filters.divisionOptions().map((o) => o.label), ...this.shownOptions().map((o) => o.label)];
+    const longest = labels.reduce((max, label) => Math.max(max, label.length), 0);
+    return `calc(${Math.max(longest, 12)}ch + 4rem)`;
+  });
   protected readonly idle = new FormControl({ value: ALL_DIVISIONS, disabled: true }, { nonNullable: true });
 
-  protected readonly ignoredNote = computed(() => {
-    const names = this.ignoredBy();
-    if (names.length === 0) return '';
-    return `${this.labels().reportingDivision} does not change ${names.join(', ')}. ${names.length === 1 ? 'It shows' : 'They show'} ${this.labels().allReportingDivisions.toLowerCase()}.`;
-  });
   private readonly unavailableNote = computed(() => {
     const term = this.labels().reportingDivision;
     const names = this.ignoredBy();
     return names.length === 0 ? `Not applied yet: the metrics on this view can't be split by ${term}.` : `Not applied yet: ${names.join(', ')} can't be split by ${term}.`;
   });
-  /** The one line under the control: why it is off, or which Metrics ignore it. Empty when there is nothing to say. */
+  /** The one line under the control: why it is off, or a warning about the chosen value. Metrics that ignore the choice are not listed. Empty when there is nothing to say. */
   protected readonly note = computed(() => {
     const term = this.labels().reportingDivision;
     if (this.mode() === 'follow') return FOLLOWS_DASHBOARD;
@@ -113,7 +122,7 @@ export class DivisionSelectComponent {
     if (this.problem() === 'loading') return `Loading the list of ${term} values.`;
     if (this.problem() === 'error') return `The list of ${term} values could not be loaded.`;
     if (this.noDivisions()) return `No ${term} values were found for this Provider.`;
-    return this.outsideNote() || this.ignoredNote();
+    return this.outsideNote();
   });
   /**
    * Said when the Service Line changed and the chosen division has no Transport under the new one. The choice is kept (not silently reset), so the figures say why they are

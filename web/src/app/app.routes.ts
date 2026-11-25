@@ -1,5 +1,5 @@
 import { Routes } from '@angular/router';
-import { anonymousOnlyGuard, authGuard } from './auth/auth.guard';
+import { anonymousOnlyGuard, authGuard, entryGuard, internalGuard, onboardingGuard, welcomeGuard } from './auth/auth.guard';
 import { ShellComponent } from './shell/shell.component';
 import { unsavedChangesGuard } from './saved-views/unsaved-changes.guard';
 
@@ -13,11 +13,35 @@ export const routes: Routes = [
     path: '',
     component: ShellComponent,
     canActivate: [authGuard],
+    canActivateChild: [onboardingGuard],
     children: [
-      { path: '', pathMatch: 'full', redirectTo: 'dashboard' },
+      { path: '', pathMatch: 'full', canActivate: [entryGuard], children: [] },
       {
+        path: 'welcome',
+        title: 'Welcome · Prism',
+        canActivate: [welcomeGuard],
+        loadComponent: () => import('./personas/onboarding.component').then((m) => m.OnboardingComponent),
+      },
+      {
+        path: 'settings',
+        title: 'Settings · Prism',
+        loadComponent: () => import('./settings/settings.component').then((m) => m.SettingsComponent),
+      },
+      {
+        path: 'settings/users',
+        title: 'Users · Prism',
+        loadComponent: () => import('./customers/provider-users.component').then((m) => m.ProviderUsersComponent),
+      },
+      {
+        path: 'settings/questionnaire',
+        title: 'Your questions · Prism',
+        data: { retake: true },
+        loadComponent: () => import('./personas/onboarding.component').then((m) => m.OnboardingComponent),
+      },
+      {
+        // The home page: the user's Persona page, their own copy of it, or the standard dashboard.
         path: 'dashboard',
-        loadComponent: () => import('./dashboard/dashboard.component').then((m) => m.DashboardComponent),
+        loadComponent: () => import('./personas/home.component').then((m) => m.HomeComponent),
       },
       {
         path: 'dashboard/net-cash',
@@ -41,6 +65,28 @@ export const routes: Routes = [
         path: 'dashboard/needs-attention',
         title: 'Needs attention · Prism',
         loadComponent: () => import('./attention/needs-attention.component').then((m) => m.NeedsAttentionComponent),
+      },
+      {
+        // Every admin page sits inside one frame with the admin navigation.
+        path: 'admin',
+        canActivate: [internalGuard],
+        loadComponent: () => import('./admin/admin-layout.component').then((m) => m.AdminLayoutComponent),
+        children: [
+          { path: '', title: 'Admin · Prism', loadComponent: () => import('./admin/admin-home.component').then((m) => m.AdminHomeComponent) },
+          { path: 'customers', title: 'Customer users · Prism', loadComponent: () => import('./admin/admin-customers.component').then((m) => m.AdminCustomersComponent) },
+          { path: 'personas', title: 'Personas · Prism', loadComponent: () => import('./admin/admin-personas.component').then((m) => m.AdminPersonasComponent) },
+          { path: 'templates', title: 'View Templates · Prism', loadComponent: () => import('./admin/admin-templates.component').then((m) => m.AdminTemplatesComponent) },
+          {
+            path: 'templates/new',
+            canDeactivate: [unsavedChangesGuard],
+            loadComponent: () => import('./admin/template-editor.component').then((m) => m.TemplateEditorComponent),
+          },
+          {
+            path: 'templates/:id',
+            canDeactivate: [unsavedChangesGuard],
+            loadComponent: () => import('./admin/template-editor.component').then((m) => m.TemplateEditorComponent),
+          },
+        ],
       },
       {
         path: 'saved-views',

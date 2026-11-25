@@ -14,6 +14,12 @@ public sealed record WarehouseQuery(string Sql, IReadOnlyDictionary<string, obje
     /// </summary>
     public string Name { get; init; } = "unnamed";
 
+    /// <summary>
+    /// True only for the staff Provider directory, which lists every Provider and so has no Provider filter. Such a query takes no parameters, still passes the SQL policy
+    /// and the read-only transaction, and is limited to the one place that sets this (a guard test fails if any other code does). Never set from a request.
+    /// </summary>
+    public bool AcrossProviders { get; init; }
+
     /// <summary>The one parameter name every query uses for the Provider.</summary>
     public const string ProviderParameter = "provider_id";
 }

@@ -39,22 +39,12 @@ describe('FilterBarComponent Reporting Division note', () => {
     expect(root.querySelector('#division-reason')).toBeNull();
   });
 
-  it('names the metrics that ignore the Division, from the catalog', async () => {
+  it('says nothing about metrics that ignore the Division', async () => {
     const { fixture, root } = await create();
     fixture.componentInstance.ignored.set(['Net cash collected', 'Clean claim rate']);
     fixture.detectChanges();
 
-    const note = root.querySelector('#division-reason')!.textContent!;
-    expect(note).toContain('Net cash collected, Clean claim rate');
-    expect(note).toContain('They show');
-    expect([...root.querySelectorAll('ems-select')].at(-1)!.getAttribute('aria-describedby')).toBe('division-reason');
-  });
-
-  it('uses the singular for one metric', async () => {
-    const { fixture, root } = await create();
-    fixture.componentInstance.ignored.set(['Clean claim rate']);
-    fixture.detectChanges();
-    expect(root.querySelector('#division-reason')!.textContent).toContain('It shows');
+    expect(root.querySelector('#division-reason')).toBeNull();
   });
 
   it('turns the control off with the reason when no metric can use it', async () => {

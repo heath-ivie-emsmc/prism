@@ -18,9 +18,31 @@ public sealed class SessionAndAppTokenTests
 
     private readonly string sessionKey = PortalTestKeys.NewSessionKeyBase64();
 
-    private SessionTokenIssuer Issuer(int lifetimeMinutes = 480) => new(
+    private SessionTokenIssuer Issuer(int lifetimeMinutes = 480, string internalGroup = "") => new(
         Options.Create(new PrismAuthOptions { SessionSigningKeyBase64 = sessionKey, SessionLifetimeMinutes = lifetimeMinutes }),
+        Options.Create(new InternalAccessOptions { GroupName = internalGroup }),
         new TestTimeProvider(Now));
+
+    private static bool HasInternalClaim(string token) =>
+        new JsonWebTokenHandler().ReadJsonWebToken(token).TryGetClaim(SessionTokenIssuer.InternalClaim, out _);
+
+    [Fact]
+    public void Session_token_marks_a_member_of_the_internal_group_as_internal()
+    {
+        PortalUser member = User with { Groups = ["Other", "emsbilling.com users"] };
+
+        Assert.True(HasInternalClaim(Issuer(internalGroup: "EMSbilling.com Users").Issue(member, [Permissions.App])));
+    }
+
+    [Fact]
+    public void Session_token_has_no_internal_claim_outside_the_group_or_when_no_group_is_configured()
+    {
+        PortalUser member = User with { Groups = ["EMSbilling.com Users"] };
+
+        Assert.False(HasInternalClaim(Issuer(internalGroup: "EMSbilling.com Users").Issue(User, [Permissions.App])));
+        Assert.False(HasInternalClaim(Issuer(internalGroup: "").Issue(member, [Permissions.App])));
+        Assert.False(HasInternalClaim(Issuer(internalGroup: "  ").Issue(member, [Permissions.App])));
+    }
 
     [Fact]
     public async Task Session_token_carries_identity_permissions_and_providers_and_verifies_with_the_session_key()

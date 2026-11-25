@@ -30,7 +30,7 @@ internal static class MetricRequestResolver
         ServiceLineFilter defaultLine,
         CancellationToken cancellationToken)
     {
-        if (await access.ResolveAsync(user, values.ProviderId, cancellationToken) is not { } id)
+        if (await access.ResolveAggregateAsync(user, values.ProviderId, cancellationToken) is not { } id)
         {
             return (null, Results.NotFound());
         }

@@ -196,6 +196,8 @@ const words = (key: string): string => {
       color: var(--ems-text-link, inherit);
     }
     .page__filters {
+      min-inline-size: 0;
+      max-inline-size: 100%;
       display: flex;
       flex-wrap: wrap;
       gap: 1rem;

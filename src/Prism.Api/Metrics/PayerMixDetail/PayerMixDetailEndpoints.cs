@@ -36,7 +36,7 @@ internal static class PayerMixDetailEndpoints
         IPayerMixDetailMetric metric,
         CancellationToken cancellationToken)
     {
-        if (await access.ResolveAsync(user, request.ProviderId, cancellationToken) is not { } id)
+        if (await access.ResolveAggregateAsync(user, request.ProviderId, cancellationToken) is not { } id)
         {
             return Results.NotFound();
         }

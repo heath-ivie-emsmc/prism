@@ -1,9 +1,82 @@
 import { expect, test } from './fixtures';
 import type { Page } from '@playwright/test';
-import { axeViolations, chooseNetCashView, expandHelp, layoutErrors, openDashboard, openDashboardWithNotice, openDashboardHelp, openViewHelp, openMetricView, openMetricViewNotFound, openNeedsAttention, openBreakdownPage, openPayerDetail, openPayerMixPage, openProjection, openSavedViews, openTransportsFullScreen, openView, SIX_METRICS, openMetricViewGroundOnly, openPaletteUnderGround, openEmptyDivisionView, openSixMetricView, CONTRIBUTION_METRICS, openInsightNewKinds } from './support';
+import { axeViolations, chooseNetCashView, expandHelp, layoutErrors, openDashboard, openDashboardWithNotice, openDashboardHelp, openViewHelp, openMetricView, openMetricViewNotFound, openNeedsAttention, openBreakdownPage, openPayerDetail, openPayerMixPage, openProjection, openSavedViews, openAdmin, openAdminPersonas, openProviderUsers, openAdminCustomers, openSettings, openHome, openWelcome, openTemplates, openPushDialog, openTemplateEditor, openTransportsFullScreen, openView, SIX_METRICS, openMetricViewGroundOnly, openPaletteUnderGround, openEmptyDivisionView, openSixMetricView, CONTRIBUTION_METRICS, openInsightNewKinds } from './support';
 
 /** WCAG 2.2 AA beyond the static page: other states, other pages, user settings. Every test also gates on axe. */
 test.describe('accessibility', () => {
+  test('the template pages have a title or heading, one main landmark and no axe violations, in forced colors and at 200% text', async ({ page }) => {
+    for (const open of [() => openTemplates(page), () => openTemplateEditor(page, 'new'), () => openTemplateEditor(page, 1, '526')]) {
+      await open();
+      await expect(page.locator('main').first()).toBeVisible();
+      expect(await axeViolations(page)).toEqual([]);
+      await page.emulateMedia({ forcedColors: 'active' });
+      expect((await layoutErrors(page)).errors).toEqual([]);
+      await page.emulateMedia({ forcedColors: 'none' });
+      await page.addStyleTag({ content: 'html { font-size: 200% !important; }' });
+      await page.waitForTimeout(300);
+      expect((await layoutErrors(page)).errors).toEqual([]);
+      expect(await axeViolations(page)).toEqual([]);
+      await page.unroute('**/api/v1/me');
+    }
+  });
+
+  test('the push dialog names its fields, announces problems, and has no axe violations at 200% text', async ({ page }) => {
+    await openPushDialog(page);
+    const dialog = page.getByRole('dialog');
+
+    await dialog.getByRole('button', { name: 'Review' }).click();
+
+    await expect(dialog.getByRole('alert')).toContainText('Pick a Provider');
+    await expect(dialog.getByRole('combobox', { name: /Provider/ }).first()).toBeVisible();
+    await expect(dialog.getByRole('radio', { name: 'One Provider' })).toBeChecked();
+    await page.addStyleTag({ content: 'html { font-size: 200% !important; }' });
+    await page.waitForTimeout(300);
+    expect(await axeViolations(page)).toEqual([]);
+  });
+
+  test('the admin home has a title, one h1, a main landmark and no axe violations, in forced colors and at 200% text', async ({ page }) => {
+    await openAdmin(page);
+
+    await expect(page).toHaveTitle(/Admin/);
+    await expect(page.locator('h1')).toHaveCount(1);
+    await expect(page.locator('main')).toHaveCount(1);
+    expect(await axeViolations(page)).toEqual([]);
+
+    await page.emulateMedia({ forcedColors: 'active' });
+    expect((await layoutErrors(page)).errors).toEqual([]);
+    await page.emulateMedia({ forcedColors: 'none' });
+    await page.addStyleTag({ content: 'html { font-size: 200% !important; }' });
+    await page.waitForTimeout(300);
+    expect((await layoutErrors(page)).errors).toEqual([]);
+    expect(await axeViolations(page)).toEqual([]);
+  });
+
+  for (const [name, title, open] of [
+    ['the first-login questions', /Welcome/, openWelcome],
+    ['the Persona home page', /Prism/, (p: Page) => openHome(p, 'persona')],
+    ['the Persona admin page', /Personas/, openAdminPersonas],
+    ['the settings page', /Settings/, openSettings],
+    ['the Provider users page', /Users/, openProviderUsers],
+    ['the staff customer users page', /Customer users/, openAdminCustomers],
+  ] as const) {
+    test(`${name} has a title, one h1, a main landmark and no axe violations, in forced colors and at 200% text`, async ({ page }) => {
+      await open(page);
+
+      await expect(page).toHaveTitle(title);
+      await expect(page.locator('h1')).toHaveCount(1);
+      await expect(page.locator('main')).toHaveCount(1);
+      expect(await axeViolations(page)).toEqual([]);
+
+      await page.emulateMedia({ forcedColors: 'active' });
+      expect((await layoutErrors(page)).errors).toEqual([]);
+      await page.emulateMedia({ forcedColors: 'none' });
+      await page.addStyleTag({ content: 'html { font-size: 200% !important; }' });
+      await page.waitForTimeout(300);
+      expect((await layoutErrors(page)).errors).toEqual([]);
+      expect(await axeViolations(page)).toEqual([]);
+    });
+  }
+
   test('the page has a title, a language, one h1 and the landmarks screen readers jump between', async ({ page }) => {
     await openDashboard(page);
 

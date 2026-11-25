@@ -37,8 +37,14 @@ export class DashboardFilterContext {
   /** The first Provider name in the session, exactly as the token carries it. The mock name shows only when the user has no Provider. */
   readonly providerName = computed(() => this.auth.activeProvider()?.name || this.context().providerName);
 
-  /** The Provider whose data is shown: the first one the user was assigned. A switcher comes later. The API checks it again. */
-  readonly providerId = computed(() => this.auth.activeProviderId());
+  /**
+   * Set only while an Internal User lays out a View Template: the Provider whose figures are drawn, chosen by number. Cleared when they leave.
+   * The API checks it again: it only works for the customer data viewer tier, on aggregate routes, and each use is audited.
+   */
+  readonly previewProviderId = signal<string | null>(null);
+
+  /** The Provider whose data is shown: the preview Provider when an Internal User chose one, otherwise the first one the user was assigned. The API checks it again. */
+  readonly providerId = computed(() => this.previewProviderId() ?? this.auth.activeProviderId());
 
   private readonly freshness = inject(DataFreshnessService);
 

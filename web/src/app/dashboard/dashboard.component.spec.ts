@@ -49,7 +49,7 @@ describe('DashboardComponent header', () => {
     entry('transport_volume', 'Transports and loaded miles', 'supported'),
     entry('clean_claim_rate', 'Clean claim rate', 'none'),
   ];
-  const PROVIDER = { providers: [{ id: '526', name: 'Seminole County Fire Department', facilityCount: 0 }] };
+  const PROVIDER = { providers: [{ id: '526', name: 'Seminole County Fire Department', facilityCount: 0, permissions: ['prism.dashboard.view'] }] };
 
   const VOLUME = {
     metric: { key: 'transport_volume', name: 'Transports and loaded miles', description: 'd', unit: 'transports' },
@@ -513,5 +513,17 @@ describe('DashboardComponent header', () => {
     press('ArrowLeft');
     fixture.detectChanges();
     expect(radios(root).map((r) => r.getAttribute('aria-checked'))).toEqual(['false', 'false', 'true']);
+  });
+
+  it('says to ask an administrator when the role in this Provider does not allow the dashboard', async () => {
+    const { root } = await create({ providers: [{ id: '526', name: 'Seminole County Fire Department', facilityCount: 0, permissions: [] }] });
+
+    expect(root.querySelector('.dashboard__no-access')?.textContent).toContain('Ask your administrator');
+  });
+
+  it('shows no such notice to a user who may see the dashboard', async () => {
+    const { root } = await create(PROVIDER);
+
+    expect(root.querySelector('.dashboard__no-access')).toBeNull();
   });
 });

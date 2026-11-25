@@ -33,7 +33,7 @@ internal static class CatalogEndpoints
 
     public static async Task<IResult> Catalog(string providerId, ClaimsPrincipal user, ProviderAccess access, CancellationToken cancellationToken)
     {
-        if (await access.ResolveAsync(user, providerId, cancellationToken) is null)
+        if (await access.ResolveAggregateAsync(user, providerId, cancellationToken) is null)
         {
             return Results.NotFound();
         }

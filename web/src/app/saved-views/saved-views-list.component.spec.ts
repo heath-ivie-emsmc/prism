@@ -2,7 +2,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { describe, expect, it } from 'vitest';
 import { axeViolations } from '../axe';
 import { SavedViewsListComponent } from './saved-views-list.component';
-import { BASE, bootstrap, settle } from './saved-views.testing';
+import { BASE, PROVIDER, bootstrap, settle } from './saved-views.testing';
 
 const SUMMARY = { id: 5, name: 'Cash overview', description: 'Monthly look', ownerName: 'jdoe', isOwner: true, widgetCount: 1, updatedAt: '2026-11-22T10:00:00Z' };
 const THEIRS = { ...SUMMARY, id: 6, name: 'Shared cash', description: null, ownerName: 'asmith', isOwner: false, widgetCount: 3 };
@@ -43,7 +43,7 @@ describe('SavedViewsListComponent', () => {
   });
 
   it('hides Create a view from someone who may only read', async () => {
-    const { root } = await create({ mine: [], shared: [THEIRS] }, { permissions: ['prism.app', 'prism.dashboard.view'] });
+    const { root } = await create({ mine: [], shared: [THEIRS] }, { providers: [{ ...PROVIDER, permissions: ['prism.dashboard.view'] }] });
 
     expect(root.querySelector('a[href="/saved-views/new"]')).toBeNull();
   });

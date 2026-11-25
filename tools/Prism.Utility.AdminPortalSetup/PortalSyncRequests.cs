@@ -13,7 +13,7 @@ internal static class PortalSyncRequests
     /// <summary>Body for POST app/permissions. Every Prism permission is top level (a flat list in the portal UI).</summary>
     public static JsonObject PermissionsBody() => new()
     {
-        ["permissions"] = new JsonArray(Permissions.All.Select(permission => (JsonNode)new JsonObject
+        ["permissions"] = new JsonArray(Permissions.Published.Select(permission => (JsonNode)new JsonObject
         {
             ["id"] = permission.Id,
             ["name"] = permission.Name,

@@ -8,7 +8,7 @@ import { BehaviorSubject, of } from 'rxjs';
 import { describe, expect, it, vi } from 'vitest';
 import { axeViolations } from '../axe';
 import { DashboardFilterContext } from '../dashboard/dashboard-filter-context';
-import { BASE, METRIC_REPLIES, MANAGE, answer, bootstrap, settle, viewDto } from './saved-views.testing';
+import { BASE, METRIC_REPLIES, MANAGE, PROVIDER, answer, bootstrap, settle, viewDto } from './saved-views.testing';
 import { ViewBuilderComponent } from './view-builder.component';
 
 const VIEWS = `${BASE}/saved-views`;
@@ -28,7 +28,8 @@ async function open(options: { id?: string | null; permissions?: string[]; view?
   const params = new BehaviorSubject(convertToParamMap(options.id ? { id: options.id } : {}));
   const dialogs = { confirm: vi.fn(() => of(options.confirm ?? true)), open: vi.fn(() => ({ afterClosed: () => of(options.closed) })) };
   const http = bootstrap({
-    me: { permissions: options.permissions ?? ['prism.app', 'prism.dashboard.view', MANAGE] },
+    // `permissions` here are the ones the user holds in the Provider (their Customer Role), not the session's.
+    me: { providers: [{ ...PROVIDER, permissions: options.permissions ?? ['prism.dashboard.view', MANAGE] }] },
     providers: [
       { provide: ActivatedRoute, useValue: { paramMap: params, snapshot: { paramMap: params.value, queryParamMap: convertToParamMap({}) } } },
       { provide: BreakpointObserver, useValue: { observe: () => of({ matches: options.docked ?? true, breakpoints: {} }) } },
@@ -365,7 +366,7 @@ describe('ViewBuilderComponent: a view shared with me', () => {
   });
 
   it('offers no copy to someone who may not create views', async () => {
-    const h = await open({ id: '5', view: shared, permissions: ['prism.app', 'prism.dashboard.view'] });
+    const h = await open({ id: '5', view: shared, permissions: ['prism.dashboard.view'] });
 
     const actions = Array.from(h.root.querySelectorAll('.builder__actions button')).map((b) => b.textContent?.trim());
     expect(actions).toEqual(['Download image']);

@@ -1,11 +1,12 @@
 import { test as base, expect, type Page } from '@playwright/test';
 
 /** What `GET /api/v1/me` returns for a signed-in user with one Provider. Used only when no real session is supplied. */
-const MOCK_ME = {
+export const MOCK_ME = {
   userName: 'jdoe',
   displayName: 'Jane Doe',
-  providers: [{ id: '526', name: 'Seminole County Fire Department', facilityCount: 3 }],
-  permissions: ['prism.app', 'prism.dashboard.view', 'prism.claims.view', 'prism.views.manage'],
+  // What a user may do comes from their Customer Role in each Provider, not from the session.
+  providers: [{ id: '526', name: 'Seminole County Fire Department', facilityCount: 3, permissions: ['prism.dashboard.view', 'prism.claims.view', 'prism.views.manage', 'prism.settings.manage', 'prism.users.manage'] }],
+  permissions: ['prism.app'],
 };
 
 /** The Data Through date every mocked Metric answers with, unless a test overrides the route. */
@@ -857,6 +858,149 @@ async function mockClaims(page: Page): Promise<void> {
   });
 }
 
+
+type StoredTemplate = { id: number; name: string; description: string | null; isPublished: boolean; layout: unknown; version: number; updatedAt: string };
+type StoredPush = { id: number; viewTemplateId: number; scope: { kind: string; providerId: number | null }; name: string; widgetCount: number; deliveredCount: number; createdAt: string; revokedAt: string | null };
+
+/** The admin View Template routes, backed by a small in-memory store. A test overrides a route for a failure case. */
+async function mockAdminTemplates(page: import('@playwright/test').Page): Promise<void> {
+  const base = { description: null, updatedAt: '2026-11-22T10:00:00Z' };
+  const templates = new Map<number, StoredTemplate>([
+    [1, { ...base, id: 1, name: 'Finance start', description: 'For the billing team', isPublished: true, version: 1, layout: { version: 1, density: 'comfortable', widgets: [w('w1', 'net_collections', 'line', 0, 0, 6, 3), w('w2', 'clean_claim_rate', 'tile', 6, 0, 3, 2)] } }],
+    [2, { ...base, id: 2, name: 'Chief start', isPublished: false, version: 1, layout: { version: 1, density: 'comfortable', widgets: [w('w1', 'transport_volume', 'tile', 0, 0, 3, 2)] } }],
+  ]);
+  const pushes: StoredPush[] = [
+    { id: 1, viewTemplateId: 1, scope: { kind: 'Provider', providerId: 526 }, name: 'Finance start', widgetCount: 2, deliveredCount: 3, createdAt: '2026-11-22T10:00:00Z', revokedAt: null },
+  ];
+  let next = 3;
+  const widgets = (t: StoredTemplate) => (t.layout as { widgets: unknown[] }).widgets.length;
+  const etag = (t: StoredTemplate) => ({ ETag: `"${t.version}"` });
+  const body = (t: StoredTemplate) => ({ ...t, version: String(t.version) });
+  const summary = (t: StoredTemplate) => ({ id: t.id, name: t.name, description: t.description, isPublished: t.isPublished, widgetCount: widgets(t), updatedAt: t.updatedAt });
+
+  await page.route(/\/api\/v1\/admin\/view-templates(\?.*)?$/, async (route) => {
+    const request = route.request();
+    if (request.method() === 'GET') return route.fulfill({ json: { templates: [...templates.values()].map(summary) } });
+    const input = request.postDataJSON() as { name: string; description: string | null; layout: unknown };
+    const created: StoredTemplate = { id: next++, name: input.name, description: input.description, isPublished: false, layout: input.layout, version: 1, updatedAt: new Date().toISOString() };
+    templates.set(created.id, created);
+    return route.fulfill({ status: 201, headers: etag(created), json: body(created) });
+  });
+  await page.route(/\/api\/v1\/admin\/view-templates\/(\d+)$/, async (route) => {
+    const request = route.request();
+    const id = Number(request.url().match(/view-templates\/(\d+)$/)![1]);
+    const template = templates.get(id);
+    if (!template) return route.fulfill({ status: 404, json: { title: 'Not Found' } });
+    if (request.method() === 'GET') return route.fulfill({ headers: etag(template), json: body(template) });
+    if (request.method() === 'DELETE') {
+      templates.delete(id);
+      return route.fulfill({ status: 204 });
+    }
+    if (request.headers()['if-match'] !== `"${template.version}"`) return route.fulfill({ status: 412, json: { title: 'This template was saved by someone else since you opened it.' } });
+    const input = request.postDataJSON() as { name: string; description: string | null; layout: unknown };
+    Object.assign(template, { name: input.name, description: input.description, layout: input.layout, version: template.version + 1 });
+    return route.fulfill({ headers: etag(template), json: body(template) });
+  });
+  await page.route(/\/api\/v1\/admin\/view-templates\/(\d+)\/(publish|unpublish)$/, async (route) => {
+    const [, id, action] = /view-templates\/(\d+)\/(publish|unpublish)$/.exec(route.request().url())!;
+    const template = templates.get(Number(id))!;
+    template.isPublished = action === 'publish';
+    return route.fulfill({ json: body(template) });
+  });
+  await page.route(/\/api\/v1\/admin\/view-templates\/(\d+)\/assignments\/preview$/, async (route) => {
+    const id = Number(route.request().url().match(/view-templates\/(\d+)\//)![1]);
+    const template = templates.get(id)!;
+    const scope = route.request().postDataJSON() as { kind: string; providerId: number | null };
+    return route.fulfill({ json: { viewTemplateId: id, templateName: template.name, widgetCount: widgets(template), scope, providerCount: scope.kind === 'All' ? null : 1 } });
+  });
+  await page.route(/\/api\/v1\/admin\/view-templates\/(\d+)\/assignments$/, async (route) => {
+    const request = route.request();
+    const id = Number(request.url().match(/view-templates\/(\d+)\//)![1]);
+    if (request.method() === 'GET') return route.fulfill({ json: { assignments: pushes.filter((p) => p.viewTemplateId === id) } });
+    const input = request.postDataJSON() as { scope: { kind: string; providerId: number | null }; confirmedWidgetCount: number };
+    const template = templates.get(id)!;
+    if (input.confirmedWidgetCount !== widgets(template)) return route.fulfill({ status: 409, json: { title: 'The template changed since you previewed it. Preview it again.' } });
+    const created: StoredPush = { id: next++, viewTemplateId: id, scope: input.scope, name: template.name, widgetCount: widgets(template), deliveredCount: 0, createdAt: new Date().toISOString(), revokedAt: null };
+    pushes.unshift(created);
+    return route.fulfill({ status: 201, json: created });
+  });
+  await page.route(/\/api\/v1\/admin\/template-assignments\/(\d+)$/, async (route) => {
+    const id = Number(route.request().url().match(/template-assignments\/(\d+)$/)![1]);
+    const push = pushes.find((p) => p.id === id)!;
+    push.revokedAt ??= new Date().toISOString();
+    return route.fulfill({ json: push });
+  });
+}
+
+
+/** What the mocked home page returns. A test changes it, and a layout in it is the Persona's template. */
+export const PERSONA_LAYOUT = {
+  version: 1,
+  density: 'comfortable',
+  widgets: [w('w1', 'net_collections', 'line', 0, 0, 6, 3), w('w2', 'clean_claim_rate', 'tile', 6, 0, 3, 2)],
+};
+
+export const ONBOARDING_QUESTIONS = {
+  questions: [
+    { id: 1, prompt: 'What best describes your role?', allowsMultiple: false, options: [{ id: 10, label: 'I run an air program' }, { id: 11, label: 'I handle billing and collections' }] },
+    { id: 2, prompt: 'Which lines of service do you support?', allowsMultiple: true, options: [{ id: 20, label: 'Air' }, { id: 21, label: 'Ground' }, { id: 22, label: 'Interfacility' }, { id: 23, label: 'Fire billing' }] },
+  ],
+};
+
+/** The home page, the first-login questions, and the admin Persona and question routes. The home page starts as the standard dashboard. */
+async function mockPersonas(page: import('@playwright/test').Page): Promise<void> {
+  await page.route(/\/api\/v1\/providers\/[^/]+\/home(\?.*)?$/, (route) => route.fulfill({ json: { source: 'default', layout: null, savedViewId: null } }));
+  await page.route('**/api/v1/me/onboarding', async (route) => {
+    if (route.request().method() === 'POST') return route.fulfill({ status: 204 });
+    return route.fulfill({ json: ONBOARDING_QUESTIONS });
+  });
+
+  const pushed = [
+    { id: 5, name: 'Finance start', description: null, ownerName: 'Prism team', isOwner: true, widgetCount: 2, updatedAt: '2026-11-22T10:00:00Z', fromTemplate: true, isHidden: false },
+    { id: 6, name: 'Chief start', description: null, ownerName: 'Prism team', isOwner: true, widgetCount: 1, updatedAt: '2026-11-22T10:00:00Z', fromTemplate: true, isHidden: true },
+  ];
+  await page.route(/\/api\/v1\/providers\/[^/]+\/settings\/pushed-views\/$/, (route) => route.fulfill({ json: { mine: pushed, shared: [] } }));
+  await page.route(/\/settings\/pushed-views\/(\d+)\/(hide|restore)$/, (route) => route.fulfill({ status: 204 }));
+
+  const personas = [
+    { id: 1, name: 'Air chief', viewTemplateId: 1, viewTemplateName: 'Finance start', sortOrder: 1, isPublished: true },
+    { id: 2, name: 'Finance', viewTemplateId: 2, viewTemplateName: 'Chief start', sortOrder: 2, isPublished: false },
+  ];
+  const questions = [
+    { id: 1, prompt: 'What best describes your role?', sortOrder: 1, isPublished: true, allowsMultiple: false, options: [{ id: 1, label: 'I run an air program', sortOrder: 0, weights: [{ personaId: 1, weight: 10 }] }, { id: 2, label: 'I handle billing', sortOrder: 1, weights: [{ personaId: 2, weight: 10 }] }] },
+    { id: 2, prompt: 'Which lines of service do you support?', sortOrder: 2, isPublished: false, allowsMultiple: true, options: [{ id: 3, label: 'Cash collected', sortOrder: 0, weights: [] }, { id: 4, label: 'Denied claims', sortOrder: 1, weights: [] }] },
+  ];
+  await page.route(/\/api\/v1\/admin\/personas(\?.*)?$/, (route) => route.fulfill({ json: { personas } }));
+  await page.route(/\/api\/v1\/admin\/onboarding-questions(\?.*)?$/, (route) => route.fulfill({ json: { questions } }));
+}
+
+const ROLE_CATALOG = [
+  { key: 'viewer', name: 'Viewer', description: 'See the dashboards.', restricted: false, assignable: true },
+  { key: 'analyst', name: 'Analyst', description: 'Viewer, and saved views.', restricted: false, assignable: true },
+  { key: 'claims_reviewer', name: 'Claims reviewer', description: 'Analyst, and claims.', restricted: true, assignable: false },
+  { key: 'provider_admin', name: 'Provider admin', description: 'Manage settings and users.', restricted: false, assignable: true },
+];
+const PROVIDER_USERS = {
+  users: [
+    { portalUserId: 1, displayName: 'Jane Doe', roleKey: 'provider_admin', lastSignIn: '2026-11-24T10:00:00Z', isYou: true },
+    { portalUserId: 2, displayName: 'Sam Smith', roleKey: 'viewer', lastSignIn: '2026-11-23T10:00:00Z', isYou: false },
+    { portalUserId: 3, displayName: 'Ana Ruiz', roleKey: 'claims_reviewer', lastSignIn: '2026-11-22T10:00:00Z', isYou: false },
+  ],
+  roles: ROLE_CATALOG,
+  hasMore: false,
+};
+
+/** The customer user list and the staff customer routes. */
+async function mockCustomerRoles(page: import('@playwright/test').Page): Promise<void> {
+  await page.route(/\/api\/v1\/providers\/[^/]+\/users(\?.*)?$/, (route) => route.fulfill({ json: PROVIDER_USERS }));
+  await page.route(/\/api\/v1\/providers\/[^/]+\/users\/\d+\/role$/, (route) => route.fulfill({ json: PROVIDER_USERS.users[1] }));
+  await page.route(/\/api\/v1\/admin\/customers\/\d+\/users(\?.*)?$/, (route) => route.fulfill({ json: { ...PROVIDER_USERS, roles: ROLE_CATALOG.map((r) => ({ ...r, assignable: true })) } }));
+  await page.route(/\/api\/v1\/admin\/customers\/\d+\/users\/\d+\/role$/, (route) => route.fulfill({ json: PROVIDER_USERS.users[1] }));
+  await page.route(/\/api\/v1\/admin\/customers\/\d+\/settings$/, (route) =>
+    route.request().method() === 'PUT' ? route.fulfill({ json: { defaultRoleKey: 'viewer', allowAdminRestrictedGrants: false } }) : route.fulfill({ json: { defaultRoleKey: 'viewer', allowAdminRestrictedGrants: false } }),
+  );
+}
+
 export const test = base.extend({
   page: async ({ page }, use) => {
     if (!process.env['PRISM_E2E_STORAGE_STATE']) {
@@ -864,6 +1008,9 @@ export const test = base.extend({
       await mockNetCollections(page);
       await mockMetricSix(page);
       await mockSavedViews(page);
+      await mockAdminTemplates(page);
+      await mockPersonas(page);
+      await mockCustomerRoles(page);
       await mockClaims(page);
     }
     await use(page);

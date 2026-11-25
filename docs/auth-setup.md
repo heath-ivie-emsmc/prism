@@ -66,10 +66,31 @@ The API listens on `http://localhost:5080` in Development, which is where the we
   roles. Roles come from `user/rbac-data?user_id=` (`assignments[].item_name`). Providers come from `user/assigned-companies?user_id=`
   (`{ "<companyId>": [facilityIds] }`, the union of direct assignments and group memberships, with RescueNet Facility ids) and names from
   `company/batch?from_id=<id - 1>`. Roles map to permissions through the catalog in `Prism.Application/Auth/Permissions.cs`
-  (`ProviderAnalyst`, `ProviderAdmin`, `PlatformSupport`, `SuperUser`). A role the catalog does not know grants nothing, and a user needs `prism.app` to sign in.
+  (`PrismUser` for sign-in, `InternalUser` and the four internal admin tier roles below). A role the catalog does not know grants nothing, and a user needs `prism.app` to sign in.
 - Publish the catalog with the setup utility (below) after registering the application.
+- **For the internal admin area (ADR 0009):** neither portal exposes group names (checked in the Admin-Portal-2020 and Account-Portal sources: `user/user-data` returns id, name, username, title, department and location; `user/rbac-data` returns roles, including roles a group grants; `user/assigned-companies` returns companies, including group-granted ones). So an employee is marked by a role: `InternalUser` (permission `prism.internal`). A portal admin attaches that role to the internal group in the portal's own screens, so every member receives it. An optional `Internal:GroupName` is still honoured if a portal ever reports groups. Later phases also need a per-Provider user list and a lookup of any user's access by id (for impersonation).
+- **Internal Users and companies:** `user/assigned-companies` includes group memberships, and the internal group has every company. So Prism ignores the company list for anyone in the internal group (ADR 0009, decision 6). Staff start in `/admin`, and see customer figures only through the audited preview.
 - The portal does not echo `state` today. That is why `AllowIdpInitiated` is on in Development and the confirmation page exists.
   Once the portal echoes `state`, turn it off.
+
+## Internal admin access (`Internal` section)
+
+An Internal User holds the `InternalUser` role (permission `prism.internal`), which a portal admin attaches to the internal group. `Internal:GroupName` is optional and used only if the portal reports group names. The result is resolved at sign-in into a server-set `internal` claim, so a request header, query string or body can never grant it.
+
+Two checks are both required for `/api/v1/admin/*`: the internal marker, and an admin tier permission (`prism.admin.templates.author`, `.templates.publish`, `.customers.view`, `prism.admin.manage`, carried by the portal roles `InternalTemplateAuthor`, `InternalTemplatePublisher`, `InternalCustomerDataViewer`, `InternalAdminManager`). A tier without the group is dropped at sign-in and refused by the policy; the group without a tier opens only `GET /api/v1/admin/session`. No customer role carries a tier. An Internal User with `prism.admin.customers.view` may also read any Provider's aggregate Metric routes by Provider number, to lay out a View Template: it is audited once per session and Provider, and claim-level and Saved View routes ignore it. Like roles, group membership lives in the session for up to 8 hours.
+
+## Customer Roles
+
+The portal decides who may sign in and which Providers a user belongs to. What a customer user may do inside a Provider is a Customer Role held in Prism (ADR 0010).
+
+- **Catalog:** fixed in `Prism.Application/Customers/CustomerRoles.cs`: `viewer`, `analyst`, `claims_reviewer`, `phi_reviewer`, `provider_admin`, `claims_admin`. Roles with claim or PHI access are restricted.
+- **Session cookie:** carries `prism.app` and the admin tiers only. Customer permissions are looked up per request from the Provider in the route (cached 30 seconds, cleared on change). No role record, or an unreadable store, means no permission. `/api/v1/me` lists the permissions held in each Provider.
+- **First sign-in:** the user is recorded in `provider_user` for each of their Providers. The role is the Provider's default role (`viewer` unless staff change it). Internal Users are never recorded.
+- **Provider admins** (`prism.users.manage`) list and change the roles of their own Provider's users at `/settings/users`. They cannot change their own role, cannot grant a restricted role unless staff allow it, and cannot demote the last user who can manage users.
+- **Staff** (admin manager tier) manage any Provider at `/admin/customers`: change roles, make the first admin, set the default role and the restricted-grant switch.
+- **Audit:** each role change is written in the same transaction as the change (`customer_role.changed`, `customer_settings.changed`).
+- **Login-only role:** `PrismUser` carries just `prism.app`. Give it to every customer user in the portal. The old `ProviderAnalyst`, `ProviderAdmin`, `PlatformSupport` and `SuperUser` roles are no longer in the catalog, so the next publish deletes them in the portal together with every assignment to them. A user whose only role was one of those cannot sign in until they hold `PrismUser`.
+- **Portal publishing:** `AdminPortalSetup` publishes only the permissions a portal role carries (sign-in, the internal marker and the admin tiers), and the roles `PrismUser`, `InternalUser` and the four tier roles. Customer permissions are not published: they live in Prism.
 
 ## Prism database
 

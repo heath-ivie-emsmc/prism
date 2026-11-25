@@ -293,7 +293,7 @@ export class WhatChangedComponent {
     params: () => {
       const providerId = this.providerId();
       const period = this.period();
-      const allowed = this.auth.me()?.permissions.includes(CLAIMS_PERMISSION) ?? false;
+      const allowed = this.auth.can(CLAIMS_PERMISSION);
       return allowed && providerId && /^\d{6}$/.test(period) ? { providerId, period, line: this.line(), group: this.group() || null } : null;
     },
     stream: ({ params }) => (params ? this.attention.counts(params) : of(null)),

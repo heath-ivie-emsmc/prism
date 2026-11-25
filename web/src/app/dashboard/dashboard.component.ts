@@ -1,3 +1,4 @@
+import { AuthService } from '../auth/auth.service';
 import { ChangeDetectionStrategy, Component, computed, inject } from '@angular/core';
 import { rxResource } from '@angular/core/rxjs-interop';
 import { of } from 'rxjs';
@@ -47,6 +48,10 @@ const CRUMBS: EmsBreadcrumb[] = [{ label: 'Dashboard' }];
 
         <app-filter-bar label="Dashboard filters" [divisionIgnoredBy]="divisionIgnoredBy()" />
       </header>
+
+      @if (noAccess()) {
+        <p class="dashboard__no-access" role="status"><strong>You don't have access to the dashboard for this organization.</strong><br />Ask your administrator to give you a role.</p>
+      }
 
       <!-- Net cash, transports, loaded miles, clean claim rate and the projection are real. The Open negotiation tile is layout only: placeholder content until the Metric Catalog serves it. -->
       <section class="dashboard__overview" aria-label="Key metrics">
@@ -195,6 +200,12 @@ const CRUMBS: EmsBreadcrumb[] = [{ label: 'Dashboard' }];
       color: var(--ems-text-muted);
     }
     /* Net cash on the left, the four tiles on the right. The tiles take the height they need and the net cash panel stretches to match, so the spare height goes to its chart. */
+    .dashboard__no-access {
+      margin: 0;
+      padding: 1rem;
+      border: 1px solid var(--ems-border, currentColor);
+      border-radius: var(--ems-radius-md, 0.5rem);
+    }
     .dashboard__overview {
       display: flex;
       align-items: stretch;
@@ -357,6 +368,9 @@ const CRUMBS: EmsBreadcrumb[] = [{ label: 'Dashboard' }];
   `,
 })
 export class DashboardComponent {
+  private readonly auth = inject(AuthService);
+  /** The user is signed in and assigned to this Provider, but their role there does not let them see the dashboard. */
+  protected readonly noAccess = computed(() => this.auth.activeProvider() !== null && !this.auth.can('prism.dashboard.view'));
   private readonly netCollections = inject(NetCollectionsService);
 
   private readonly filters = inject(DashboardFilterContext);

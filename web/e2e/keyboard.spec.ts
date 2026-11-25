@@ -1,6 +1,6 @@
 import type { ElementHandle } from '@playwright/test';
 import { expect, test } from './fixtures';
-import { lastAnnouncement, openDashboard, expandHelp, openDashboardWithNotice, openDashboardHelp, openMetricView, openMetricViewNotFound, openNeedsAttention, openPayerDetail, openPayerMixPage, openProjection, openView, SIX_METRICS, openMetricViewGroundOnly, openSixMetricView, openEmptyDivisionView, CONTRIBUTION_METRICS } from './support';
+import { lastAnnouncement, openDashboard, expandHelp, openDashboardWithNotice, openDashboardHelp, openMetricView, openMetricViewNotFound, openNeedsAttention, openPayerDetail, openPayerMixPage, openProjection, openView, openAdmin, openAdminPersonas, openProviderUsers, openAdminCustomers, openSettings, openHome, openWelcome, openTemplates, openPushDialog, SIX_METRICS, openMetricViewGroundOnly, openSixMetricView, openEmptyDivisionView, CONTRIBUTION_METRICS } from './support';
 
 /** Everything works without a mouse (WCAG 2.1.1, 2.1.2, 2.4.3, 2.4.7, 2.4.11). */
 /**
@@ -26,6 +26,133 @@ async function focusIndicator(el: ElementHandle<Element>): Promise<{ visible: bo
 }
 
 test.describe('keyboard', () => {
+  test('the push dialog opens on a field, Tab stays inside it, and Escape closes it and returns focus to the Push button', async ({ page }) => {
+    await openTemplates(page);
+    const push = page.getByRole('button', { name: 'Push Finance start' });
+    await push.focus();
+    await page.keyboard.press('Enter');
+    const dialog = page.getByRole('dialog');
+    await dialog.waitFor();
+
+    for (let i = 0; i < 12; i++) {
+      await page.keyboard.press('Tab');
+      expect(await page.locator(':focus').evaluate((n) => !!n.closest('[role="dialog"]'))).toBe(true);
+    }
+    await page.keyboard.press('Escape');
+
+    await expect(dialog).toHaveCount(0);
+    await expect(push).toBeFocused();
+  });
+
+  test('a push can be reviewed and confirmed with the keyboard alone', async ({ page }) => {
+    await openPushDialog(page);
+    const dialog = page.getByRole('dialog');
+    await dialog.getByRole('combobox', { name: /Provider/ }).first().focus();
+    await page.keyboard.type('mercy');
+    await page.getByRole('option', { name: /Provider 527/ }).waitFor();
+    await page.keyboard.press('ArrowDown');
+    await page.keyboard.press('Enter');
+    await dialog.getByRole('button', { name: 'Review' }).focus();
+    await page.keyboard.press('Enter');
+    await expect(dialog).toContainText('will go to Provider 527');
+
+    await dialog.getByRole('button', { name: 'Confirm push' }).focus();
+    await page.keyboard.press('Enter');
+
+    await expect(dialog).toContainText('Provider 527');
+  });
+
+  test('the admin home is reachable by Tab from the Admin link, shows focus on every stop, and does not trap focus', async ({ page }) => {
+    await openAdmin(page);
+
+    await page.getByRole('link', { name: 'Admin', exact: true }).focus();
+    const missing: string[] = [];
+    const seen: string[] = [];
+    for (let i = 0; i < 40; i++) {
+      await page.keyboard.press('Tab');
+      const focused = page.locator(':focus');
+      if ((await focused.count()) === 0) break;
+      const handle = await focused.elementHandle();
+      const indicator = await focusIndicator(handle!);
+      if (!indicator.visible) missing.push(indicator.description);
+      seen.push(indicator.description);
+    }
+
+    expect(seen.length).toBeGreaterThan(0);
+    expect(missing).toEqual([]);
+    await page.keyboard.press('Shift+Tab');
+    expect(await page.locator(':focus').count()).toBe(1);
+  });
+
+  for (const [name, open, start] of [
+    ['the first-login questions', openWelcome, 'input[type="radio"]'],
+    ['the Persona admin page', openAdminPersonas, 'app-admin-personas ems-breadcrumbs a'],
+    ['the settings page', openSettings, 'app-settings ems-breadcrumbs span, app-settings h1'],
+    ['the Provider users page', openProviderUsers, 'app-provider-users h1'],
+    ['the staff customer users page', openAdminCustomers, 'app-admin-customers #customer-provider'],
+  ] as const) {
+    test(`${name} are reachable by Tab, show focus on every stop, and do not trap focus`, async ({ page }) => {
+      await open(page);
+
+      await page.locator(start).first().focus();
+      const missing: string[] = [];
+      const seen: string[] = [];
+      for (let i = 0; i < 60; i++) {
+        await page.keyboard.press('Tab');
+        const focused = page.locator(':focus');
+        if ((await focused.count()) === 0) break;
+        const indicator = await focusIndicator((await focused.elementHandle()) as ElementHandle<Element>);
+        if (!indicator.visible) missing.push(indicator.description);
+        seen.push(indicator.description);
+      }
+
+      expect(seen.length).toBeGreaterThan(0);
+      expect(missing).toEqual([]);
+      await page.keyboard.press('Shift+Tab');
+      expect(await page.locator(':focus').count()).toBe(1);
+    });
+  }
+
+  test('the questions can be answered and submitted with the keyboard alone', async ({ page }) => {
+    await openWelcome(page);
+
+    await page.locator('input[name="q1"]').first().focus();
+    await page.keyboard.press('Space');
+    await page.locator('input[name="q2"]').first().focus();
+    await page.keyboard.press('Space');
+    await expect(page.locator('input[name="q1"]').first()).toBeChecked();
+    await expect(page.locator('input[name="q2"]').first()).toBeChecked();
+    await page.getByRole('button', { name: 'Continue' }).focus();
+    const post = page.waitForRequest((r) => r.method() === 'POST' && r.url().endsWith('/api/v1/me/onboarding'));
+    await page.keyboard.press('Enter');
+
+    expect((await post).postDataJSON()).toEqual({ answers: [{ questionId: 1, optionId: 10 }, { questionId: 2, optionId: 20 }] });
+  });
+
+  test('a pushed view can be hidden and restored from the keyboard, and focus follows the button', async ({ page }) => {
+    await openSettings(page);
+
+    await page.getByRole('button', { name: 'Hide Finance start' }).focus();
+    await page.keyboard.press('Enter');
+    await expect(page.getByRole('button', { name: 'Restore Finance start' })).toBeFocused();
+    await page.keyboard.press('Enter');
+    await expect(page.getByRole('button', { name: 'Hide Finance start' })).toBeFocused();
+  });
+
+  test('the Persona home page can be customized and reset from the keyboard', async ({ page }) => {
+    await openHome(page, 'custom');
+
+    await page.getByRole('button', { name: 'Reset to the recommended page' }).focus();
+    await page.keyboard.press('Enter');
+    await expect(page.getByRole('alert')).toContainText('This deletes your copy');
+    await expect(page.getByRole('button', { name: 'Confirm reset' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Confirm reset' })).toBeFocused();
+    await page.keyboard.press('Tab');
+    await expect(page.getByRole('button', { name: 'Cancel' })).toBeFocused();
+    await page.keyboard.press('Enter');
+    await expect(page.getByRole('button', { name: 'Reset to the recommended page' })).toBeFocused();
+  });
+
   test('Tab reaches every control, each shows a focus indicator, and nothing traps focus', async ({ page }) => {
     await openDashboard(page);
 

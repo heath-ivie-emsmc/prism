@@ -213,6 +213,8 @@ interface ClaimsParams extends AttentionQuery {
       color: var(--ems-text-muted);
     }
     .page__filters {
+      min-inline-size: 0;
+      max-inline-size: 100%;
       display: flex;
       flex-wrap: wrap;
       gap: 1rem;
@@ -371,7 +373,7 @@ export class NeedsAttentionComponent {
   private readonly group = computed(() => this.query().group);
   protected readonly providerName = computed(() => this.auth.activeProvider()?.name ?? '');
   private readonly providerId = computed(() => this.auth.activeProviderId());
-  protected readonly allowed = computed(() => this.auth.me()?.permissions.includes(CLAIMS_PERMISSION) ?? false);
+  protected readonly allowed = computed(() => this.auth.can(CLAIMS_PERMISSION));
 
   private readonly periodsResource = rxResource<NetCollectionsPeriodsDto | null, string | null>({
     params: () => this.providerId(),

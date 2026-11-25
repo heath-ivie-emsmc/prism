@@ -11,7 +11,7 @@ public sealed class PortalSyncRequestsTests
     {
         JsonArray permissions = PortalSyncRequests.PermissionsBody()["permissions"]!.AsArray();
 
-        Assert.Equal(Permissions.All.Select(p => p.Id), permissions.Select(p => (string)p!["id"]!));
+        Assert.Equal(Permissions.Published.Select(p => p.Id), permissions.Select(p => (string)p!["id"]!));
         JsonObject first = permissions[0]!.AsObject();
         Assert.Equal(["description", "group", "id", "name", "parent"], first.Select(p => p.Key).Order().ToArray());
         Assert.Null(first["parent"]);
@@ -32,8 +32,8 @@ public sealed class PortalSyncRequestsTests
             Assert.Equal(now.ToUnixTimeSeconds(), (long)role["version"]!);
         }
 
-        string[] superUser = roles.Single(r => (string)r!["id"]! == "SuperUser")!["assignments"]!.AsArray().Select(a => (string)a!).ToArray();
-        Assert.Equal(Permissions.All.Select(p => p.Id), superUser);
+        string[] loginOnly = roles.Single(r => (string)r!["id"]! == "PrismUser")!["assignments"]!.AsArray().Select(a => (string)a!).ToArray();
+        Assert.Equal([Permissions.App], loginOnly);
     }
 
     [Fact]

@@ -36,7 +36,7 @@ internal static class CleanClaimRateEndpoints
         CancellationToken cancellationToken)
     {
         (string providerId, string? endPeriod, int? months) = (request.ProviderId, request.EndPeriod, request.Months);
-        if (await access.ResolveAsync(user, providerId, cancellationToken) is not { } id)
+        if (await access.ResolveAggregateAsync(user, providerId, cancellationToken) is not { } id)
         {
             return Results.NotFound();
         }

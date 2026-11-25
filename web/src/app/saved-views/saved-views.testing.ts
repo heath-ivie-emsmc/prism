@@ -69,7 +69,7 @@ export const CATALOG: CatalogDto = {
 };
 
 export { DIVISIONS };
-export const PROVIDER = { id: '526', name: 'Seminole County Fire Department', facilityCount: 0 };
+export const PROVIDER = { id: '526', name: 'Seminole County Fire Department', facilityCount: 0, permissions: ['prism.dashboard.view', 'prism.views.manage', 'prism.claims.view'] };
 export const PERIODS = { providerId: '526', periods: [{ period: '202610', label: 'Oct 2026' }, { period: '202609', label: 'Sep 2026' }] };
 export const MANAGE = 'prism.views.manage';
 export const BASE = '/api/v1/providers/526';
@@ -126,7 +126,7 @@ export function bootstrap(options: { me?: Partial<MeDto>; providers?: (Provider 
   });
   const http = TestBed.inject(HttpTestingController);
   TestBed.inject(AuthService).refreshMe().subscribe();
-  http.expectOne('/api/v1/me').flush({ userName: 'jdoe', displayName: 'Jane Doe', providers: [PROVIDER], permissions: ['prism.app', 'prism.dashboard.view', MANAGE], ...options.me });
+  http.expectOne('/api/v1/me').flush({ userName: 'jdoe', displayName: 'Jane Doe', providers: [PROVIDER], permissions: ['prism.app'], ...options.me });
   return http;
 }
 

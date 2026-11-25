@@ -70,7 +70,7 @@ public sealed class SpaHostingTests : IDisposable
     [Fact]
     public async Task The_api_contract_for_me_matches_what_the_spa_reads()
     {
-        // The SPA's MeDto is { userName, displayName, providers: [{ id, name, facilityCount }], permissions }.
+        // The SPA's MeDto is { userName, displayName, providers: [{ id, name, facilityCount, permissions }], permissions, isInternal, adminPermissions, onboardingRequired }.
         using var portalClient = factory.NewClient();
         using HttpResponseMessage start = await portalClient.GetAsync("/api/auth/sso/start");
         string state = System.Web.HttpUtility.ParseQueryString(start.Headers.Location!.Query)["state"]!;
@@ -81,8 +81,8 @@ public sealed class SpaHostingTests : IDisposable
         using var json = System.Text.Json.JsonDocument.Parse(await me.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
         System.Text.Json.JsonElement root = json.RootElement;
 
-        Assert.Equal(["displayName", "permissions", "providers", "userName"], root.EnumerateObject().Select(p => p.Name).Order().ToArray());
+        Assert.Equal(["adminPermissions", "displayName", "isInternal", "onboardingRequired", "permissions", "providers", "userName"], root.EnumerateObject().Select(p => p.Name).Order().ToArray());
         System.Text.Json.JsonElement provider = root.GetProperty("providers")[0];
-        Assert.Equal(["facilityCount", "id", "name"], provider.EnumerateObject().Select(p => p.Name).Order().ToArray());
+        Assert.Equal(["facilityCount", "id", "name", "permissions"], provider.EnumerateObject().Select(p => p.Name).Order().ToArray());
     }
 }

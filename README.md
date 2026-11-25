@@ -94,6 +94,7 @@ PRISM_UPDATE_SNAPSHOTS=1 dotnet test tests/Prism.Tests --filter MetricCatalogSna
 | [`docs/auth-setup.md`](docs/auth-setup.md) | Sign-in, the Account Portal, local setup |
 | [`docs/e2e-layout.md`](docs/e2e-layout.md) | The Playwright layout, accessibility and keyboard suites |
 | [`docs/saved-views.md`](docs/saved-views.md), [`docs/saved-views-ui-spec.md`](docs/saved-views-ui-spec.md) | Saved Views |
+| [`docs/personas.md`](docs/personas.md) | Personas, the first-login questions and the home page |
 | [`docs/adr/0007-metric-catalog-v2.md`](docs/adr/0007-metric-catalog-v2.md) | Why Metrics are slices and the catalog owns context, freshness, help keys and drills |
 
 ## Metric and component design guide

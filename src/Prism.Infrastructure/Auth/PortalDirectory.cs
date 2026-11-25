@@ -29,9 +29,12 @@ public sealed class PortalDirectory(
 
     internal const int MaxFacilitiesPerProvider = 5000;
 
+    internal const int MaxGroups = 100;
+
     private static readonly string[] UserNameKeys = ["username", "user_name", "email", "mail"];
     private static readonly string[] IdKeys = ["id", "admin_portal_id", "userId", "user_id"];
     private static readonly string[] RoleKeys = ["roleNames", "role_names", "roles"];
+    private static readonly string[] GroupKeys = ["groups", "userGroups", "user_groups", "groupNames", "group_names"];
 
     public async Task<PortalUser> ResolveUserAsync(string nonce, CancellationToken cancellationToken)
     {
@@ -221,8 +224,41 @@ public sealed class PortalDirectory(
         IReadOnlyList<string> roles = ReadRoles(data);
         IReadOnlyList<ProviderScope> providers = ReadProviders(data);
 
-        return new PortalUser(userName, ReadDisplayName(data) ?? userName, portalId, roles, providers);
+        return new PortalUser(userName, ReadDisplayName(data) ?? userName, portalId, roles, providers) { Groups = ReadGroups(data) };
     }
+
+    /// <summary>
+    /// The user groups the user belongs to, as plain names or as objects with a name. The portal's shape for this is not confirmed yet,
+    /// so anything unrecognised gives no groups, which means the user is not an Internal User (fails closed).
+    /// </summary>
+    internal static List<string> ReadGroups(JsonElement element)
+    {
+        foreach (string key in GroupKeys)
+        {
+            if (!TryGet(element, key, out JsonElement value) || value.ValueKind != JsonValueKind.Array)
+            {
+                continue;
+            }
+
+            return value.EnumerateArray()
+                .Select(ReadGroupName)
+                .Where(name => !string.IsNullOrWhiteSpace(name))
+                .Select(name => name!.Trim())
+                .Where(name => name.Length <= MaxNameLength)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Take(MaxGroups)
+                .ToList();
+        }
+
+        return [];
+    }
+
+    private static string? ReadGroupName(JsonElement item) => item.ValueKind switch
+    {
+        JsonValueKind.Object => ReadString(item, ["name", "group_name", "title"]),
+        JsonValueKind.String => item.GetString(),
+        _ => null,
+    };
 
     private static JsonElement Unwrap(JsonElement root)
     {

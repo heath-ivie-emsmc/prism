@@ -24,6 +24,12 @@ public sealed class SavedView
     /// <summary>The version of the layout JSON shape, so old layouts can be upgraded on read.</summary>
     public int LayoutSchemaVersion { get; set; } = 1;
 
+    /// <summary>The Assignment this view was cloned from, or null for a view the user made. Set by the server, never by a request.</summary>
+    public int? SourceTemplateAssignmentId { get; set; }
+
+    /// <summary>The owner hid this pushed view from their list. It is not deleted, so it is not delivered again and can be restored.</summary>
+    public bool IsHidden { get; set; }
+
     /// <summary>PostgreSQL's <c>xmin</c>. Changes on every update, so a save made from a stale copy is refused.</summary>
     public uint RowVersion { get; set; }
 

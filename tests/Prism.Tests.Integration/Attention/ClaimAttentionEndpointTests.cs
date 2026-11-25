@@ -43,7 +43,7 @@ public sealed class ClaimAttentionEndpointTests : IDisposable
 
     private async Task<(HttpStatusCode Status, string Text, HttpResponseMessage Response)> GetAsync(string url, params string[] permissions)
     {
-        using CookieClient client = factory.NewSignedInClient(permissions);
+        using CookieClient client = factory.NewSignedInClientAs(7, "tester", permissions);
         HttpResponseMessage response = await client.GetAsync(url);
         return (response.StatusCode, await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken), response);
     }

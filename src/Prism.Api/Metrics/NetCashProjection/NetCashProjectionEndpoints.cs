@@ -44,7 +44,7 @@ internal static class NetCashProjectionEndpoints
         CancellationToken cancellationToken)
     {
         (string providerId, string? endPeriod, string? serviceLine, int? horizonValue) = (request.ProviderId, request.EndPeriod, request.ServiceLine, request.Horizon);
-        if (await access.ResolveAsync(user, providerId, cancellationToken) is not { } id)
+        if (await access.ResolveAggregateAsync(user, providerId, cancellationToken) is not { } id)
         {
             return Results.NotFound();
         }

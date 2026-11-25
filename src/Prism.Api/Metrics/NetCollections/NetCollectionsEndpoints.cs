@@ -51,7 +51,7 @@ internal static class NetCollectionsEndpoints
     public static async Task<IResult> Periods(
         string providerId, ClaimsPrincipal user, ProviderAccess access, INetCollectionsMetric metric, CancellationToken cancellationToken)
     {
-        if (await access.ResolveAsync(user, providerId, cancellationToken) is not { } id)
+        if (await access.ResolveAggregateAsync(user, providerId, cancellationToken) is not { } id)
         {
             return Results.NotFound();
         }
@@ -68,7 +68,7 @@ internal static class NetCollectionsEndpoints
         CancellationToken cancellationToken)
     {
         (string providerId, string? endPeriod, int? months, string? serviceLine, string? divisionKey) = (request.ProviderId, request.EndPeriod, request.Months, request.ServiceLine, request.Division);
-        if (await access.ResolveAsync(user, providerId, cancellationToken) is not { } id)
+        if (await access.ResolveAggregateAsync(user, providerId, cancellationToken) is not { } id)
         {
             return Results.NotFound();
         }

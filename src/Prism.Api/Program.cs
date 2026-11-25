@@ -1,5 +1,8 @@
 using Microsoft.OpenApi;
 using Prism.Api;
+using Prism.Api.Admin;
+using Prism.Api.Customers;
+using Prism.Api.Personas;
 using Prism.Api.Auth;
 using Prism.Api.Health;
 using Prism.Api.Metrics;
@@ -27,6 +30,9 @@ builder.Services.AddPrismPersistence(builder.Configuration);
 builder.Services.AddPrismAuth(builder.Configuration);
 builder.Services.AddPrismMetrics();
 builder.Services.AddPrismSavedViews();
+builder.Services.AddPrismAdmin();
+builder.Services.AddPrismPersonas();
+builder.Services.AddPrismCustomerAccess();
 
 var app = builder.Build();
 
@@ -91,6 +97,9 @@ RouteGroupBuilder v1 = api.MapGroup(ApiRoutes.V1);
 v1.MapIdentityEndpoints();
 v1.MapMetricEndpoints();
 v1.MapSavedViewEndpoints();
+v1.MapAdminEndpoints();
+v1.MapPersonaEndpoints();
+v1.MapCustomerAccessEndpoints();
 
 // Unknown paths fall back to index.html so client-side routes work on reload, except /api (and /api/...), where an
 // unknown path must stay a plain 404 and never turn into HTML. The docs and OpenAPI routes are real endpoints and match first.

@@ -113,6 +113,22 @@ public sealed class SignInTests : IDisposable
     }
 
     [Fact]
+    public async Task A_user_holding_the_internal_marker_role_is_internal_and_gets_no_providers()
+    {
+        // The portal reports no group names; its group carries a role, and every company, so Providers must be ignored for this user.
+        factory.Directory.Handler = _ => new PortalUser("jdoe", "Jane Doe", 42, ["InternalUser"], []);
+        string state = await StartAndGetStateAsync();
+        using HttpResponseMessage callback = await CallbackAsync(LoginToken(), state);
+        Assert.Equal(HttpStatusCode.Redirect, callback.StatusCode);
+
+        using HttpResponseMessage me = await client.GetAsync("/api/v1/me");
+
+        string body = await me.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+        Assert.Contains("\"isInternal\":true", body, StringComparison.Ordinal);
+        Assert.Contains("\"providers\":[]", body, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task After_sign_in_me_returns_the_user_providers_and_permissions()
     {
         string state = await StartAndGetStateAsync();
@@ -125,8 +141,8 @@ public sealed class SignInTests : IDisposable
         string body = await me.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
         Assert.Contains("\"userName\":\"jdoe\"", body, StringComparison.Ordinal);
         Assert.Contains("\"displayName\":\"Jane Doe\"", body, StringComparison.Ordinal);
-        Assert.Contains("\"permissions\":[\"prism.app\",\"prism.dashboard.view\",\"prism.claims.view\",\"prism.views.manage\"]", body, StringComparison.Ordinal);
-        Assert.Contains("\"providers\":[{\"id\":\"100\",\"name\":\"Mercy Air\",\"facilityCount\":2}]", body, StringComparison.Ordinal);
+        Assert.Contains("\"permissions\":[\"prism.app\"]", body, StringComparison.Ordinal);
+        Assert.Contains("\"providers\":[{\"id\":\"100\",\"name\":\"Mercy Air\",\"facilityCount\":2,\"permissions\":[", body, StringComparison.Ordinal);
         Assert.DoesNotContain("facilityIds", body, StringComparison.Ordinal);
     }
 

@@ -48,8 +48,8 @@ test.describe('saved views', () => {
     await expect(page.getByText('Filters apply to every metric on this page.')).toBeVisible();
     await expect(page.locator('.builder__subtitle')).toContainText('Data through 11/22/2026');
     expect(await page.locator('app-metric-widget app-chart [role="img"]').getAttribute('aria-label')).toMatch(/Net cash collected, 6 months to Oct 2026/);
-    // Net cash honors the division and the clean claim rate does not, so the note names only the second.
-    await expect(page.locator('#division-reason')).toContainText('does not change Clean claim rate');
+    // Metrics that ignore the division are not listed under the control: it has no note to align around.
+    await expect(page.locator('#division-reason')).toHaveCount(0);
   });
 
   test('every chart has the same numbers as a table one control away', async ({ page }) => {

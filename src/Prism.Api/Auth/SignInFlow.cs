@@ -18,10 +18,10 @@ public sealed class SignInFlow(
 
     public async Task<IResult> CompleteAsync(HttpContext context, string loginToken, CancellationToken cancellationToken)
     {
-        string session;
+        SignInResult result;
         try
         {
-            session = await signIn.SignInAsync(loginToken, cancellationToken);
+            result = await signIn.SignInAsync(loginToken, cancellationToken);
         }
         catch (LoginTokenInvalidException ex)
         {
@@ -56,12 +56,23 @@ public sealed class SignInFlow(
             return Failed("sso_failed");
         }
 
-        context.Response.Cookies.Append(cookies.Session, session, cookies.SessionOptions());
+        LogSignedIn(result);
+        context.Response.Cookies.Append(cookies.Session, result.Session, cookies.SessionOptions());
         // A new session gets a new CSRF token.
         context.Response.Cookies.Append(AuthCookies.XsrfCookie, SecureToken.Base64(32), cookies.XsrfOptions());
 
         string? returnUrl = RedirectTargets.TryNormalize(context.Request.Cookies[AuthCookies.ReturnUrlCookie]);
         context.Response.Cookies.Delete(AuthCookies.ReturnUrlCookie, cookies.DeleteOptions(cookies.ReturnUrlOptions()));
         return Results.LocalRedirect(returnUrl ?? RedirectTargets.TryNormalize(options.Value.PostLoginRedirectUrl) ?? "/");
+    }
+
+    /// <summary>Counts and flags always; the role names only at Debug, capped in count and length, since they come from outside.</summary>
+    private void LogSignedIn(SignInResult result)
+    {
+        AuthLog.SignedIn(logger, result.PortalRoles.Count, result.KnownPermissionCount, result.IsInternal);
+        if (logger.IsEnabled(LogLevel.Debug))
+        {
+            AuthLog.SignedInRoleNames(logger, string.Join(", ", result.PortalRoles.Take(20).Select(role => role.Length <= 100 ? role : role[..100])));
+        }
     }
 }

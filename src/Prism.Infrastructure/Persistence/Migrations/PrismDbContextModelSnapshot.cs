@@ -16,7 +16,7 @@ partial class PrismDbContextModelSnapshot : ModelSnapshot
     // If you encounter a merge conflict in the line below, it means you need to
     // discard one of the migration branches and recreate its migrations on top of
     // the other branch. See https://aka.ms/efcore-docs-migrations-conflicts for more info.
-    public override string LastMigrationId => "20261123130916_AddAuditEntryGroupKey";
+    public override string LastMigrationId => "20261125014446_AddQuestionAllowsMultiple";
 
     protected override void BuildModel(ModelBuilder modelBuilder)
     {
@@ -26,6 +26,80 @@ partial class PrismDbContextModelSnapshot : ModelSnapshot
             .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
         NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
+
+        modelBuilder.Entity("Prism.Infrastructure.Persistence.Entities.AdminAuditEntry", b =>
+            {
+                var id = b.Property<long>("Id")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("bigint")
+                    .HasColumnName("id");
+
+                NpgsqlPropertyBuilderExtensions.UseIdentityAlwaysColumn(id);
+
+                b.Property<string>("Action")
+                    .IsRequired()
+                    .HasMaxLength(50)
+                    .HasColumnType("character varying(50)")
+                    .HasColumnName("action");
+
+                b.Property<long>("ActorPortalUserId")
+                    .HasColumnType("bigint")
+                    .HasColumnName("actor_portal_user_id");
+
+                b.Property<int?>("AffectedCount")
+                    .HasColumnType("integer")
+                    .HasColumnName("affected_count");
+
+                b.Property<DateTimeOffset>("CreatedAtTimestamp")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("timestamp with time zone")
+                    .HasColumnName("created_at_timestamp")
+                    .HasDefaultValueSql("now()");
+
+                b.Property<string>("Detail")
+                    .HasMaxLength(80)
+                    .HasColumnType("character varying(80)")
+                    .HasColumnName("detail");
+
+                b.Property<int?>("ObjectId")
+                    .HasColumnType("integer")
+                    .HasColumnName("object_id");
+
+                b.Property<string>("ObjectType")
+                    .IsRequired()
+                    .HasMaxLength(40)
+                    .HasColumnType("character varying(40)")
+                    .HasColumnName("object_type");
+
+                b.Property<int?>("ProviderId")
+                    .HasColumnType("integer")
+                    .HasColumnName("provider_id");
+
+                b.Property<long?>("TargetPortalUserId")
+                    .HasColumnType("bigint")
+                    .HasColumnName("target_portal_user_id");
+
+                b.Property<DateTimeOffset>("UpdatedAtTimestamp")
+                    .ValueGeneratedOnAddOrUpdate()
+                    .HasColumnType("timestamp with time zone")
+                    .HasColumnName("updated_at_timestamp")
+                    .HasDefaultValueSql("now()");
+
+                b.HasKey("Id")
+                    .HasName("pk_admin_audit_entry");
+
+                b.HasIndex("ActorPortalUserId", "CreatedAtTimestamp")
+                    .HasDatabaseName("ix_admin_audit_entry__plus")
+                    .HasAnnotation("Npgsql:StorageParameter:fillfactor", 90);
+
+                b.HasIndex("ProviderId", "CreatedAtTimestamp")
+                    .HasDatabaseName("ix_admin_audit_entry__provider_id__created_at_timestamp")
+                    .HasAnnotation("Npgsql:StorageParameter:fillfactor", 90);
+
+                b.ToTable("admin_audit_entry");
+
+                b.HasAnnotation("Npgsql:StorageParameter:fillfactor", 90);
+            });
 
         modelBuilder.Entity("Prism.Infrastructure.Persistence.Entities.AuditEntry", b =>
             {
@@ -95,6 +169,353 @@ partial class PrismDbContextModelSnapshot : ModelSnapshot
                     .HasAnnotation("Npgsql:StorageParameter:fillfactor", 90);
 
                 b.ToTable("audit_entry");
+
+                b.HasAnnotation("Npgsql:StorageParameter:fillfactor", 90);
+            });
+
+        modelBuilder.Entity("Prism.Infrastructure.Persistence.Entities.OnboardingOption", b =>
+            {
+                var id = b.Property<int>("Id")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("integer")
+                    .HasColumnName("id");
+
+                NpgsqlPropertyBuilderExtensions.UseIdentityAlwaysColumn(id);
+
+                b.Property<DateTimeOffset>("CreatedAtTimestamp")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("timestamp with time zone")
+                    .HasColumnName("created_at_timestamp")
+                    .HasDefaultValueSql("now()");
+
+                b.Property<string>("Label")
+                    .IsRequired()
+                    .HasMaxLength(120)
+                    .HasColumnType("character varying(120)")
+                    .HasColumnName("label");
+
+                b.Property<int>("OnboardingQuestionId")
+                    .HasColumnType("integer")
+                    .HasColumnName("onboarding_question_id");
+
+                b.Property<int>("SortOrder")
+                    .HasColumnType("integer")
+                    .HasColumnName("sort_order");
+
+                b.Property<DateTimeOffset>("UpdatedAtTimestamp")
+                    .ValueGeneratedOnAddOrUpdate()
+                    .HasColumnType("timestamp with time zone")
+                    .HasColumnName("updated_at_timestamp")
+                    .HasDefaultValueSql("now()");
+
+                b.HasKey("Id")
+                    .HasName("pk_onboarding_option");
+
+                b.HasIndex("OnboardingQuestionId", "SortOrder")
+                    .HasDatabaseName("ix_onboarding_option__onboarding_question_id__sort_order")
+                    .HasAnnotation("Npgsql:StorageParameter:fillfactor", 90);
+
+                b.ToTable("onboarding_option");
+
+                b.HasAnnotation("Npgsql:StorageParameter:fillfactor", 90);
+            });
+
+        modelBuilder.Entity("Prism.Infrastructure.Persistence.Entities.OnboardingOptionWeight", b =>
+            {
+                var id = b.Property<int>("Id")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("integer")
+                    .HasColumnName("id");
+
+                NpgsqlPropertyBuilderExtensions.UseIdentityAlwaysColumn(id);
+
+                b.Property<DateTimeOffset>("CreatedAtTimestamp")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("timestamp with time zone")
+                    .HasColumnName("created_at_timestamp")
+                    .HasDefaultValueSql("now()");
+
+                b.Property<int>("OnboardingOptionId")
+                    .HasColumnType("integer")
+                    .HasColumnName("onboarding_option_id");
+
+                b.Property<int>("PersonaId")
+                    .HasColumnType("integer")
+                    .HasColumnName("persona_id");
+
+                b.Property<DateTimeOffset>("UpdatedAtTimestamp")
+                    .ValueGeneratedOnAddOrUpdate()
+                    .HasColumnType("timestamp with time zone")
+                    .HasColumnName("updated_at_timestamp")
+                    .HasDefaultValueSql("now()");
+
+                b.Property<int>("Weight")
+                    .HasColumnType("integer")
+                    .HasColumnName("weight");
+
+                b.HasKey("Id")
+                    .HasName("pk_onboarding_option_weight");
+
+                b.HasIndex("PersonaId")
+                    .HasDatabaseName("ix_onboarding_option_weight__persona_id")
+                    .HasAnnotation("Npgsql:StorageParameter:fillfactor", 90);
+
+                b.HasIndex("OnboardingOptionId", "PersonaId")
+                    .IsUnique()
+                    .HasDatabaseName("uk_onboarding_option_weight__onboarding_option_id__persona_id")
+                    .HasAnnotation("Npgsql:StorageParameter:fillfactor", 90);
+
+                b.ToTable("onboarding_option_weight", t =>
+                    {
+                        t.HasCheckConstraint("ck_onboarding_option_weight__weight", "weight >= 0 AND weight <= 100");
+                    });
+
+                b.HasAnnotation("Npgsql:StorageParameter:fillfactor", 90);
+            });
+
+        modelBuilder.Entity("Prism.Infrastructure.Persistence.Entities.OnboardingQuestion", b =>
+            {
+                var id = b.Property<int>("Id")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("integer")
+                    .HasColumnName("id");
+
+                NpgsqlPropertyBuilderExtensions.UseIdentityAlwaysColumn(id);
+
+                b.Property<bool>("AllowsMultiple")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("boolean")
+                    .HasDefaultValue(false)
+                    .HasColumnName("allows_multiple");
+
+                b.Property<DateTimeOffset>("CreatedAtTimestamp")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("timestamp with time zone")
+                    .HasColumnName("created_at_timestamp")
+                    .HasDefaultValueSql("now()");
+
+                b.Property<string>("CreatedByUserName")
+                    .HasMaxLength(200)
+                    .HasColumnType("character varying(200)")
+                    .HasColumnName("created_by_user_name");
+
+                b.Property<bool>("IsPublished")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("boolean")
+                    .HasDefaultValue(false)
+                    .HasColumnName("is_published");
+
+                b.Property<string>("Prompt")
+                    .IsRequired()
+                    .HasMaxLength(200)
+                    .HasColumnType("character varying(200)")
+                    .HasColumnName("prompt");
+
+                b.Property<int>("SortOrder")
+                    .HasColumnType("integer")
+                    .HasColumnName("sort_order");
+
+                b.Property<DateTimeOffset>("UpdatedAtTimestamp")
+                    .ValueGeneratedOnAddOrUpdate()
+                    .HasColumnType("timestamp with time zone")
+                    .HasColumnName("updated_at_timestamp")
+                    .HasDefaultValueSql("now()");
+
+                b.Property<string>("UpdatedByUserName")
+                    .HasMaxLength(200)
+                    .HasColumnType("character varying(200)")
+                    .HasColumnName("updated_by_user_name");
+
+                b.HasKey("Id")
+                    .HasName("pk_onboarding_question");
+
+                b.HasIndex("IsPublished", "SortOrder")
+                    .HasDatabaseName("ix_onboarding_question__is_published__sort_order")
+                    .HasAnnotation("Npgsql:StorageParameter:fillfactor", 90);
+
+                b.ToTable("onboarding_question");
+
+                b.HasAnnotation("Npgsql:StorageParameter:fillfactor", 90);
+            });
+
+        modelBuilder.Entity("Prism.Infrastructure.Persistence.Entities.Persona", b =>
+            {
+                var id = b.Property<int>("Id")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("integer")
+                    .HasColumnName("id");
+
+                NpgsqlPropertyBuilderExtensions.UseIdentityAlwaysColumn(id);
+
+                b.Property<DateTimeOffset>("CreatedAtTimestamp")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("timestamp with time zone")
+                    .HasColumnName("created_at_timestamp")
+                    .HasDefaultValueSql("now()");
+
+                b.Property<string>("CreatedByUserName")
+                    .HasMaxLength(200)
+                    .HasColumnType("character varying(200)")
+                    .HasColumnName("created_by_user_name");
+
+                b.Property<bool>("IsPublished")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("boolean")
+                    .HasDefaultValue(false)
+                    .HasColumnName("is_published");
+
+                b.Property<string>("Name")
+                    .IsRequired()
+                    .HasMaxLength(80)
+                    .HasColumnType("character varying(80)")
+                    .HasColumnName("name");
+
+                b.Property<int>("SortOrder")
+                    .HasColumnType("integer")
+                    .HasColumnName("sort_order");
+
+                b.Property<DateTimeOffset>("UpdatedAtTimestamp")
+                    .ValueGeneratedOnAddOrUpdate()
+                    .HasColumnType("timestamp with time zone")
+                    .HasColumnName("updated_at_timestamp")
+                    .HasDefaultValueSql("now()");
+
+                b.Property<string>("UpdatedByUserName")
+                    .HasMaxLength(200)
+                    .HasColumnType("character varying(200)")
+                    .HasColumnName("updated_by_user_name");
+
+                b.Property<int>("ViewTemplateId")
+                    .HasColumnType("integer")
+                    .HasColumnName("view_template_id");
+
+                b.HasKey("Id")
+                    .HasName("pk_persona");
+
+                b.HasIndex("Name")
+                    .IsUnique()
+                    .HasDatabaseName("uk_persona__name")
+                    .HasAnnotation("Npgsql:StorageParameter:fillfactor", 90);
+
+                b.HasIndex("ViewTemplateId")
+                    .HasDatabaseName("ix_persona__view_template_id")
+                    .HasAnnotation("Npgsql:StorageParameter:fillfactor", 90);
+
+                b.ToTable("persona");
+
+                b.HasAnnotation("Npgsql:StorageParameter:fillfactor", 90);
+            });
+
+        modelBuilder.Entity("Prism.Infrastructure.Persistence.Entities.ProviderSetting", b =>
+            {
+                var id = b.Property<int>("Id")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("integer")
+                    .HasColumnName("id");
+
+                NpgsqlPropertyBuilderExtensions.UseIdentityAlwaysColumn(id);
+
+                b.Property<bool>("AllowAdminRestrictedGrants")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("boolean")
+                    .HasDefaultValue(false)
+                    .HasColumnName("allow_admin_restricted_grants");
+
+                b.Property<DateTimeOffset>("CreatedAtTimestamp")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("timestamp with time zone")
+                    .HasColumnName("created_at_timestamp")
+                    .HasDefaultValueSql("now()");
+
+                b.Property<string>("DefaultRoleKey")
+                    .IsRequired()
+                    .ValueGeneratedOnAdd()
+                    .HasMaxLength(30)
+                    .HasColumnType("character varying(30)")
+                    .HasDefaultValue("viewer")
+                    .HasColumnName("default_role_key");
+
+                b.Property<int>("ProviderId")
+                    .HasColumnType("integer")
+                    .HasColumnName("provider_id");
+
+                b.Property<DateTimeOffset>("UpdatedAtTimestamp")
+                    .ValueGeneratedOnAddOrUpdate()
+                    .HasColumnType("timestamp with time zone")
+                    .HasColumnName("updated_at_timestamp")
+                    .HasDefaultValueSql("now()");
+
+                b.HasKey("Id")
+                    .HasName("pk_provider_setting");
+
+                b.HasIndex("ProviderId")
+                    .IsUnique()
+                    .HasDatabaseName("uk_provider_setting__provider_id")
+                    .HasAnnotation("Npgsql:StorageParameter:fillfactor", 90);
+
+                b.ToTable("provider_setting");
+
+                b.HasAnnotation("Npgsql:StorageParameter:fillfactor", 90);
+            });
+
+        modelBuilder.Entity("Prism.Infrastructure.Persistence.Entities.ProviderUser", b =>
+            {
+                var id = b.Property<int>("Id")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("integer")
+                    .HasColumnName("id");
+
+                NpgsqlPropertyBuilderExtensions.UseIdentityAlwaysColumn(id);
+
+                b.Property<DateTimeOffset>("CreatedAtTimestamp")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("timestamp with time zone")
+                    .HasColumnName("created_at_timestamp")
+                    .HasDefaultValueSql("now()");
+
+                b.Property<string>("DisplayName")
+                    .IsRequired()
+                    .HasMaxLength(200)
+                    .HasColumnType("character varying(200)")
+                    .HasColumnName("display_name");
+
+                b.Property<DateTimeOffset>("LastSignInTimestamp")
+                    .HasColumnType("timestamp with time zone")
+                    .HasColumnName("last_sign_in_timestamp");
+
+                b.Property<long>("PortalUserId")
+                    .HasColumnType("bigint")
+                    .HasColumnName("portal_user_id");
+
+                b.Property<int>("ProviderId")
+                    .HasColumnType("integer")
+                    .HasColumnName("provider_id");
+
+                b.Property<string>("RoleKey")
+                    .IsRequired()
+                    .HasMaxLength(30)
+                    .HasColumnType("character varying(30)")
+                    .HasColumnName("role_key");
+
+                b.Property<DateTimeOffset>("UpdatedAtTimestamp")
+                    .ValueGeneratedOnAddOrUpdate()
+                    .HasColumnType("timestamp with time zone")
+                    .HasColumnName("updated_at_timestamp")
+                    .HasDefaultValueSql("now()");
+
+                b.HasKey("Id")
+                    .HasName("pk_provider_user");
+
+                b.HasIndex("PortalUserId")
+                    .HasDatabaseName("ix_provider_user__portal_user_id")
+                    .HasAnnotation("Npgsql:StorageParameter:fillfactor", 90);
+
+                b.HasIndex("ProviderId", "PortalUserId")
+                    .IsUnique()
+                    .HasDatabaseName("uk_provider_user__provider_id__portal_user_id")
+                    .HasAnnotation("Npgsql:StorageParameter:fillfactor", 90);
+
+                b.ToTable("provider_user");
 
                 b.HasAnnotation("Npgsql:StorageParameter:fillfactor", 90);
             });
@@ -178,6 +599,12 @@ partial class PrismDbContextModelSnapshot : ModelSnapshot
                     .HasColumnType("character varying(300)")
                     .HasColumnName("description");
 
+                b.Property<bool>("IsHidden")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("boolean")
+                    .HasDefaultValue(false)
+                    .HasColumnName("is_hidden");
+
                 b.Property<string>("Layout")
                     .IsRequired()
                     .ValueGeneratedOnAdd()
@@ -211,6 +638,10 @@ partial class PrismDbContextModelSnapshot : ModelSnapshot
                     .HasColumnType("xid")
                     .HasColumnName("xmin");
 
+                b.Property<int?>("SourceTemplateAssignmentId")
+                    .HasColumnType("integer")
+                    .HasColumnName("source_template_assignment_id");
+
                 b.Property<DateTimeOffset>("UpdatedAtTimestamp")
                     .ValueGeneratedOnAddOrUpdate()
                     .HasColumnType("timestamp with time zone")
@@ -224,6 +655,10 @@ partial class PrismDbContextModelSnapshot : ModelSnapshot
 
                 b.HasKey("Id")
                     .HasName("pk_saved_view");
+
+                b.HasIndex("SourceTemplateAssignmentId")
+                    .HasDatabaseName("ix_saved_view__source_template_assignment_id")
+                    .HasAnnotation("Npgsql:StorageParameter:fillfactor", 90);
 
                 b.HasIndex("ProviderId", "OwnerPortalUserId", "Name")
                     .IsUnique()
@@ -371,6 +806,388 @@ partial class PrismDbContextModelSnapshot : ModelSnapshot
                 b.HasAnnotation("Npgsql:StorageParameter:fillfactor", 90);
             });
 
+        modelBuilder.Entity("Prism.Infrastructure.Persistence.Entities.TemplateAssignment", b =>
+            {
+                var id = b.Property<int>("Id")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("integer")
+                    .HasColumnName("id");
+
+                NpgsqlPropertyBuilderExtensions.UseIdentityAlwaysColumn(id);
+
+                b.Property<DateTimeOffset>("CreatedAtTimestamp")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("timestamp with time zone")
+                    .HasColumnName("created_at_timestamp")
+                    .HasDefaultValueSql("now()");
+
+                b.Property<long>("CreatedByPortalUserId")
+                    .HasColumnType("bigint")
+                    .HasColumnName("created_by_portal_user_id");
+
+                b.Property<string>("CreatedByUserName")
+                    .HasMaxLength(200)
+                    .HasColumnType("character varying(200)")
+                    .HasColumnName("created_by_user_name");
+
+                b.Property<string>("Description")
+                    .HasMaxLength(300)
+                    .HasColumnType("character varying(300)")
+                    .HasColumnName("description");
+
+                b.Property<string>("Layout")
+                    .IsRequired()
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("jsonb")
+                    .HasColumnName("layout")
+                    .HasDefaultValueSql("'{}'::jsonb");
+
+                b.Property<int>("LayoutSchemaVersion")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("integer")
+                    .HasDefaultValue(1)
+                    .HasColumnName("layout_schema_version");
+
+                b.Property<string>("Name")
+                    .IsRequired()
+                    .HasMaxLength(80)
+                    .HasColumnType("character varying(80)")
+                    .HasColumnName("name");
+
+                b.Property<int?>("ProviderId")
+                    .HasColumnType("integer")
+                    .HasColumnName("provider_id");
+
+                b.Property<DateTimeOffset?>("RevokedAtTimestamp")
+                    .HasColumnType("timestamp with time zone")
+                    .HasColumnName("revoked_at_timestamp");
+
+                b.Property<string>("ScopeKind")
+                    .IsRequired()
+                    .HasMaxLength(20)
+                    .HasColumnType("character varying(20)")
+                    .HasColumnName("scope_kind");
+
+                b.Property<DateTimeOffset>("UpdatedAtTimestamp")
+                    .ValueGeneratedOnAddOrUpdate()
+                    .HasColumnType("timestamp with time zone")
+                    .HasColumnName("updated_at_timestamp")
+                    .HasDefaultValueSql("now()");
+
+                b.Property<string>("UpdatedByUserName")
+                    .HasMaxLength(200)
+                    .HasColumnType("character varying(200)")
+                    .HasColumnName("updated_by_user_name");
+
+                b.Property<int>("ViewTemplateId")
+                    .HasColumnType("integer")
+                    .HasColumnName("view_template_id");
+
+                b.HasKey("Id")
+                    .HasName("pk_template_assignment");
+
+                b.HasIndex("ViewTemplateId")
+                    .HasDatabaseName("ix_template_assignment__view_template_id")
+                    .HasAnnotation("Npgsql:StorageParameter:fillfactor", 90);
+
+                b.HasIndex("ProviderId", "ScopeKind")
+                    .HasDatabaseName("ix_template_assignment__provider_id__scope_kind")
+                    .HasAnnotation("Npgsql:StorageParameter:fillfactor", 90);
+
+                b.ToTable("template_assignment", t =>
+                    {
+                        t.HasCheckConstraint("ck_template_assignment__provider_id", "(scope_kind = 'Provider') = (provider_id IS NOT NULL)");
+
+                        t.HasCheckConstraint("ck_template_assignment__scope_kind", "scope_kind IN ('All', 'Provider')");
+                    });
+
+                b.HasAnnotation("Npgsql:StorageParameter:fillfactor", 90);
+            });
+
+        modelBuilder.Entity("Prism.Infrastructure.Persistence.Entities.TemplateDelivery", b =>
+            {
+                var id = b.Property<int>("Id")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("integer")
+                    .HasColumnName("id");
+
+                NpgsqlPropertyBuilderExtensions.UseIdentityAlwaysColumn(id);
+
+                b.Property<DateTimeOffset>("CreatedAtTimestamp")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("timestamp with time zone")
+                    .HasColumnName("created_at_timestamp")
+                    .HasDefaultValueSql("now()");
+
+                b.Property<long>("PortalUserId")
+                    .HasColumnType("bigint")
+                    .HasColumnName("portal_user_id");
+
+                b.Property<int>("ProviderId")
+                    .HasColumnType("integer")
+                    .HasColumnName("provider_id");
+
+                b.Property<int?>("SavedViewId")
+                    .HasColumnType("integer")
+                    .HasColumnName("saved_view_id");
+
+                b.Property<int>("TemplateAssignmentId")
+                    .HasColumnType("integer")
+                    .HasColumnName("template_assignment_id");
+
+                b.Property<DateTimeOffset>("UpdatedAtTimestamp")
+                    .ValueGeneratedOnAddOrUpdate()
+                    .HasColumnType("timestamp with time zone")
+                    .HasColumnName("updated_at_timestamp")
+                    .HasDefaultValueSql("now()");
+
+                b.HasKey("Id")
+                    .HasName("pk_template_delivery");
+
+                b.HasIndex("SavedViewId")
+                    .HasDatabaseName("ix_template_delivery__saved_view_id")
+                    .HasAnnotation("Npgsql:StorageParameter:fillfactor", 90);
+
+                b.HasIndex("TemplateAssignmentId")
+                    .HasDatabaseName("ix_template_delivery__template_assignment_id")
+                    .HasAnnotation("Npgsql:StorageParameter:fillfactor", 90);
+
+                b.HasIndex("PortalUserId", "ProviderId", "TemplateAssignmentId")
+                    .IsUnique()
+                    .HasDatabaseName("uk_template_delivery__plus")
+                    .HasAnnotation("Npgsql:StorageParameter:fillfactor", 90);
+
+                b.ToTable("template_delivery");
+
+                b.HasAnnotation("Npgsql:StorageParameter:fillfactor", 90);
+            });
+
+        modelBuilder.Entity("Prism.Infrastructure.Persistence.Entities.UserHomeView", b =>
+            {
+                var id = b.Property<int>("Id")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("integer")
+                    .HasColumnName("id");
+
+                NpgsqlPropertyBuilderExtensions.UseIdentityAlwaysColumn(id);
+
+                b.Property<DateTimeOffset>("CreatedAtTimestamp")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("timestamp with time zone")
+                    .HasColumnName("created_at_timestamp")
+                    .HasDefaultValueSql("now()");
+
+                b.Property<long>("PortalUserId")
+                    .HasColumnType("bigint")
+                    .HasColumnName("portal_user_id");
+
+                b.Property<int>("ProviderId")
+                    .HasColumnType("integer")
+                    .HasColumnName("provider_id");
+
+                b.Property<int>("SavedViewId")
+                    .HasColumnType("integer")
+                    .HasColumnName("saved_view_id");
+
+                b.Property<DateTimeOffset>("UpdatedAtTimestamp")
+                    .ValueGeneratedOnAddOrUpdate()
+                    .HasColumnType("timestamp with time zone")
+                    .HasColumnName("updated_at_timestamp")
+                    .HasDefaultValueSql("now()");
+
+                b.HasKey("Id")
+                    .HasName("pk_user_home_view");
+
+                b.HasIndex("SavedViewId")
+                    .HasDatabaseName("ix_user_home_view__saved_view_id")
+                    .HasAnnotation("Npgsql:StorageParameter:fillfactor", 90);
+
+                b.HasIndex("PortalUserId", "ProviderId")
+                    .IsUnique()
+                    .HasDatabaseName("uk_user_home_view__portal_user_id__provider_id")
+                    .HasAnnotation("Npgsql:StorageParameter:fillfactor", 90);
+
+                b.ToTable("user_home_view");
+
+                b.HasAnnotation("Npgsql:StorageParameter:fillfactor", 90);
+            });
+
+        modelBuilder.Entity("Prism.Infrastructure.Persistence.Entities.UserProfile", b =>
+            {
+                var id = b.Property<int>("Id")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("integer")
+                    .HasColumnName("id");
+
+                NpgsqlPropertyBuilderExtensions.UseIdentityAlwaysColumn(id);
+
+                b.Property<DateTimeOffset>("CreatedAtTimestamp")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("timestamp with time zone")
+                    .HasColumnName("created_at_timestamp")
+                    .HasDefaultValueSql("now()");
+
+                b.Property<DateTimeOffset?>("OnboardingCompletedAtTimestamp")
+                    .HasColumnType("timestamp with time zone")
+                    .HasColumnName("onboarding_completed_at_timestamp");
+
+                b.Property<int?>("PersonaId")
+                    .HasColumnType("integer")
+                    .HasColumnName("persona_id");
+
+                b.Property<long>("PortalUserId")
+                    .HasColumnType("bigint")
+                    .HasColumnName("portal_user_id");
+
+                b.Property<DateTimeOffset>("UpdatedAtTimestamp")
+                    .ValueGeneratedOnAddOrUpdate()
+                    .HasColumnType("timestamp with time zone")
+                    .HasColumnName("updated_at_timestamp")
+                    .HasDefaultValueSql("now()");
+
+                b.HasKey("Id")
+                    .HasName("pk_user_profile");
+
+                b.HasIndex("PersonaId")
+                    .HasDatabaseName("ix_user_profile__persona_id")
+                    .HasAnnotation("Npgsql:StorageParameter:fillfactor", 90);
+
+                b.HasIndex("PortalUserId")
+                    .IsUnique()
+                    .HasDatabaseName("uk_user_profile__portal_user_id")
+                    .HasAnnotation("Npgsql:StorageParameter:fillfactor", 90);
+
+                b.ToTable("user_profile");
+
+                b.HasAnnotation("Npgsql:StorageParameter:fillfactor", 90);
+            });
+
+        modelBuilder.Entity("Prism.Infrastructure.Persistence.Entities.ViewTemplate", b =>
+            {
+                var id = b.Property<int>("Id")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("integer")
+                    .HasColumnName("id");
+
+                NpgsqlPropertyBuilderExtensions.UseIdentityAlwaysColumn(id);
+
+                b.Property<DateTimeOffset>("CreatedAtTimestamp")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("timestamp with time zone")
+                    .HasColumnName("created_at_timestamp")
+                    .HasDefaultValueSql("now()");
+
+                b.Property<string>("CreatedByUserName")
+                    .HasMaxLength(200)
+                    .HasColumnType("character varying(200)")
+                    .HasColumnName("created_by_user_name");
+
+                b.Property<string>("Description")
+                    .HasMaxLength(300)
+                    .HasColumnType("character varying(300)")
+                    .HasColumnName("description");
+
+                b.Property<bool>("IsPublished")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("boolean")
+                    .HasDefaultValue(false)
+                    .HasColumnName("is_published");
+
+                b.Property<string>("Layout")
+                    .IsRequired()
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("jsonb")
+                    .HasColumnName("layout")
+                    .HasDefaultValueSql("'{}'::jsonb");
+
+                b.Property<int>("LayoutSchemaVersion")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("integer")
+                    .HasDefaultValue(1)
+                    .HasColumnName("layout_schema_version");
+
+                b.Property<string>("Name")
+                    .IsRequired()
+                    .HasMaxLength(80)
+                    .HasColumnType("character varying(80)")
+                    .HasColumnName("name");
+
+                b.Property<uint>("RowVersion")
+                    .IsConcurrencyToken()
+                    .ValueGeneratedOnAddOrUpdate()
+                    .HasColumnType("xid")
+                    .HasColumnName("xmin");
+
+                b.Property<DateTimeOffset>("UpdatedAtTimestamp")
+                    .ValueGeneratedOnAddOrUpdate()
+                    .HasColumnType("timestamp with time zone")
+                    .HasColumnName("updated_at_timestamp")
+                    .HasDefaultValueSql("now()");
+
+                b.Property<string>("UpdatedByUserName")
+                    .HasMaxLength(200)
+                    .HasColumnType("character varying(200)")
+                    .HasColumnName("updated_by_user_name");
+
+                b.HasKey("Id")
+                    .HasName("pk_view_template");
+
+                b.HasIndex("Name")
+                    .IsUnique()
+                    .HasDatabaseName("uk_view_template__name")
+                    .HasAnnotation("Npgsql:StorageParameter:fillfactor", 90);
+
+                b.ToTable("view_template");
+
+                b.HasAnnotation("Npgsql:StorageParameter:fillfactor", 90);
+            });
+
+        modelBuilder.Entity("Prism.Infrastructure.Persistence.Entities.OnboardingOption", b =>
+            {
+                b.HasOne("Prism.Infrastructure.Persistence.Entities.OnboardingQuestion", null)
+                    .WithMany()
+                    .HasForeignKey("OnboardingQuestionId")
+                    .OnDelete(DeleteBehavior.Restrict)
+                    .IsRequired()
+                    .HasConstraintName("fk_onboarding_option__onboarding_question_id");
+            });
+
+        modelBuilder.Entity("Prism.Infrastructure.Persistence.Entities.OnboardingOptionWeight", b =>
+            {
+                b.HasOne("Prism.Infrastructure.Persistence.Entities.OnboardingOption", null)
+                    .WithMany()
+                    .HasForeignKey("OnboardingOptionId")
+                    .OnDelete(DeleteBehavior.Restrict)
+                    .IsRequired()
+                    .HasConstraintName("fk_onboarding_option_weight__onboarding_option_id");
+
+                b.HasOne("Prism.Infrastructure.Persistence.Entities.Persona", null)
+                    .WithMany()
+                    .HasForeignKey("PersonaId")
+                    .OnDelete(DeleteBehavior.Restrict)
+                    .IsRequired()
+                    .HasConstraintName("fk_onboarding_option_weight__persona_id__persona");
+            });
+
+        modelBuilder.Entity("Prism.Infrastructure.Persistence.Entities.Persona", b =>
+            {
+                b.HasOne("Prism.Infrastructure.Persistence.Entities.ViewTemplate", null)
+                    .WithMany()
+                    .HasForeignKey("ViewTemplateId")
+                    .OnDelete(DeleteBehavior.Restrict)
+                    .IsRequired()
+                    .HasConstraintName("fk_persona__view_template_id__view_template");
+            });
+
+        modelBuilder.Entity("Prism.Infrastructure.Persistence.Entities.SavedView", b =>
+            {
+                b.HasOne("Prism.Infrastructure.Persistence.Entities.TemplateAssignment", null)
+                    .WithMany()
+                    .HasForeignKey("SourceTemplateAssignmentId")
+                    .OnDelete(DeleteBehavior.Restrict)
+                    .HasConstraintName("fk_saved_view__source_template_assignment_id");
+            });
+
         modelBuilder.Entity("Prism.Infrastructure.Persistence.Entities.SavedViewInvitation", b =>
             {
                 b.HasOne("Prism.Infrastructure.Persistence.Entities.SavedView", null)
@@ -395,6 +1212,51 @@ partial class PrismDbContextModelSnapshot : ModelSnapshot
                     .HasForeignKey("SavedViewInvitationId")
                     .OnDelete(DeleteBehavior.Restrict)
                     .HasConstraintName("fk_saved_view_share__saved_view_invitation_id");
+            });
+
+        modelBuilder.Entity("Prism.Infrastructure.Persistence.Entities.TemplateAssignment", b =>
+            {
+                b.HasOne("Prism.Infrastructure.Persistence.Entities.ViewTemplate", null)
+                    .WithMany()
+                    .HasForeignKey("ViewTemplateId")
+                    .OnDelete(DeleteBehavior.Restrict)
+                    .IsRequired()
+                    .HasConstraintName("fk_template_assignment__view_template_id__view_template");
+            });
+
+        modelBuilder.Entity("Prism.Infrastructure.Persistence.Entities.TemplateDelivery", b =>
+            {
+                b.HasOne("Prism.Infrastructure.Persistence.Entities.SavedView", null)
+                    .WithMany()
+                    .HasForeignKey("SavedViewId")
+                    .OnDelete(DeleteBehavior.Restrict)
+                    .HasConstraintName("fk_template_delivery__saved_view_id__saved_view");
+
+                b.HasOne("Prism.Infrastructure.Persistence.Entities.TemplateAssignment", null)
+                    .WithMany()
+                    .HasForeignKey("TemplateAssignmentId")
+                    .OnDelete(DeleteBehavior.Restrict)
+                    .IsRequired()
+                    .HasConstraintName("fk_template_delivery__template_assignment_id");
+            });
+
+        modelBuilder.Entity("Prism.Infrastructure.Persistence.Entities.UserHomeView", b =>
+            {
+                b.HasOne("Prism.Infrastructure.Persistence.Entities.SavedView", null)
+                    .WithMany()
+                    .HasForeignKey("SavedViewId")
+                    .OnDelete(DeleteBehavior.Restrict)
+                    .IsRequired()
+                    .HasConstraintName("fk_user_home_view__saved_view_id__saved_view");
+            });
+
+        modelBuilder.Entity("Prism.Infrastructure.Persistence.Entities.UserProfile", b =>
+            {
+                b.HasOne("Prism.Infrastructure.Persistence.Entities.Persona", null)
+                    .WithMany()
+                    .HasForeignKey("PersonaId")
+                    .OnDelete(DeleteBehavior.Restrict)
+                    .HasConstraintName("fk_user_profile__persona_id__persona");
             });
 #pragma warning restore 612, 618
     }

@@ -15,7 +15,7 @@ public sealed class SavedViewStore(PrismDbContext db) : ISavedViewStore
     public async Task<SavedViewLists> ListAsync(SavedViewActor actor, CancellationToken cancellationToken)
     {
         List<SavedView> mine = await db.SavedViews.AsNoTracking()
-            .Where(v => v.ProviderId == actor.ProviderId && v.OwnerPortalUserId == actor.PortalUserId)
+            .Where(v => v.ProviderId == actor.ProviderId && v.OwnerPortalUserId == actor.PortalUserId && !v.IsHidden)
             .OrderBy(v => v.Name)
             .Take(SavedViewLimits.MaxListedViews)
             .ToListAsync(cancellationToken);
@@ -121,11 +121,33 @@ public sealed class SavedViewStore(PrismDbContext db) : ISavedViewStore
 
         // Foreign keys restrict deletes, so the application removes the children first, in one transaction.
         await using Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        // A delivery row stays, so a deleted copy is not delivered again; it only forgets the view.
+        await db.TemplateDeliveries.Where(d => d.SavedViewId == viewId).ExecuteUpdateAsync(set => set.SetProperty(d => d.SavedViewId, (int?)null), cancellationToken);
+        // Deleting a home page copy is a reset: the home page goes back to following the Persona's template.
+        await db.UserHomeViews.Where(h => h.SavedViewId == viewId).ExecuteDeleteAsync(cancellationToken);
         await db.SavedViewShares.Where(s => s.SavedViewId == viewId).ExecuteDeleteAsync(cancellationToken);
         await db.SavedViewInvitations.Where(i => i.SavedViewId == viewId).ExecuteDeleteAsync(cancellationToken);
         int removed = await db.SavedViews.Where(v => v.Id == viewId).ExecuteDeleteAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         return removed == 1;
+    }
+
+    public async Task<IReadOnlyList<SavedViewSummary>> ListPushedAsync(SavedViewActor actor, CancellationToken cancellationToken)
+    {
+        List<SavedView> pushed = await db.SavedViews.AsNoTracking()
+            .Where(v => v.ProviderId == actor.ProviderId && v.OwnerPortalUserId == actor.PortalUserId && v.SourceTemplateAssignmentId != null)
+            .OrderBy(v => v.Name)
+            .Take(SavedViewLimits.MaxListedViews)
+            .ToListAsync(cancellationToken);
+        return [.. pushed.Select(v => Summarize(v, true))];
+    }
+
+    public async Task<bool> SetHiddenAsync(SavedViewActor actor, int viewId, bool hidden, CancellationToken cancellationToken)
+    {
+        int changed = await db.SavedViews
+            .Where(v => v.Id == viewId && v.ProviderId == actor.ProviderId && v.OwnerPortalUserId == actor.PortalUserId && v.SourceTemplateAssignmentId != null)
+            .ExecuteUpdateAsync(set => set.SetProperty(v => v.IsHidden, hidden), cancellationToken);
+        return changed == 1;
     }
 
     private static void Apply(SavedView view, SavedViewContent content)
@@ -138,7 +160,7 @@ public sealed class SavedViewStore(PrismDbContext db) : ISavedViewStore
     }
 
     private static SavedViewSummary Summarize(SavedView view, bool isOwner) =>
-        new(view.Id, view.Name, view.Description, view.CreatedByUserName, isOwner, ReadLayout(view.Layout).Widgets?.Count ?? 0, view.UpdatedAtTimestamp);
+        new(view.Id, view.Name, view.Description, view.CreatedByUserName, isOwner, ReadLayout(view.Layout).Widgets?.Count ?? 0, view.UpdatedAtTimestamp, view.SourceTemplateAssignmentId is not null, view.IsHidden);
 
     private static SavedViewDetail Describe(SavedView view, bool isOwner) =>
         new(view.Id, view.Name, view.Description, view.CreatedByUserName, isOwner, ReadLayout(view.Layout), view.RowVersion, view.UpdatedAtTimestamp);

@@ -39,12 +39,8 @@ public static class AuthServiceCollectionExtensions
         services.AddOptions<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme)
             .Configure<IOptions<PrismAuthOptions>, AuthCookies>(ConfigureSessionScheme);
         services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer();
-        services.AddAuthorization(options =>
-        {
-            options.AddPolicy(Permissions.DashboardView, policy => policy.RequireClaim(SessionTokenIssuer.PermissionsClaim, Permissions.DashboardView));
-            options.AddPolicy(Permissions.ClaimsView, policy => policy.RequireClaim(SessionTokenIssuer.PermissionsClaim, Permissions.ClaimsView));
-            options.AddPolicy(Permissions.ViewsManage, policy => policy.RequireClaim(SessionTokenIssuer.PermissionsClaim, Permissions.ViewsManage));
-        });
+        // The customer permission policies (dashboard, claims, saved views, users) are registered with Customer Roles: they are checked per Provider, not from the session.
+        services.AddAuthorization();
 
         services.AddSingleton<Attention.ClaimReadLimiter>();
         services.AddRateLimiter(options => options.RejectionStatusCode = StatusCodes.Status429TooManyRequests);
@@ -76,6 +72,7 @@ public static class AuthServiceCollectionExtensions
     // A valid signature is not enough: the session must not have been ended early (sign-out or revocation).
     private static async Task RejectRevokedSession(TokenValidatedContext context)
     {
+        StripCustomerPermissions(context.Principal);
         string? sessionId = context.Principal?.FindFirstValue(JwtRegisteredClaimNames.Jti);
         if (string.IsNullOrEmpty(sessionId))
         {
@@ -87,6 +84,20 @@ public static class AuthServiceCollectionExtensions
         if (await store.IsRevokedAsync(sessionId, context.HttpContext.RequestAborted))
         {
             context.Fail("Session was revoked.");
+        }
+    }
+
+    // A session issued before Customer Roles may still carry customer permissions. They are not honoured: only sign-in and the admin tiers are read from the session.
+    private static void StripCustomerPermissions(ClaimsPrincipal? principal)
+    {
+        if (principal?.Identity is not ClaimsIdentity identity)
+        {
+            return;
+        }
+
+        foreach (Claim stale in identity.FindAll(SessionTokenIssuer.PermissionsClaim).Where(c => c.Value != Permissions.App && !Permissions.AdminTiers.Contains(c.Value)).ToList())
+        {
+            identity.RemoveClaim(stale);
         }
     }
 

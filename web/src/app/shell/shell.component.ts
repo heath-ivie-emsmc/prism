@@ -71,6 +71,12 @@ const MODE_LABEL: Readonly<Record<string, string>> = {
         <ems-icon name="filter_none" size="sm" />
         Saved views
       </a>
+      @if (isInternal()) {
+        <a emsNavTab routerLink="/admin" routerLinkActive #adminLink="routerLinkActive" [active]="adminLink.isActive">
+          <ems-icon name="admin_panel_settings" size="sm" />
+          Admin
+        </a>
+      }
       <span emsNavTrailing class="shell__trailing">
         <button emsButton="flat" fab color="neutral" type="button" [attr.aria-label]="'Theme: ' + themeLabel()" [title]="'Theme: ' + themeLabel()" (click)="cycleTheme()">
           <ems-icon [name]="themeIcon()" />
@@ -81,6 +87,7 @@ const MODE_LABEL: Readonly<Record<string, string>> = {
         <!-- eslint-disable-next-line @angular-eslint/template/elements-content -- ems-profile renders its own content and accessible name from [name] -->
         <button ems-profile type="button" [name]="displayName()" [matMenuTriggerFor]="account"></button>
         <mat-menu #account="matMenu">
+          <a mat-menu-item routerLink="/settings">Settings</a>
           <button mat-menu-item type="button" (click)="signOut()">Sign out</button>
         </mat-menu>
       </span>
@@ -184,6 +191,7 @@ export class ShellComponent {
   protected readonly providerName = computed(() => this.auth.activeProvider()?.name ?? 'Prism');
   protected readonly providerLogo = computed(() => findProviderLogo(this.auth.activeProvider()?.name));
   protected readonly displayName = computed(() => this.auth.me()?.displayName ?? '');
+  protected readonly isInternal = this.auth.isInternal;
   protected readonly themeLabel = computed(() => MODE_LABEL[this.theme.colorMode()] ?? 'System');
 
   protected readonly themeIcon = computed(() => MODE_ICON[this.theme.colorMode()] ?? 'brightness_auto');
